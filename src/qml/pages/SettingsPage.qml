@@ -1,268 +1,750 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
+import QtQuick.Effects
 import "../components"
 
-Item {
-    id: root
+Page {
+    id: settingsPage
+    signal backRequested()
 
-    FolderDialog {
-        id: defaultPrefixDirPicker
-        title: "Select Default Wine Prefix Location"
-        onAccepted: {
-            let p = selectedFolder.toString()
-            if (p.startsWith("file://")) p = p.substring(7)
-            appSettings.defaultPrefixLocation = p
-        }
+    background: Rectangle {
+        color: appSettings.bgColor
+        Behavior on color { ColorAnimation { duration: 150 } }
     }
 
-    FolderDialog {
-        id: defaultRunnerDirPicker
-        title: "Select Default Runner Download Location"
-        onAccepted: {
-            let p = selectedFolder.toString()
-            if (p.startsWith("file://")) p = p.substring(7)
-            appSettings.defaultRunnerLocation = p
-        }
+    focus: true
+
+    Keys.onEscapePressed: (event) => {
+        event.accepted = true
+        settingsPage.backRequested()
     }
 
-    ScrollView {
-        anchors.fill: parent
-        contentWidth: availableWidth
-        clip: true
+    property var settingsCatalog: []
+    property var searchResults: []
 
-        ColumnLayout {
-            width: parent.width
-            spacing: 20
-
-            Item { Layout.preferredHeight: 6 }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 32
-                Layout.rightMargin: 32
-                spacing: 12
-                YIcon { source: "qrc:/tsuki_app/icons/actions/settings.svg"; color: appSettings.accentColor; size: 28 }
-                ColumnLayout {
-                    Layout.fillWidth: true; spacing: 2
-                    Label { text: "Global Settings"; color: appSettings.textColor; font.pixelSize: 22; font.weight: Font.Bold }
-                    Label { text: "Global settings act as defaults across Tsuki; individual game configurations override them."; color: appSettings.textSecColor; font.pixelSize: 13 }
+    function buildIndex() {
+        let list = []
+        let sections = [secAppearance, secRunners, secPerf, secSystem]
+        for (let s = 0; s < sections.length; s++) {
+            let sec = sections[s]
+            if (!sec || !sec.rowsContainer) continue
+            let ch = sec.rowsContainer.children
+            for (let i = 0; i < ch.length; i++) {
+                let row = ch[i]
+                if (row && row.label) {
+                    list.push({
+                        name: row.label,
+                        description: row.description || "",
+                        section: sec.sectionTitle,
+                        item: row
+                    })
                 }
             }
+        }
+        settingsCatalog = list
+    }
 
-            // 1. Default Runner & Locations
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.leftMargin: 32; Layout.rightMargin: 32
-                implicitHeight: sec1.implicitHeight + 36
-                radius: 16
-                color: appSettings.surfaceColor
-                border.color: appSettings.borderColor
+    function updateSearchResults(query) {
+        let q = query.trim().toLowerCase()
+        if (q.length === 0) {
+            searchResults = []
+            searchResultsPopup.close()
+            return
+        }
+        if (settingsCatalog.length === 0) {
+            buildIndex()
+        }
 
-                ColumnLayout {
-                    id: sec1
-                    anchors.fill: parent; anchors.margins: 18; spacing: 14
+        let scored = []
+        for (let i = 0; i < settingsCatalog.length; i++) {
+            let entry = settingsCatalog[i]
+            let n = entry.name.toLowerCase()
+            let d = entry.description.toLowerCase()
+            let s = entry.section.toLowerCase()
+            let score = -1
+            if (n === q) score = 100
+            else if (n.startsWith(q)) score = 85
+            else if (n.indexOf(q) !== -1) score = 65
+            else if (s.indexOf(q) !== -1) score = 40
+            else if (d.indexOf(q) !== -1) score = 25
 
-                    Label { text: "Runners & Storage Directories (XDG)"; color: appSettings.textColor; font.pixelSize: 16; font.weight: Font.DemiBold }
+            if (score > 0) {
+                scored.push({
+                    name: entry.name,
+                    description: entry.description,
+                    section: entry.section,
+                    item: entry.item,
+                    score: score
+                })
+            }
+        }
+        scored.sort((a, b) => b.score - a.score)
+        searchResults = scored
+        if (scored.length > 0) {
+            if (!searchResultsPopup.visible) searchResultsPopup.open()
+        } else {
+            searchResultsPopup.close()
+        }
+    }
 
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 14
-                        Label { text: "Default Wine / Proton Runner:"; color: appSettings.textSecColor; font.pixelSize: 13; Layout.preferredWidth: 230 }
-                        ComboBox {
-                            Layout.fillWidth: true
-                            model: uiController.runnerManager.installedRunners
-                            textRole: "name"
-                            onActivated: (idx) => {
-                                let r = uiController.runnerManager.installedRunners
-                                if (idx >= 0 && idx < r.length) appSettings.defaultRunnerId = r[idx].id
+    function scrollToSetting(targetItem) {
+        if (!targetItem || !settingsCol) return
+        Qt.callLater(() => {
+            let p = targetItem.mapToItem(settingsCol, 0, 0)
+            let desiredY = Math.max(0, p.y - 20)
+            let maxScrollY = Math.max(0, settingsScroll.contentHeight - settingsScroll.height)
+            settingsScroll.ScrollBar.vertical.position = maxScrollY > 0 ? (desiredY / settingsScroll.contentHeight) : 0
+            if (typeof targetItem.highlight === "function") {
+                targetItem.highlight()
+            }
+        })
+    }
+
+    Component.onCompleted: {
+        Qt.callLater(buildIndex)
+    }
+
+    // ── Top Navigation & Search Header (Matching Yoru Layout) ────────────────
+    Rectangle {
+        id: settingsHeader
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: 70
+        z: 100
+        color: appSettings.bgColor
+        Behavior on color { ColorAnimation { duration: 150 } }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            color: appSettings.borderColor
+            Behavior on color { ColorAnimation { duration: 150 } }
+        }
+
+        Item {
+            anchors.fill: parent
+            anchors.leftMargin: 32
+            anchors.rightMargin: 32
+
+            // Top-Left: Back Button (Expanding Spring Pill matching Media Header & TopBar)
+            Button {
+                id: backBtn
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+                padding: 0
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+
+                readonly property bool isBtnActive: backBtn.hovered || backBtn.activeFocus
+                property real expandedWidth: 10 + 18 + 8 + backLabel.implicitWidth + 14
+                implicitWidth: isBtnActive ? expandedWidth : 40
+                implicitHeight: 40
+
+                Behavior on implicitWidth {
+                    SpringAnimation { spring: 4; damping: 0.25; epsilon: 0.25 }
+                }
+
+                background: Rectangle {
+                    property color accent: appSettings.accentColor
+                    radius: 20
+                    color: backBtn.isBtnActive ? accent : "transparent"
+                    border.color: backBtn.isBtnActive ? "transparent" : accent
+                    border.width: backBtn.isBtnActive ? 0 : 1.5
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
+                }
+
+                contentItem: Item {
+                    clip: true
+                    implicitWidth: backBtn.implicitWidth
+                    implicitHeight: 40
+
+                    Row {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 9
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        spacing: 8
+
+                        Item {
+                            width: 18
+                            height: parent.height
+                            YIcon {
+                                anchors.centerIn: parent
+                                size: 18
+                                source: "qrc:/tsuki_app/icons/actions/back.svg"
+                                color: backBtn.isBtnActive ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff") : appSettings.accentColor
                             }
                         }
-                    }
 
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 10
-                        Label { text: "Default Prefix Location:"; color: appSettings.textSecColor; font.pixelSize: 13; Layout.preferredWidth: 230 }
-                        TextField {
-                            Layout.fillWidth: true
-                            text: appSettings.defaultPrefixLocation
-                            color: appSettings.textColor
-                            onEditingFinished: appSettings.defaultPrefixLocation = text
-                            background: Rectangle { radius: 8; color: appSettings.inputColor; border.color: appSettings.borderColor }
-                        }
-                        Button { text: "Browse…"; onClicked: defaultPrefixDirPicker.open() }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 10
-                        Label { text: "Default Runner Download Location:"; color: appSettings.textSecColor; font.pixelSize: 13; Layout.preferredWidth: 230 }
-                        TextField {
-                            Layout.fillWidth: true
-                            text: appSettings.defaultRunnerLocation
-                            color: appSettings.textColor
-                            onEditingFinished: appSettings.defaultRunnerLocation = text
-                            background: Rectangle { radius: 8; color: appSettings.inputColor; border.color: appSettings.borderColor }
-                        }
-                        Button { text: "Browse…"; onClicked: defaultRunnerDirPicker.open() }
-                    }
-                }
-            }
-
-            // 2. Performance, Graphics & Controller Defaults
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.leftMargin: 32; Layout.rightMargin: 32
-                implicitHeight: sec2.implicitHeight + 36
-                radius: 16
-                color: appSettings.surfaceColor
-                border.color: appSettings.borderColor
-
-                ColumnLayout {
-                    id: sec2
-                    anchors.fill: parent; anchors.margins: 18; spacing: 14
-
-                    Label { text: "Gaming Performance, Graphics & Controller Defaults"; color: appSettings.textColor; font.pixelSize: 16; font.weight: Font.DemiBold }
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        columns: 3
-                        columnSpacing: 20
-                        rowSpacing: 10
-
-                        CheckBox {
-                            text: "Enable DXVK by default"
-                            checked: appSettings.dxvkDefault
-                            onToggled: appSettings.dxvkDefault = checked
-                        }
-                        CheckBox {
-                            text: "Enable VKD3D-Proton by default"
-                            checked: appSettings.vkd3dDefault
-                            onToggled: appSettings.vkd3dDefault = checked
-                        }
-                        CheckBox {
-                            text: "Enable Esync by default"
-                            checked: appSettings.esyncDefault
-                            onToggled: appSettings.esyncDefault = checked
-                        }
-                        CheckBox {
-                            text: "Enable Fsync by default"
-                            checked: appSettings.fsyncDefault
-                            onToggled: appSettings.fsyncDefault = checked
-                        }
-                        CheckBox {
-                            text: "Enable Feral GameMode by default"
-                            checked: appSettings.gamemodeDefault
-                            onToggled: appSettings.gamemodeDefault = checked
-                        }
-                        CheckBox {
-                            text: "Enable MangoHud by default"
-                            checked: appSettings.mangohudDefault
-                            onToggled: appSettings.mangohudDefault = checked
-                        }
-                        CheckBox {
-                            text: "Enable Xbox Controller Emulation by default"
-                            checked: appSettings.xboxEmulationDefault
-                            onToggled: appSettings.xboxEmulationDefault = checked
-                        }
-                        CheckBox {
-                            text: "Verbose Wine Debug Logs (+err,+warn)"
-                            checked: appSettings.enableWineDebugLogs
-                            onToggled: appSettings.enableWineDebugLogs = checked
-                        }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 14
-                        Label { text: "Default DXVK HUD:"; color: appSettings.textSecColor; font.pixelSize: 13; Layout.preferredWidth: 160 }
-                        ComboBox {
-                            Layout.preferredWidth: 220
-                            model: ["none", "fps", "devinfo,fps,frametimes", "full"]
-                            currentIndex: Math.max(0, model.indexOf(appSettings.defaultDxvkHud))
-                            onActivated: (idx) => appSettings.defaultDxvkHud = model[idx]
+                        Label {
+                            id: backLabel
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Back"
+                            color: backBtn.isBtnActive ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff") : appSettings.accentColor
+                            font: backBtn.font
+                            renderType: Text.QtRendering
+                            opacity: backBtn.isBtnActive ? 1.0 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
                         }
                     }
                 }
+
+                onClicked: settingsPage.backRequested()
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
             }
 
-            // 3. SteamGridDB API & Appearance
+            // Center: Material 3 Search Bar Pill
             Rectangle {
-                Layout.fillWidth: true
-                Layout.leftMargin: 32; Layout.rightMargin: 32
-                Layout.bottomMargin: 32
-                implicitHeight: sec3.implicitHeight + 36
-                radius: 16
-                color: appSettings.surfaceColor
-                border.color: appSettings.borderColor
+                id: searchTile
+                anchors.centerIn: parent
+                width: Math.min(420, Math.max(260, parent.width - 320))
+                height: 40
+                radius: 20
+                color: searchField.activeFocus
+                    ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
+                    : (searchTileHover.hovered
+                        ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.06))
+                        : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)))
 
-                ColumnLayout {
-                    id: sec3
-                    anchors.fill: parent; anchors.margins: 18; spacing: 14
+                border.color: searchField.activeFocus
+                    ? appSettings.accentColor
+                    : (searchTileHover.hovered
+                        ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.14))
+                        : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)))
+                border.width: searchField.activeFocus ? 2 : 1
 
-                    Label { text: "SteamGridDB Integration & Appearance"; color: appSettings.textColor; font.pixelSize: 16; font.weight: Font.DemiBold }
+                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on border.color { ColorAnimation { duration: 150 } }
 
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 12
-                        Label { text: "SteamGridDB API Key:"; color: appSettings.textSecColor; font.pixelSize: 13; Layout.preferredWidth: 200 }
-                        TextField {
-                            Layout.fillWidth: true
-                            text: appSettings.steamGridDbApiKey
-                            echoMode: TextInput.PasswordEchoOnEdit
-                            placeholderText: "Optional API v2 Bearer key (falls back to Steam Store CDN automatically)"
-                            color: appSettings.textColor
-                            placeholderTextColor: appSettings.textTerColor
-                            onEditingFinished: appSettings.steamGridDbApiKey = text
-                            background: Rectangle { radius: 8; color: appSettings.inputColor; border.color: appSettings.borderColor }
+                HoverHandler { id: searchTileHover; cursorShape: Qt.IBeamCursor }
+
+                YIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: parent.left
+                    anchors.leftMargin: 14
+                    size: 16
+                    source: "qrc:/tsuki_app/icons/actions/search.svg"
+                    color: searchField.activeFocus ? appSettings.accentColor : appSettings.textSecColor
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                }
+
+                TextField {
+                    id: searchField
+                    anchors.fill: parent
+                    placeholderText: "Search settings…"
+                    placeholderTextColor: appSettings.textTerColor
+                    color: appSettings.textColor
+                    font.pixelSize: 13
+                    leftPadding: 38
+                    rightPadding: (clearSearchBtn.visible ? 34 : 14)
+                    selectByMouse: true
+                    background: null
+                    renderType: Text.QtRendering
+                    verticalAlignment: Text.AlignVCenter
+
+                    onTextChanged: settingsPage.updateSearchResults(text)
+
+                    Keys.onEscapePressed: (event) => {
+                        event.accepted = true
+                        searchField.clear()
+                        searchField.focus = false
+                    }
+                }
+
+                ToolButton {
+                    id: clearSearchBtn
+                    anchors.right: parent.right
+                    anchors.rightMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 26
+                    height: 26
+                    visible: searchField.text.length > 0
+                    focusPolicy: Qt.NoFocus
+
+                    background: Rectangle {
+                        radius: 13
+                        color: clearSearchBtn.hovered ? appSettings.surfaceAltColor : "transparent"
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
+
+                    contentItem: YIcon {
+                        anchors.centerIn: parent
+                        size: 13
+                        source: "qrc:/tsuki_app/icons/actions/close.svg"
+                        color: appSettings.textSecColor
+                    }
+
+                    onClicked: {
+                        searchField.clear()
+                        searchField.forceActiveFocus()
+                    }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                }
+
+                // Search Results Floating Popup
+                Popup {
+                    id: searchResultsPopup
+                    y: searchTile.height + 6
+                    x: 0
+                    width: searchTile.width
+                    padding: 6
+                    dim: false
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+
+                    background: Rectangle {
+                        color: appSettings.surfaceColor
+                        radius: 16
+                        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)
+                        border.width: 1
+                        layer.enabled: true
+                        layer.effect: MultiEffect {
+                            shadowEnabled: true
+                            shadowColor: Qt.rgba(0, 0, 0, 0.45)
+                            shadowBlur: 0.6
+                            shadowVerticalOffset: 4
                         }
                     }
 
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 16
-                        Label { text: "Theme Mode:"; color: appSettings.textSecColor; font.pixelSize: 13; Layout.preferredWidth: 200 }
-                        ComboBox {
-                            model: ["Yoru Dark (Default)", "Light Mode", "Midnight OLED Black"]
-                            currentIndex: appSettings.themeMode
-                            onActivated: (idx) => appSettings.themeMode = idx
-                        }
+                    contentItem: ListView {
+                        implicitHeight: Math.min(260, count * 42)
+                        clip: true
+                        model: settingsPage.searchResults
+                        spacing: 2
+                        boundsBehavior: Flickable.StopAtBounds
 
-                        Label { text: "Left-Click Poster Action:"; color: appSettings.textSecColor; font.pixelSize: 13 }
-                        ComboBox {
-                            model: ["Launch Game Immediately", "Open Game Details Screen"]
-                            currentIndex: appSettings.leftClickBehavior
-                            onActivated: (idx) => appSettings.leftClickBehavior = idx
-                        }
-                    }
+                        delegate: Rectangle {
+                            id: sResRow
+                            required property var modelData
+                            required property int index
+                            width: ListView.view.width
+                            height: 40
+                            radius: 10
+                            color: sResMA.containsMouse ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : "transparent"
 
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 12
-                        Label { text: "Accent Color:"; color: appSettings.textSecColor; font.pixelSize: 13; Layout.preferredWidth: 200 }
-                        Repeater {
-                            model: ["#a855f7", "#38bdf8", "#34d399", "#f43f5e", "#f59e0b", "#6366f1"]
-                            delegate: Rectangle {
-                                required property string modelData
-                                width: 32; height: 32; radius: 16
-                                color: modelData
-                                border.color: "#ffffff"
-                                border.width: String(appSettings.accentColor).toLowerCase() === modelData ? 2.5 : 0
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: appSettings.accentColor = modelData
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 12
+                                spacing: 1
+                                Label {
+                                    text: sResRow.modelData.name
+                                    color: sResMA.containsMouse ? appSettings.accentColor : appSettings.textColor
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    text: sResRow.modelData.section
+                                    color: appSettings.textTerColor
+                                    font.pixelSize: 11
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            MouseArea {
+                                id: sResMA
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    searchResultsPopup.close()
+                                    searchTile.stopEditing()
+                                    settingsPage.scrollToSetting(sResRow.modelData.item)
                                 }
                             }
                         }
-
-                        Item { Layout.fillWidth: true }
-
-                        Label { text: "Poster Size:"; color: appSettings.textSecColor; font.pixelSize: 13 }
-                        Slider {
-                            from: 150; to: 260; stepSize: 5
-                            value: appSettings.thumbScaleTarget
-                            onMoved: appSettings.thumbScaleTarget = Math.round(value)
-                        }
                     }
                 }
             }
         }
     }
-}
 
+    // ── Settings Scroll Content ──────────────────────────────────────────────
+    ScrollView {
+        id: settingsScroll
+        anchors.top: settingsHeader.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        contentWidth: availableWidth
+        clip: true
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        ColumnLayout {
+            id: settingsCol
+            width: Math.min(parent.width - 64, 880)
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: 24
+
+            Item { Layout.preferredHeight: 12 }
+
+            // ── 1. Appearance & Library Layout Card ──────────────────────────
+            SettingsGroup {
+                id: secAppearance
+                Layout.fillWidth: true
+                sectionTitle: "Appearance & Layout"
+
+                // Theme Mode
+                SettingRow {
+                    label: "Theme Mode"
+                    description: "Select light, dark, or system mode to follow the OS desktop appearance"
+                    controlItem: M3SegmentedButton {
+                        model: [
+                            { label: "Dark", val: 0 },
+                            { label: "Light", val: 1 },
+                            { label: "System", val: 2 }
+                        ]
+                        selectedValue: appSettings.themeMode
+                        onSelectionChanged: (val) => appSettings.themeMode = val
+                    }
+                }
+
+                RowDiv {}
+
+                // Accent Color (Matching exact AppearanceSection.qml presets)
+                SettingRow {
+                    label: "Accent Color"
+                    description: "Primary accent for active tabs, buttons, focus rings, and highlights"
+                    controlItem: M3ColorPicker {
+                        presets: [
+                            { name: "Blue",   color: "#5b9cf6" },
+                            { name: "Purple", color: "#9c27b0" },
+                            { name: "Pink",   color: "#ec4899" },
+                            { name: "Red",    color: "#ef4444" },
+                            { name: "Orange", color: "#f97316" },
+                            { name: "Green",  color: "#10b981" },
+                            { name: "Slate",  color: "#94a3b8" }
+                        ]
+                        currentColor: String(appSettings.accentColor)
+                        onColorSelected: (hex) => appSettings.accentColor = hex
+                    }
+                }
+
+                RowDiv {}
+
+                // Poster Size Target
+                SettingRow {
+                    label: "Poster Card Size"
+                    description: "Grid thumbnail target width in pixels"
+                    controlItem: StyledSlider {
+                        from: 150; to: 280; stepSize: 5
+                        value: appSettings.thumbScaleTarget
+                        suffix: " px"
+                        slider.onMoved: appSettings.thumbScaleTarget = Math.round(slider.value)
+                    }
+                }
+
+                RowDiv {}
+
+                // Card Corner Radius
+                SettingRow {
+                    label: "Card Corner Radius"
+                    description: "Squircle curvature applied to game poster tiles"
+                    controlItem: StyledSlider {
+                        from: 4; to: 28; stepSize: 2
+                        value: appSettings.cardRadius
+                        suffix: " px"
+                        slider.onMoved: appSettings.cardRadius = Math.round(slider.value)
+                    }
+                }
+
+                RowDiv {}
+
+                // Title Visibility (Dropdown per request)
+                SettingRow {
+                    label: "Game Title Display"
+                    description: "Position of title text on library cards"
+                    controlItem: StyledCombo {
+                        comboModel: ["Below Poster", "On Hover Overlay", "Hide"]
+                        selectedIndex: appSettings.titleVisibility
+                        onSelected: (idx) => appSettings.titleVisibility = idx
+                    }
+                }
+
+                RowDiv {}
+
+                // Tag Position (Dropdown per request)
+                SettingRow {
+                    label: "Runner Tag Position"
+                    description: "Where to show the Proton / Wine runner badge"
+                    controlItem: StyledCombo {
+                        comboModel: ["Below Title", "Above Title", "Badge on Poster", "Hide"]
+                        selectedIndex: appSettings.tagPosition
+                        onSelected: (idx) => appSettings.tagPosition = idx
+                    }
+                }
+
+                RowDiv {}
+
+                // Show Release Year
+                SettingRow {
+                    label: "Show Release Year"
+                    description: "Display game release year alongside titles"
+                    controlItem: Toggle {
+                        checked: appSettings.showYear
+                        onToggled: (c) => appSettings.showYear = c
+                    }
+                }
+
+                RowDiv {}
+
+                // Left-Click Behavior
+                SettingRow {
+                    label: "Card Left-Click Action"
+                    description: "Choose primary action triggered by clicking a game card"
+                    controlItem: StyledCombo {
+                        comboModel: ["Launch Game Directly", "Open Game Details Page"]
+                        selectedIndex: appSettings.leftClickBehavior
+                        onSelected: (idx) => appSettings.leftClickBehavior = idx
+                    }
+                }
+
+                RowDiv {}
+
+                // Minimize on Launch
+                SettingRow {
+                    label: "Minimize Tsuki on Launch"
+                    description: "Minimize launcher window when starting a game session"
+                    controlItem: Toggle {
+                        checked: appSettings.minimizeOnLaunch
+                        onToggled: (c) => appSettings.minimizeOnLaunch = c
+                    }
+                }
+            }
+
+            // ── 2. Runners & Directories Card ────────────────────────────────
+            SettingsGroup {
+                id: secRunners
+                Layout.fillWidth: true
+                sectionTitle: "Runners & Directories"
+
+                // Default Runner
+                SettingRow {
+                    label: "Global Default Runner"
+                    description: "Fallback Wine or Proton version assigned to newly added games"
+                    controlItem: StyledCombo {
+                        property var runners: uiController.runnerManager.installedRunners
+                        comboModel: {
+                            let list = ["Auto-Detect (System / GE-Proton)"]
+                            for (let i = 0; i < runners.length; i++) {
+                                list.push(runners[i].name)
+                            }
+                            return list
+                        }
+                        selectedIndex: {
+                            let curId = appSettings.defaultRunnerId
+                            for (let i = 0; i < runners.length; i++) {
+                                if (runners[i].id === curId) return i + 1
+                            }
+                            return 0
+                        }
+                        onSelected: (idx) => {
+                            if (idx === 0) appSettings.defaultRunnerId = ""
+                            else if (idx - 1 < runners.length) appSettings.defaultRunnerId = runners[idx - 1].id
+                        }
+                    }
+                }
+
+                RowDiv {}
+
+                // Default Prefix Location (Native system folder picker)
+                SettingRow {
+                    label: "Default Wine Prefix Directory"
+                    description: "Base folder where newly created wine prefixes are initialized"
+                    controlItem: RowLayout {
+                        spacing: 8
+                        M3TextField {
+                            implicitWidth: 320
+                            text: appSettings.defaultPrefixLocation
+                            onCommit: (val) => appSettings.defaultPrefixLocation = val
+                        }
+                        M3Button {
+                            text: "Browse…"
+                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                            buttonType: "tonal"
+                            onClicked: {
+                                let p = uiController.selectFolder("Select Default Prefix Location", appSettings.defaultPrefixLocation)
+                                if (p && p.length > 0) appSettings.defaultPrefixLocation = p
+                            }
+                        }
+                    }
+                }
+
+                RowDiv {}
+
+                // Default Runner Download Location (Native system folder picker)
+                SettingRow {
+                    label: "Runner Download Directory"
+                    description: "Folder where Proton-GE and Wine-Staging tarballs are extracted"
+                    controlItem: RowLayout {
+                        spacing: 8
+                        M3TextField {
+                            implicitWidth: 320
+                            text: appSettings.defaultRunnerLocation
+                            onCommit: (val) => appSettings.defaultRunnerLocation = val
+                        }
+                        M3Button {
+                            text: "Browse…"
+                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                            buttonType: "tonal"
+                            onClicked: {
+                                let p = uiController.selectFolder("Select Runner Download Location", appSettings.defaultRunnerLocation)
+                                if (p && p.length > 0) appSettings.defaultRunnerLocation = p
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── 3. Graphics & Gaming Performance Card ────────────────────────
+            SettingsGroup {
+                id: secPerf
+                Layout.fillWidth: true
+                sectionTitle: "Graphics & Performance Defaults"
+
+                // DXVK
+                SettingRow {
+                    label: "DXVK (Direct3D 9/10/11 → Vulkan)"
+                    description: "High-performance translation layer using Vulkan"
+                    controlItem: Toggle {
+                        checked: appSettings.dxvkDefault
+                        onToggled: (c) => appSettings.dxvkDefault = c
+                    }
+                }
+
+                RowDiv {}
+
+                // VKD3D-Proton
+                SettingRow {
+                    label: "VKD3D-Proton (Direct3D 12 → Vulkan)"
+                    description: "Direct3D 12 mapping layer for modern titles"
+                    controlItem: Toggle {
+                        checked: appSettings.vkd3dDefault
+                        onToggled: (c) => appSettings.vkd3dDefault = c
+                    }
+                }
+
+                RowDiv {}
+
+                // Esync
+                SettingRow {
+                    label: "Eventfd Synchronization (Esync)"
+                    description: "Replaces wineserver synchronization overhead using Linux eventfd"
+                    controlItem: Toggle {
+                        checked: appSettings.esyncDefault
+                        onToggled: (c) => appSettings.esyncDefault = c
+                    }
+                }
+
+                RowDiv {}
+
+                // Fsync
+                SettingRow {
+                    label: "Futex Synchronization (Fsync)"
+                    description: "Fast in-kernel futex-based Wine synchronization (requires kernel 5.16+)"
+                    controlItem: Toggle {
+                        checked: appSettings.fsyncDefault
+                        onToggled: (c) => appSettings.fsyncDefault = c
+                    }
+                }
+
+                RowDiv {}
+
+                // Feral GameMode (Default disabled per request)
+                SettingRow {
+                    label: "Feral GameMode (gamemoderun)"
+                    description: "Requests Linux CPU governor performance mode and I/O prioritization"
+                    controlItem: Toggle {
+                        checked: appSettings.gamemodeDefault
+                        onToggled: (c) => appSettings.gamemodeDefault = c
+                    }
+                }
+
+                RowDiv {}
+
+                // MangoHud
+                SettingRow {
+                    label: "MangoHud Performance Overlay"
+                    description: "Display Vulkan/OpenGL framerate, frame-times, and hardware metrics"
+                    controlItem: Toggle {
+                        checked: appSettings.mangohudDefault
+                        onToggled: (c) => appSettings.mangohudDefault = c
+                    }
+                }
+
+                RowDiv {}
+
+                // DXVK HUD
+                SettingRow {
+                    label: "DXVK HUD Mode"
+                    description: "In-game diagnostic overlay configuration for DXVK"
+                    controlItem: StyledCombo {
+                        comboModel: ["none", "fps", "frametimes", "full", "compiler"]
+                        selectedIndex: {
+                            let modes = ["none", "fps", "frametimes", "full", "compiler"]
+                            let idx = modes.indexOf(appSettings.defaultDxvkHud)
+                            return idx >= 0 ? idx : 0
+                        }
+                        onSelected: (idx) => {
+                            let modes = ["none", "fps", "frametimes", "full", "compiler"]
+                            if (idx >= 0 && idx < modes.length) appSettings.defaultDxvkHud = modes[idx]
+                        }
+                    }
+                }
+            }
+
+            // ── 4. Controller & System Integration Card ──────────────────────
+            SettingsGroup {
+                id: secSystem
+                Layout.fillWidth: true
+                sectionTitle: "Controller & System Integration"
+
+                // Xbox Controller Emulation (Default disabled per request)
+                SettingRow {
+                    label: "Xbox Controller Emulation by Default"
+                    description: "Emulate virtual Xbox 360 controller via Linux /dev/uinput for non-XInput devices"
+                    controlItem: Toggle {
+                        checked: appSettings.xboxEmulationDefault
+                        onToggled: (c) => appSettings.xboxEmulationDefault = c
+                    }
+                }
+
+                RowDiv {}
+
+                // Verbose Wine Logs
+                SettingRow {
+                    label: "Verbose Wine Debug Logging (+err,+warn)"
+                    description: "Capture comprehensive execution logs for diagnostic troubleshooting"
+                    controlItem: Toggle {
+                        checked: appSettings.enableWineDebugLogs
+                        onToggled: (c) => appSettings.enableWineDebugLogs = c
+                    }
+                }
+
+                RowDiv {}
+
+                // SteamGridDB API Key
+                SettingRow {
+                    label: "SteamGridDB API Key"
+                    description: "Optional v2 Bearer key for artwork scraping (falls back to Steam CDN automatically)"
+                    controlItem: M3TextField {
+                        implicitWidth: 340
+                        placeholderText: "Enter SteamGridDB API key…"
+                        isPassword: true
+                        text: appSettings.steamGridDbApiKey
+                        onCommit: (val) => appSettings.steamGridDbApiKey = val
+                    }
+                }
+            }
+
+            Item { Layout.preferredHeight: 32 }
+        }
+    }
+}

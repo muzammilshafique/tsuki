@@ -24,16 +24,21 @@ Rectangle {
     focus: true
     property int focusedNavIndex: 0
 
-    readonly property var navModel: [
-        { name: "Library",        icon: "qrc:/tsuki_app/icons/nav/home.svg",       action: "filter",  val: -1, section: "library" },
-        { name: "Favourites",     icon: "qrc:/tsuki_app/icons/nav/star.svg",       action: "filter",  val: 3,  section: "library" },
-        { name: "Recent",         icon: "qrc:/tsuki_app/icons/nav/download.svg",   action: "filter",  val: 4,  section: "library" },
-        { name: "divider",        icon: "",                                        action: "",        val: 0,  section: "" },
-        { name: "Runners",        icon: "qrc:/tsuki_app/icons/nav/runner.svg",     action: "section", val: 0,  section: "runners" },
-        { name: "Wine Prefixes",  icon: "qrc:/tsuki_app/icons/nav/prefix.svg",     action: "section", val: 0,  section: "prefixes" },
-        { name: "Controllers",    icon: "qrc:/tsuki_app/icons/nav/controller.svg", action: "section", val: 0,  section: "controllers" },
-        { name: "Diagnostics",    icon: "qrc:/tsuki_app/icons/nav/terminal.svg",   action: "section", val: 0,  section: "diagnostics" }
-    ]
+    readonly property var navModel: {
+        let items = [
+            { name: "Library",     icon: "qrc:/tsuki_app/icons/nav/library.svg",     action: "filter",  val: -1, section: "library" },
+            { name: "Favourites",  icon: "qrc:/tsuki_app/icons/nav/favourite.svg",   action: "filter",  val: 3,  section: "library" },
+            { name: "Recent",      icon: "qrc:/tsuki_app/icons/nav/recent.svg",      action: "filter",  val: 4,  section: "library" },
+            { name: "divider",     icon: "",                                         action: "",        val: 0,  section: "" },
+            { name: "Runners",     icon: "qrc:/tsuki_app/icons/nav/runner.svg",      action: "section", val: 0,  section: "runners" },
+            { name: "Prefixes",    icon: "qrc:/tsuki_app/icons/nav/prefixes.svg",    action: "section", val: 0,  section: "prefixes" }
+        ]
+        if (appSettings.xboxEmulationDefault) {
+            items.push({ name: "Controllers", icon: "qrc:/tsuki_app/icons/nav/controller.svg", action: "section", val: 0, section: "controllers" })
+        }
+        items.push({ name: "Diagnostics", icon: "qrc:/tsuki_app/icons/nav/diagnostics.svg", action: "section", val: 0, section: "diagnostics" })
+        return items
+    }
 
     readonly property bool isKeyboardNavActive: uiController.isKeyboardNavActive
 
@@ -42,7 +47,7 @@ Rectangle {
         uiController.setKeyboardNavActive(true)
         if (focusedNavIndex === -1) {
             appSettings.sidebarCollapsed = !appSettings.sidebarCollapsed
-        } else if (focusedNavIndex === 8) {
+        } else if (focusedNavIndex === navModel.length) {
             sidebar.settingsRequested()
         } else if (focusedNavIndex >= 0 && focusedNavIndex < navModel.length) {
             let item = navModel[focusedNavIndex]
@@ -61,7 +66,7 @@ Rectangle {
     Keys.onUpPressed: (event) => {
         event.accepted = true
         uiController.setKeyboardNavActive(true)
-        if (focusedNavIndex === 8) focusedNavIndex = 7
+        if (focusedNavIndex === navModel.length) focusedNavIndex = navModel.length - 1
         else if (focusedNavIndex === 4) focusedNavIndex = 2
         else if (focusedNavIndex > 0) focusedNavIndex--
         else if (focusedNavIndex === 0) focusedNavIndex = -1
@@ -71,8 +76,8 @@ Rectangle {
         uiController.setKeyboardNavActive(true)
         if (focusedNavIndex === -1) focusedNavIndex = 0
         else if (focusedNavIndex === 2) focusedNavIndex = 4
-        else if (focusedNavIndex === 7) focusedNavIndex = 8
-        else if (focusedNavIndex < 8) focusedNavIndex++
+        else if (focusedNavIndex === navModel.length - 1) focusedNavIndex = navModel.length
+        else if (focusedNavIndex < navModel.length) focusedNavIndex++
     }
     Keys.onLeftPressed: (event) => {
         event.accepted = true
@@ -140,15 +145,15 @@ Rectangle {
 
             RowLayout {
                 anchors.centerIn: parent
-                spacing: 8
+                spacing: 10
                 opacity: sidebar.isCollapsed ? 0.0 : 1.0
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: 150 } }
 
                 YIcon {
                     source: "qrc:/tsuki_app/icons/brand/tsuki-sidebar.svg"
+                    size: 28
                     color: appSettings.accentColor
-                    size: 22
                 }
 
                 Label {
@@ -156,27 +161,16 @@ Rectangle {
                     color: appSettings.textColor
                     font.pixelSize: 22
                     font.weight: Font.Bold
+                    font.letterSpacing: -0.4
                 }
             }
 
             // Compact icon when collapsed
-            Image {
-                id: topSidebarIcon
+            YIcon {
                 source: "qrc:/tsuki_app/icons/brand/tsuki-sidebar.svg"
-                width: 24
-                height: 24
-                sourceSize: Qt.size(24, 24)
+                size: 28
+                color: appSettings.accentColor
                 anchors.centerIn: parent
-                fillMode: Image.PreserveAspectFit
-                visible: false
-                asynchronous: false
-            }
-
-            MultiEffect {
-                source: topSidebarIcon
-                anchors.fill: topSidebarIcon
-                colorization: 1.0
-                colorizationColor: appSettings.accentColor
                 opacity: sidebar.isCollapsed ? 1.0 : 0.0
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -313,46 +307,11 @@ Rectangle {
 
         Item { Layout.fillHeight: true }
 
-        // Active Running Games Indicator Badge in Sidebar
-        Rectangle {
-            visible: uiController.launchPipeline.runningCount > 0 && !sidebar.isCollapsed
-            Layout.fillWidth: true
-            Layout.leftMargin: 14
-            Layout.rightMargin: 14
-            Layout.preferredHeight: 38
-            radius: 8
-            color: Qt.rgba(52/255, 211/255, 153/255, 0.14)
-            border.color: "#34d399"
-            border.width: 1
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 10
-                spacing: 8
-
-                Rectangle { width: 8; height: 8; radius: 4; color: "#34d399" }
-                Label {
-                    text: uiController.launchPipeline.runningCount + " Game(s) Running"
-                    color: "#34d399"
-                    font.pixelSize: 12
-                    font.weight: Font.DemiBold
-                    Layout.fillWidth: true
-                }
-                ToolButton {
-                    text: "Stop"
-                    onClicked: uiController.launchPipeline.stopAllGames()
-                    contentItem: Label { text: "Stop"; color: "#ef4444"; font.pixelSize: 11; font.weight: Font.Bold }
-                    background: null
-                }
-            }
-        }
-
         // Bottom Settings Item
         Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 44
-            readonly property bool isTvFocused: sidebar.isKeyboardNavActive && sidebar.activeFocus && sidebar.focusedNavIndex === 8
+            readonly property bool isTvFocused: sidebar.isKeyboardNavActive && sidebar.activeFocus && sidebar.focusedNavIndex === sidebar.navModel.length
             readonly property bool isSettingsActive: sidebar.currentSection === "settings"
 
             MouseArea {
@@ -364,7 +323,7 @@ Rectangle {
                 onPressed: { uiController.setKeyboardNavActive(false) }
                 onClicked: {
                     uiController.setKeyboardNavActive(false)
-                    sidebar.focusedNavIndex = 8
+                    sidebar.focusedNavIndex = sidebar.navModel.length
                     sidebar.currentSection = "settings"
                     sidebar.settingsRequested()
                 }

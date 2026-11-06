@@ -1,4 +1,6 @@
 #include "UiController.h"
+#include <QFileDialog>
+#include <QDir>
 
 namespace Tsuki {
 
@@ -92,6 +94,20 @@ void UiController::toggleFavorite(const QVariant& itemOrId) {
 
 void UiController::removeRecent(const QString& gameId) {
     m_gameMgr->removeGame(gameId, false);
+}
+
+QString UiController::selectFile(const QString& title, const QString& filter, const QString& initialPath) {
+    const QString dlgTitle = title.isEmpty() ? QStringLiteral("Select File") : title;
+    const QString startDir = initialPath.isEmpty() ? QDir::homePath() : initialPath;
+    const QString selected = QFileDialog::getOpenFileName(nullptr, dlgTitle, startDir, filter);
+    return selected;
+}
+
+QString UiController::selectFolder(const QString& title, const QString& initialPath) {
+    const QString dlgTitle = title.isEmpty() ? QStringLiteral("Select Folder") : title;
+    const QString startDir = initialPath.isEmpty() ? QDir::homePath() : initialPath;
+    const QString selected = QFileDialog::getExistingDirectory(nullptr, dlgTitle, startDir, QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    return selected;
 }
 
 } // namespace Tsuki

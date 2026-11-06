@@ -7,11 +7,11 @@ Popup {
     id: root
     modal: true
     focus: true
-    width: Math.min(parent ? parent.width - 64 : 760, 760)
-    height: Math.min(parent ? parent.height - 64 : 640, 640)
-    x: parent ? (parent.width - width) / 2 : 0
-    y: parent ? (parent.height - height) / 2 : 0
-    padding: 24
+    width: Math.min(parent ? parent.width - 48 : 800, 800)
+    height: Math.min(parent ? parent.height - 48 : 660, 660)
+    x: parent ? Math.round((parent.width - width) / 2) : 0
+    y: parent ? Math.round((parent.height - height) / 2) : 0
+    padding: 0
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
     property string prefixId: "default-prefix"
@@ -25,7 +25,6 @@ Popup {
         prefixName = name || "Default"
         activeCategory = "all"
         searchQuery = ""
-        wtSearchInput.text = ""
         refreshList()
         root.open()
     }
@@ -41,249 +40,336 @@ Popup {
 
     background: Rectangle {
         color: appSettings.surfaceColor
-        radius: 16
-        border.color: appSettings.borderColor
+        radius: 24
+        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.10)
         border.width: 1
         layer.enabled: true
         layer.effect: MultiEffect {
             shadowEnabled: true
             shadowColor: Qt.rgba(0, 0, 0, 0.65)
-            shadowBlur: 0.9
+            shadowBlur: 0.8
             shadowVerticalOffset: 8
         }
     }
 
     contentItem: ColumnLayout {
-        spacing: 14
+        spacing: 0
 
-        // Header
-        RowLayout {
+        // ── Header Row ───────────────────────────────────────────────────────
+        Item {
             Layout.fillWidth: true
-            spacing: 10
-            YIcon { source: "qrc:/tsuki_app/icons/actions/wrench.svg"; color: appSettings.accentColor; size: 22 }
-            ColumnLayout {
-                spacing: 2
-                Layout.fillWidth: true
-                Label {
-                    text: "Winetricks — Prefix: " + root.prefixName
-                    color: appSettings.textColor
-                    font.pixelSize: 18
-                    font.weight: Font.DemiBold
-                }
-                Label {
-                    text: "Install Visual C++ runtimes, DirectX, .NET, DLLs, and Windows fonts directly into this prefix"
-                    color: appSettings.textSecColor
-                    font.pixelSize: 12
-                }
-            }
-            Button {
-                text: "Native Winetricks GUI"
-                onClicked: uiController.winetricksManager.launchWinetricksGui(root.prefixId)
-                background: Rectangle { radius: 16; color: appSettings.surfaceAltColor; border.color: appSettings.borderColor }
-                contentItem: Label { text: parent.text; color: appSettings.textColor; font.pixelSize: 12; leftPadding: 12; rightPadding: 12 }
-            }
-            ToolButton {
-                implicitWidth: 32; implicitHeight: 32
-                background: Rectangle { radius: 16; color: parent.hovered ? appSettings.surfaceAltColor : "transparent" }
-                contentItem: YIcon { anchors.centerIn: parent; source: "qrc:/tsuki_app/icons/actions/close.svg"; color: appSettings.textSecColor; size: 18 }
-                onClicked: root.close()
-            }
-        }
+            Layout.preferredHeight: 70
 
-        // Category Filter + Search Bar
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 24
+                anchors.rightMargin: 20
+                spacing: 12
 
-            Repeater {
-                model: [
-                    { label: "All Packages", key: "all" },
-                    { label: "Visual C++", key: "vcpp" },
-                    { label: "DirectX & Audio", key: "directx" },
-                    { label: "DLLs & .NET", key: "dlls" },
-                    { label: "Fonts", key: "fonts" }
-                ]
-                delegate: Button {
-                    required property var modelData
-                    text: modelData.label
-                    onClicked: {
-                        root.activeCategory = modelData.key
-                        root.refreshList()
+                YIcon {
+                    size: 24
+                    source: "qrc:/tsuki_app/icons/actions/wrench.svg"
+                    color: "#38bdf8"
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    Label {
+                        text: "Winetricks — " + root.prefixName
+                        color: appSettings.textColor
+                        font.pixelSize: 19
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: -0.3
                     }
-                    background: Rectangle {
-                        radius: 16
-                        color: root.activeCategory === modelData.key ? appSettings.accentColor : appSettings.surfaceAltColor
-                    }
-                    contentItem: Label {
-                        text: parent.text
-                        color: root.activeCategory === modelData.key ? "#0f0f11" : appSettings.textColor
+                    Label {
+                        text: "Install Visual C++, DirectX, .NET, and Windows system components directly into this prefix"
+                        color: appSettings.textSecColor
                         font.pixelSize: 12
-                        font.weight: root.activeCategory === modelData.key ? Font.DemiBold : Font.Normal
-                        leftPadding: 12; rightPadding: 12
                     }
+                }
+
+                M3Button {
+                    text: "Native GUI"
+                    buttonType: "outlined"
+                    onClicked: uiController.winetricksManager.launchWinetricksGui(root.prefixId)
+                }
+
+                ToolButton {
+                    implicitWidth: 36
+                    implicitHeight: 36
+                    background: Rectangle {
+                        radius: 18
+                        color: parent.hovered ? appSettings.surfaceAltColor : "transparent"
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
+                    contentItem: YIcon {
+                        anchors.centerIn: parent
+                        source: "qrc:/tsuki_app/icons/actions/close.svg"
+                        color: appSettings.textSecColor
+                        size: 18
+                    }
+                    onClicked: root.close()
                 }
             }
 
-            Item { Layout.fillWidth: true }
-
-            TextField {
-                id: wtSearchInput
-                Layout.preferredWidth: 220
-                placeholderText: "Filter verbs (e.g. vcrun2022)…"
-                color: appSettings.textColor
-                placeholderTextColor: appSettings.textTerColor
-                font.pixelSize: 13
-                leftPadding: 12; rightPadding: 12
-                onTextChanged: {
-                    root.searchQuery = text
-                    root.refreshList()
-                }
-                background: Rectangle {
-                    radius: 16
-                    color: appSettings.inputColor
-                    border.color: parent.activeFocus ? appSettings.accentColor : appSettings.borderColor
-                }
+            Rectangle {
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
             }
         }
 
-        // Verb List
-        ListView {
+        // ── Filter Toolbar (Pill Chips + Search) ─────────────────────────────
+        Item {
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
-            spacing: 8
-            model: root.filteredItems
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            Layout.preferredHeight: 56
 
-            delegate: Rectangle {
-                required property var modelData
-                width: ListView.view.width
-                height: 62
-                radius: 10
-                color: appSettings.surfaceAltColor
-                border.color: modelData.isInstalled ? appSettings.accentColor : appSettings.borderColor
-                border.width: 1
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 24
+                anchors.rightMargin: 24
+                spacing: 8
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 14
-                    anchors.rightMargin: 14
-                    spacing: 12
+                Repeater {
+                    model: [
+                        { label: "All Packages", key: "all" },
+                        { label: "Visual C++", key: "vcpp" },
+                        { label: "DirectX & Audio", key: "directx" },
+                        { label: "DLLs & .NET", key: "dlls" },
+                        { label: "Fonts", key: "fonts" }
+                    ]
+                    delegate: Rectangle {
+                        id: catTabDelegate
+                        required property var modelData
+                        readonly property bool isSelected: root.activeCategory === modelData.key
+                        height: 32
+                        width: catLabel.implicitWidth + 24
+                        radius: 16
+                        color: isSelected 
+                            ? appSettings.accentColor 
+                            : (catMA.containsMouse ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)) : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)))
+                        border.color: isSelected ? appSettings.accentColor : "transparent"
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 3
-                        RowLayout {
-                            spacing: 8
-                            Label {
-                                text: modelData.title
-                                color: appSettings.textColor
-                                font.pixelSize: 14
-                                font.weight: Font.Medium
-                            }
-                            Rectangle {
-                                radius: 4
-                                color: Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.16)
-                                implicitWidth: verbCodeLbl.implicitWidth + 10
-                                implicitHeight: 20
-                                Label {
-                                    id: verbCodeLbl
-                                    anchors.centerIn: parent
-                                    text: modelData.verb
-                                    color: appSettings.accentColor
-                                    font.pixelSize: 11
-                                    font.family: "monospace"
-                                }
+                        Label {
+                            id: catLabel
+                            anchors.centerIn: parent
+                            text: (catTabDelegate.modelData && catTabDelegate.modelData.label) ? catTabDelegate.modelData.label : ""
+                            color: catTabDelegate.isSelected ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff") : appSettings.textColor
+                            font.pixelSize: 12
+                            font.weight: catTabDelegate.isSelected ? Font.DemiBold : Font.Normal
+                        }
+
+                        MouseArea {
+                            id: catMA
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.activeCategory = catTabDelegate.modelData.key
+                                root.refreshList()
                             }
                         }
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                M3TextField {
+                    implicitWidth: 230
+                    placeholderText: "Search verbs (e.g. vcrun2022)…"
+                    leadingIcon: "qrc:/tsuki_app/icons/actions/search.svg"
+                    onCommit: (val) => {
+                        root.searchQuery = val
+                        root.refreshList()
+                    }
+                    onCleared: {
+                        root.searchQuery = ""
+                        root.refreshList()
+                    }
+                }
+            }
+        }
+
+        // ── Package Verb List ────────────────────────────────────────────────
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            ListView {
+                id: verbListView
+                anchors.fill: parent
+                anchors.leftMargin: 24
+                anchors.rightMargin: 24
+                anchors.bottomMargin: 12
+                spacing: 6
+                clip: true
+                model: root.filteredItems
+
+                delegate: Rectangle {
+                    id: verbRow
+                    required property var modelData
+                    width: verbListView.width
+                    height: 52
+                    radius: 12
+                    color: rowMA.containsMouse 
+                        ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
+                        : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03))
+                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 120 } }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 16
+                        anchors.rightMargin: 16
+                        spacing: 12
+
+                        // Verb Name
                         Label {
-                            text: modelData.description
+                            text: verbRow.modelData.verb
+                            color: appSettings.textColor
+                            font.pixelSize: 14
+                            font.weight: Font.DemiBold
+                            Layout.preferredWidth: 160
+                            elide: Text.ElideRight
+                        }
+
+                        // Category Pill
+                        Rectangle {
+                            height: 20
+                            radius: 4
+                            width: catText.implicitWidth + 12
+                            color: Qt.rgba(56/255, 189/255, 248/255, 0.15)
+                            border.color: Qt.rgba(56/255, 189/255, 248/255, 0.4)
+                            border.width: 1
+
+                            Label {
+                                id: catText
+                                anchors.centerIn: parent
+                                text: verbRow.modelData.category
+                                color: "#38bdf8"
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                            }
+                        }
+
+                        // Description
+                        Label {
+                            Layout.fillWidth: true
+                            text: verbRow.modelData.description
                             color: appSettings.textSecColor
                             font.pixelSize: 12
                             elide: Text.ElideRight
-                            Layout.fillWidth: true
+                        }
+
+                        // Status / Action
+                        Item {
+                            implicitWidth: 110
+                            implicitHeight: 32
+
+                            // 1. Installed Badge
+                            Row {
+                                anchors.centerIn: parent
+                                spacing: 4
+                                visible: verbRow.modelData.isInstalled && !verbRow.modelData.isInstalling
+
+                                YIcon {
+                                    size: 14
+                                    source: "qrc:/tsuki_app/icons/actions/check.svg"
+                                    color: "#22c55e"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                                Label {
+                                    text: "Installed"
+                                    color: "#22c55e"
+                                    font.pixelSize: 12
+                                    font.weight: Font.DemiBold
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                            }
+
+                            // 2. Installing Spinner
+                            Row {
+                                anchors.centerIn: parent
+                                spacing: 6
+                                visible: verbRow.modelData.isInstalling
+
+                                BusyIndicator {
+                                    width: 18; height: 18
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    running: parent.visible
+                                }
+                                Label {
+                                    text: "Installing…"
+                                    color: appSettings.accentColor
+                                    font.pixelSize: 12
+                                    font.weight: Font.Medium
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                            }
+
+                            // 3. Install Button
+                            M3Button {
+                                anchors.centerIn: parent
+                                visible: !verbRow.modelData.isInstalled && !verbRow.modelData.isInstalling
+                                text: "Install"
+                                buttonType: "tonal"
+                                onClicked: {
+                                    uiController.winetricksManager.installVerb(root.prefixId, verbRow.modelData.verb)
+                                }
+                            }
                         }
                     }
 
-                    Button {
-                        visible: modelData.isInstalled
-                        text: "Remove"
-                        onClicked: uiController.winetricksManager.removeComponent(root.prefixId, modelData.verb)
-                        background: Rectangle { radius: 16; color: Qt.rgba(239/255, 68/255, 68/255, 0.16); border.color: "#ef4444" }
-                        contentItem: Label { text: parent.text; color: "#ef4444"; font.pixelSize: 12; leftPadding: 12; rightPadding: 12 }
-                    }
-
-                    Button {
-                        enabled: !uiController.winetricksManager.isRunning
-                        text: modelData.isInstalled ? "Reinstall" : "Install"
-                        onClicked: uiController.winetricksManager.installVerb(root.prefixId, modelData.verb)
-                        background: Rectangle {
-                            radius: 16
-                            color: parent.enabled ? appSettings.accentColor : appSettings.inputColor
-                        }
-                        contentItem: Label {
-                            text: parent.text
-                            color: parent.enabled ? "#0f0f11" : appSettings.textTerColor
-                            font.pixelSize: 12
-                            font.weight: Font.DemiBold
-                            leftPadding: 14; rightPadding: 14
-                        }
+                    MouseArea {
+                        id: rowMA
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {}
                     }
                 }
+
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             }
         }
 
-        // Live Operation Output Console
-        Rectangle {
+        // ── Footer ───────────────────────────────────────────────────────────
+        Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 150
-            radius: 10
-            color: "#09090c"
-            border.color: appSettings.borderColor
+            Layout.preferredHeight: 60
 
-            ColumnLayout {
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+            }
+
+            RowLayout {
                 anchors.fill: parent
-                anchors.margins: 10
-                spacing: 6
+                anchors.leftMargin: 24
+                anchors.rightMargin: 24
 
-                RowLayout {
+                Label {
+                    text: (uiController && uiController.winetricksManager && uiController.winetricksManager.lastStatus) ? uiController.winetricksManager.lastStatus : ""
+                    color: appSettings.textSecColor
+                    font.pixelSize: 12
                     Layout.fillWidth: true
-                    Label {
-                        text: uiController.winetricksManager.isRunning
-                              ? ("Running winetricks: " + uiController.winetricksManager.currentVerb + "…")
-                              : "Winetricks Operation Output"
-                        color: uiController.winetricksManager.isRunning ? appSettings.accentColor : appSettings.textSecColor
-                        font.pixelSize: 12
-                        font.weight: Font.Medium
-                        Layout.fillWidth: true
-                    }
-                    Button {
-                        visible: uiController.winetricksManager.isRunning
-                        text: "Cancel"
-                        onClicked: uiController.winetricksManager.cancelCurrentOperation()
-                    }
-                    Button {
-                        text: "Clear"
-                        onClicked: uiController.winetricksManager.clearLiveOutput()
-                    }
+                    elide: Text.ElideRight
                 }
 
-                ScrollView {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    TextArea {
-                        readOnly: true
-                        text: uiController.winetricksManager.liveOutput
-                        color: "#d4d4d8"
-                        font.family: "monospace"
-                        font.pixelSize: 11
-                        wrapMode: TextEdit.Wrap
-                        background: null
-                    }
+                M3Button {
+                    text: "Close"
+                    buttonType: "tonal"
+                    onClicked: root.close()
                 }
             }
         }
     }
 }
-

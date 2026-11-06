@@ -14,43 +14,44 @@ Item {
         anchors.bottomMargin: 24
         spacing: 20
 
-        // Header
+        // ── Header ───────────────────────────────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
             spacing: 12
-            YIcon { source: "qrc:/tsuki_app/icons/nav/terminal.svg"; color: appSettings.accentColor; size: 28 }
+            YIcon { source: "qrc:/tsuki_app/icons/nav/diagnostics.svg"; color: appSettings.accentColor; size: 28 }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 2
-                Label { text: "Logging, Environment & Prefix Diagnostics"; color: appSettings.textColor; font.pixelSize: 22; font.weight: Font.Bold }
-                Label { text: "Verify system gaming dependencies, inspect live Wine/Proton game logs, and diagnose launch issues"; color: appSettings.textSecColor; font.pixelSize: 13 }
+                Label { text: "System & Gaming Diagnostics"; color: appSettings.textColor; font.pixelSize: 22; font.weight: Font.Bold; font.letterSpacing: -0.4 }
+                Label { text: "Verify system dependencies, Vulkan drivers, /dev/uinput permissions, and Wine environment integrity"; color: appSettings.textSecColor; font.pixelSize: 13 }
             }
-            Button {
+            M3Button {
                 text: "Run System Checks"
+                iconSource: "qrc:/tsuki_app/icons/actions/refresh.svg"
+                buttonType: "filled"
                 onClicked: uiController.diagnosticsManager.runSystemDiagnostics()
-                background: Rectangle { radius: 18; color: appSettings.accentColor }
-                contentItem: Label { text: parent.text; color: "#0f0f11"; font.pixelSize: 13; font.weight: Font.DemiBold; leftPadding: 16; rightPadding: 16 }
             }
         }
 
+        // ── Split Columns ────────────────────────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 20
 
-            // Left Column: System Environment & Detected Error Analyzer
+            // Left Column: Environment & Dependency Checks Card
             Rectangle {
-                Layout.preferredWidth: 420
+                Layout.preferredWidth: 460
                 Layout.fillHeight: true
-                radius: 16
+                radius: 20
                 color: appSettings.surfaceColor
-                border.color: appSettings.borderColor
+                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 12
+                    anchors.margins: 20
+                    spacing: 14
 
-                    Label { text: "Environment & Dependency Checks"; color: appSettings.textColor; font.pixelSize: 16; font.weight: Font.DemiBold }
+                    Label { text: "System Dependency Status"; color: appSettings.textColor; font.pixelSize: 16; font.weight: Font.DemiBold }
 
                     ListView {
                         Layout.fillWidth: true
@@ -60,129 +61,117 @@ Item {
                         model: uiController.diagnosticsManager.systemChecks
 
                         delegate: Rectangle {
+                            id: checkCard
                             required property var modelData
                             width: ListView.view.width
-                            height: 58
-                            radius: 10
-                            color: appSettings.surfaceAltColor
-                            border.color: modelData.ok ? Qt.rgba(52/255, 211/255, 153/255, 0.4) : "#f59e0b"
+                            height: 60
+                            radius: 12
+                            color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
+                            border.color: checkCard.modelData.ok 
+                                ? Qt.rgba(34/255, 197/255, 94/255, 0.25) 
+                                : Qt.rgba(245/255, 158/255, 11/255, 0.35)
+                            border.width: 1
 
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 12
-                                spacing: 10
+                                anchors.leftMargin: 14
+                                anchors.rightMargin: 14
+                                spacing: 12
 
                                 Rectangle {
                                     width: 10; height: 10; radius: 5
-                                    color: modelData.ok ? "#34d399" : "#f59e0b"
+                                    color: checkCard.modelData.ok ? "#22c55e" : "#f59e0b"
                                 }
 
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 2
                                     Label {
-                                        text: modelData.name
+                                        text: checkCard.modelData.name
                                         color: appSettings.textColor
-                                        font.pixelSize: 13; font.weight: Font.DemiBold
+                                        font.pixelSize: 13
+                                        font.weight: Font.DemiBold
                                     }
                                     Label {
-                                        text: modelData.detail
+                                        text: checkCard.modelData.detail
                                         color: appSettings.textSecColor
                                         font.pixelSize: 11
                                         elide: Text.ElideRight
                                         Layout.fillWidth: true
                                     }
                                 }
+
+                                YIcon {
+                                    size: 16
+                                    source: checkCard.modelData.ok ? "qrc:/tsuki_app/icons/actions/check.svg" : "qrc:/tsuki_app/icons/actions/close.svg"
+                                    color: checkCard.modelData.ok ? "#22c55e" : "#f59e0b"
+                                }
                             }
                         }
-                    }
 
-                    // Detected Wine Error Diagnostics
-                    Label {
-                        visible: uiController.diagnosticsManager.detectedIssues.length > 0
-                        text: "Recent Wine / Launch Error Diagnostics"
-                        color: "#ef4444"
-                        font.pixelSize: 14; font.weight: Font.DemiBold
-                    }
-
-                    ListView {
-                        visible: uiController.diagnosticsManager.detectedIssues.length > 0
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 140
-                        clip: true
-                        spacing: 6
-                        model: uiController.diagnosticsManager.detectedIssues
-
-                        delegate: Rectangle {
-                            required property var modelData
-                            width: ListView.view.width
-                            height: 64
-                            radius: 8
-                            color: Qt.rgba(239/255, 68/255, 68/255, 0.12)
-                            border.color: "#ef4444"
-
-                            ColumnLayout {
-                                anchors.fill: parent; anchors.margins: 8; spacing: 2
-                                Label { text: modelData.summary; color: "#ef4444"; font.pixelSize: 12; font.weight: Font.Bold; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Label { text: modelData.recommendation; color: appSettings.textColor; font.pixelSize: 11; wrapMode: Text.Wrap; maximumLineCount: 2; Layout.fillWidth: true }
-                            }
-                        }
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                     }
                 }
             }
 
-            // Right Column: Live Game Launch Log Viewer
+            // Right Column: System Hardware & Driver Info
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                radius: 16
+                radius: 20
                 color: appSettings.surfaceColor
-                border.color: appSettings.borderColor
+                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 12
+                    anchors.margins: 20
+                    spacing: 16
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Label {
-                            text: "Live Game Execution Logs"
-                            color: appSettings.textColor
-                            font.pixelSize: 16; font.weight: Font.DemiBold
-                            Layout.fillWidth: true
-                        }
-                        Button {
-                            text: "Export Log"
-                            onClicked: uiController.diagnosticsManager.exportGameLog(uiController.diagnosticsManager.selectedLogGameId, "")
-                        }
-                        Button {
-                            text: "Clear"
-                            onClicked: uiController.diagnosticsManager.clearGameLog(uiController.diagnosticsManager.selectedLogGameId)
-                        }
-                    }
+                    Label { text: "System & Driver Summary"; color: appSettings.textColor; font.pixelSize: 16; font.weight: Font.DemiBold }
 
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        radius: 10
-                        color: "#08080b"
-                        border.color: appSettings.borderColor
+                        radius: 12
+                        color: appSettings.isEffectiveDark ? "#09090c" : "#f4f4f5"
+                        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.06)
 
                         ScrollView {
                             anchors.fill: parent
-                            anchors.margins: 12
+                            anchors.margins: 16
                             clip: true
-                            TextArea {
-                                readOnly: true
-                                text: uiController.diagnosticsManager.activeGameLog
-                                color: "#e4e4e7"
-                                font.family: "monospace"
-                                font.pixelSize: 12
-                                wrapMode: TextEdit.Wrap
-                                background: null
+
+                            ColumnLayout {
+                                width: parent.width
+                                spacing: 12
+
+                                Label {
+                                    text: "Linux Architecture: x86_64\n" +
+                                          "Vulkan API: Active (DirectX Translation via DXVK & VKD3D-Proton)\n" +
+                                          "Graphics Compositor: Wayland / XWayland\n" +
+                                          "Audio Server: PipeWire / PulseAudio\n" +
+                                          "XInput Subsystem: Standalone SDL2 Virtual Controller Driver (/dev/uinput)\n" +
+                                          "Package Tools: Winetricks & Cabextract"
+                                    color: appSettings.textColor
+                                    font.family: "monospace"
+                                    font.pixelSize: 12
+                                    lineHeight: 1.4
+                                    wrapMode: Text.Wrap
+                                    Layout.fillWidth: true
+                                }
                             }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        M3Button {
+                            text: "Export System Report"
+                            iconSource: "qrc:/tsuki_app/icons/actions/shortcut.svg"
+                            buttonType: "tonal"
+                            onClicked: uiController.diagnosticsManager.exportSystemDiagnostics("")
                         }
                     }
                 }
@@ -190,4 +179,3 @@ Item {
         }
     }
 }
-

@@ -5,6 +5,17 @@
         <file alias="qml/components/GamepadPrompt.qml">../src/qml/components/GamepadPrompt.qml</file>
         <file alias="qml/components/AddGameDialog.qml">../src/qml/components/AddGameDialog.qml</file>
         <file alias="qml/components/WinetricksModal.qml">../src/qml/components/WinetricksModal.qml</file>
+        <file alias="qml/components/M3Button.qml">../src/qml/components/M3Button.qml</file>
+        <file alias="qml/components/M3TextField.qml">../src/qml/components/M3TextField.qml</file>
+        <file alias="qml/components/Toggle.qml">../src/qml/components/Toggle.qml</file>
+        <file alias="qml/components/M3SegmentedButton.qml">../src/qml/components/M3SegmentedButton.qml</file>
+        <file alias="qml/components/StyledSlider.qml">../src/qml/components/StyledSlider.qml</file>
+        <file alias="qml/components/StyledCombo.qml">../src/qml/components/StyledCombo.qml</file>
+        <file alias="qml/components/M3ColorPicker.qml">../src/qml/components/M3ColorPicker.qml</file>
+        <file alias="qml/components/SettingsGroup.qml">../src/qml/components/SettingsGroup.qml</file>
+        <file alias="qml/components/SettingRow.qml">../src/qml/components/SettingRow.qml</file>
+        <file alias="qml/components/SettingField.qml">../src/qml/components/SettingField.qml</file>
+        <file alias="qml/components/RowDiv.qml">../src/qml/components/RowDiv.qml</file>
         <file alias="qml/home/HomePage.qml">../src/qml/home/HomePage.qml</file>
         <file alias="qml/home/Sidebar.qml">../src/qml/home/Sidebar.qml</file>
         <file alias="qml/home/TopBar.qml">../src/qml/home/TopBar.qml</file>
@@ -17,21 +28,22 @@
         <file alias="qml/pages/DiagnosticsView.qml">../src/qml/pages/DiagnosticsView.qml</file>
         <file alias="qml/pages/SettingsPage.qml">../src/qml/pages/SettingsPage.qml</file>
 
+        <file>icons/brand/tsuki.svg</file>
         <file>icons/brand/tsuki-sidebar.svg</file>
-        <file>icons/nav/home.svg</file>
-        <file>icons/nav/home-filled.svg</file>
-        <file>icons/nav/star.svg</file>
-        <file>icons/nav/star-filled.svg</file>
+        <file>icons/nav/library.svg</file>
+        <file>icons/nav/library-filled.svg</file>
+        <file>icons/nav/favourite.svg</file>
+        <file>icons/nav/favourite-filled.svg</file>
+        <file>icons/nav/recent.svg</file>
+        <file>icons/nav/recent-filled.svg</file>
         <file>icons/nav/runner.svg</file>
         <file>icons/nav/runner-filled.svg</file>
-        <file>icons/nav/prefix.svg</file>
-        <file>icons/nav/prefix-filled.svg</file>
+        <file>icons/nav/prefixes.svg</file>
+        <file>icons/nav/prefixes-filled.svg</file>
         <file>icons/nav/controller.svg</file>
         <file>icons/nav/controller-filled.svg</file>
-        <file>icons/nav/terminal.svg</file>
-        <file>icons/nav/terminal-filled.svg</file>
-        <file>icons/nav/download.svg</file>
-        <file>icons/nav/download-filled.svg</file>
+        <file>icons/nav/diagnostics.svg</file>
+        <file>icons/nav/diagnostics-filled.svg</file>
 
         <file>icons/actions/search.svg</file>
         <file>icons/actions/close.svg</file>
@@ -50,10 +62,11 @@
         <file>icons/actions/refresh.svg</file>
         <file>icons/actions/back.svg</file>
         <file>icons/actions/shortcut.svg</file>
+        <file>icons/actions/check.svg</file>
+        <file>icons/actions/chevron_down.svg</file>
 
         <file>icons/gamepad/btn_a.svg</file>
         <file>icons/gamepad/btn_b.svg</file>
         <file>icons/gamepad/btn_y.svg</file>
     </qresource>
 </RCC>
-

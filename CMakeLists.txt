@@ -15,6 +15,7 @@ pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 find_package(Qt6 REQUIRED COMPONENTS
     Core
     Gui
+    Widgets
     Qml
     Quick
     QuickControls2
@@ -58,6 +59,7 @@ target_include_directories(tsuki_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(tsuki_core PUBLIC
     Qt6::Core
     Qt6::Gui
+    Qt6::Widgets
     Qt6::Qml
     Qt6::Quick
     Qt6::QuickControls2

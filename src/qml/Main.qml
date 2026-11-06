@@ -85,6 +85,16 @@ ApplicationWindow {
             onGameDetailsRequested: function(gameId) {
                 stack.push(detailPageComponent, { gameId: gameId })
             }
+            onSettingsRequested: {
+                stack.push(settingsPageComponent)
+            }
+        }
+    }
+
+    Component {
+        id: settingsPageComponent
+        SettingsPage {
+            onBackRequested: stack.pop()
         }
     }
 

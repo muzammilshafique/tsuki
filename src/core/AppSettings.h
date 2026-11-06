@@ -84,7 +84,7 @@ public:
     // Theme Getters/Setters
     int themeMode() const { return m_themeMode; }
     void setThemeMode(int mode);
-    bool isEffectiveDark() const { return m_themeMode != 1; }
+    bool isEffectiveDark() const;
 
     QColor bgColor() const;
     QColor sidebarColor() const;
@@ -176,7 +176,7 @@ signals:
 
 private:
     QSettings m_settings;
-    int m_themeMode = 0; // 0: Dark, 1: Light, 2: OLED Black
+    int m_themeMode = 0; // 0: Dark, 1: Light, 2: System
     QColor m_accentColor;
     bool m_sidebarCollapsed = false;
     int m_defaultFilter = -1;
@@ -193,14 +193,14 @@ private:
     QString m_defaultRunnerLocation;
 
     bool m_mangohudDefault = false;
-    bool m_gamemodeDefault = true;
+    bool m_gamemodeDefault = false;
     bool m_dxvkDefault = true;
     bool m_vkd3dDefault = true;
     bool m_esyncDefault = true;
     bool m_fsyncDefault = true;
     QString m_defaultDxvkHud = QStringLiteral("none");
 
-    bool m_xboxEmulationDefault = true;
+    bool m_xboxEmulationDefault = false;
     QString m_defaultControllerProfileId = QStringLiteral("default-xbox");
 
     QString m_steamGridDbApiKey;

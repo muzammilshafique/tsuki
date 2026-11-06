@@ -8,6 +8,7 @@ Page {
     id: page
 
     signal gameDetailsRequested(string gameId)
+    signal settingsRequested()
     property string activeSection: "library"
 
     function openWinetricks(prefixId, title) {
@@ -58,7 +59,7 @@ Page {
                 page.activeSection = sec
             }
             onSettingsRequested: {
-                page.activeSection = "settings"
+                page.settingsRequested()
             }
             onFocusContentRequested: {
                 if (page.activeSection === "library") grid.forceFocus()
@@ -120,11 +121,6 @@ Page {
 
                 DiagnosticsView {
                     visible: page.activeSection === "diagnostics"
-                    anchors.fill: parent
-                }
-
-                SettingsPage {
-                    visible: page.activeSection === "settings"
                     anchors.fill: parent
                 }
             }

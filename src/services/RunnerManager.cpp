@@ -74,8 +74,7 @@ std::optional<RunnerRecord> RunnerManager::resolveRunner(const QString& preferre
 QString RunnerManager::runnerTagForId(const QString& runnerId) const {
     auto r = resolveRunner(runnerId);
     if (!r.has_value()) return QStringLiteral("WINE");
-    if (r->type == QStringLiteral("proton-ge")) return QStringLiteral("PROTON-GE");
-    if (r->type == QStringLiteral("proton")) return QStringLiteral("PROTON");
+    if (r->type == QStringLiteral("proton-ge") || r->type == QStringLiteral("proton")) return QStringLiteral("PROTON");
     if (r->type == QStringLiteral("wine-staging")) return QStringLiteral("STAGING");
     if (r->type == QStringLiteral("custom")) return QStringLiteral("CUSTOM");
     return QStringLiteral("WINE");

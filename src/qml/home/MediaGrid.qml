@@ -5,7 +5,7 @@ import QtQuick.Effects
 import "../components"
 
 Item {
-    id: mediaGrid
+    id: root
     Layout.fillWidth: true
     Layout.fillHeight: true
 
@@ -22,6 +22,7 @@ Item {
     function forceFocus() { grid.forceActiveFocus() }
     readonly property int columns: Math.max(1, Math.floor(grid.width / grid.cellWidth))
 
+    // ── Dynamic Settings & Helpers (Matching Yoru M3 Architecture) ───────────
     readonly property bool isDark: appSettings.isEffectiveDark
     readonly property int  cardRadius: appSettings.cardRadius
 
@@ -29,35 +30,42 @@ Item {
     readonly property bool hasTagAboveTitle: hasTitleBelow && appSettings.tagPosition === 1
     readonly property bool hasTagBelowTitle: hasTitleBelow && appSettings.tagPosition === 0
 
-    readonly property int metaHeight: {
+    // Snug metadata height with zero empty bottom space
+    readonly property int  metaHeight: {
         if (!hasTitleBelow) return 0
         if (hasTagAboveTitle || hasTagBelowTitle) return 52
-        return 34
+        return 32
     }
 
     function typeLabel(t, runnerTag) {
-        if (runnerTag && runnerTag.length > 0) return runnerTag
-        return t === 0 ? "PROTON-GE" : (t === 1 ? "WINE" : "CUSTOM")
+        if (runnerTag && runnerTag.length > 0) {
+            let upper = runnerTag.toUpperCase()
+            if (upper === "PROTON-GE" || upper === "PROTON") return "PROTON"
+            return runnerTag
+        }
+        return t === 0 ? "PROTON" : (t === 1 ? "WINE" : "CUSTOM")
     }
+
     function tagColor(t) {
         return t === 0 ? appSettings.tagColorSeries
                        : (t === 1 ? appSettings.tagColorMovie
                                   : appSettings.tagColorAnime)
     }
 
+    // ── GridView ─────────────────────────────────────────────────────────────
     GridView {
         id: grid
         anchors.fill: parent
         clip: false
-        model: mediaGrid.model
+        model: root.model
         cellWidth:  Math.floor(width / Math.max(1, Math.floor(width / appSettings.thumbScaleTarget)))
-        cellHeight: Math.floor(((cellWidth - 16) * 1.5) + mediaGrid.metaHeight)
+        cellHeight: Math.floor(((cellWidth - 16) * 1.5) + root.metaHeight)
 
         focus: true
         keyNavigationEnabled: false
 
         Connections {
-            target: mediaGrid.model
+            target: root.model
             function onModelReset() {
                 grid.currentIndex = 0
                 grid.positionViewAtBeginning()
@@ -82,22 +90,31 @@ Item {
             }
         }
 
+        onActiveFocusChanged: {
+            if (!activeFocus) {
+                holdMenuTimer.stop()
+                grid.isHoldingActionKey = false
+                grid.holdTriggered = false
+            }
+        }
+
         function activatePrimaryAction(gameId) {
+            if (!gameId || gameId.length === 0) return
             if (appSettings.leftClickBehavior === 0) {
                 if (uiController.launchPipeline.isGameRunning(gameId)) {
-                    mediaGrid.gameDetailsRequested(gameId)
+                    root.gameDetailsRequested(gameId)
                 } else {
                     uiController.launchPipeline.launchGame(gameId)
-                    mediaGrid.gameLaunched(gameId)
+                    root.gameLaunched(gameId)
                 }
             } else {
-                mediaGrid.gameDetailsRequested(gameId)
+                root.gameDetailsRequested(gameId)
             }
         }
 
         function selectCurrent() {
             if (grid.currentIndex >= 0 && grid.currentIndex < grid.count) {
-                let itemData = mediaGrid.model.get(grid.currentIndex)
+                let itemData = root.model.get(grid.currentIndex)
                 if (itemData && itemData.id) {
                     activatePrimaryAction(itemData.id)
                 }
@@ -113,13 +130,19 @@ Item {
 
         Keys.onLeftPressed: (event) => {
             event.accepted = true
+            holdMenuTimer.stop()
+            grid.isHoldingActionKey = false
             let currItem = grid.currentItem
             if (currItem && currItem.isMenuOpen) {
                 currItem.isMenuOpen = false
                 return
             }
-            if (grid.count === 0 || grid.currentIndex % mediaGrid.columns === 0) {
-                mediaGrid.focusSidebarRequested()
+            if (grid.count === 0) {
+                root.focusSidebarRequested()
+                return
+            }
+            if (grid.currentIndex % root.columns === 0) {
+                root.focusSidebarRequested()
             } else if (grid.currentIndex > 0) {
                 grid.currentIndex--
             }
@@ -127,6 +150,8 @@ Item {
 
         Keys.onRightPressed: (event) => {
             event.accepted = true
+            holdMenuTimer.stop()
+            grid.isHoldingActionKey = false
             let currItem = grid.currentItem
             if (currItem && currItem.isMenuOpen) {
                 currItem.isMenuOpen = false
@@ -139,27 +164,35 @@ Item {
 
         Keys.onUpPressed: (event) => {
             event.accepted = true
+            holdMenuTimer.stop()
+            grid.isHoldingActionKey = false
             let currItem = grid.currentItem
             if (currItem && currItem.isMenuOpen) {
                 currItem.navigateMenuUp()
                 return
             }
-            if (grid.count === 0 || grid.currentIndex < mediaGrid.columns) {
-                mediaGrid.focusTopBarRequested()
+            if (grid.count === 0) {
+                root.focusTopBarRequested()
+                return
+            }
+            if (grid.currentIndex < root.columns) {
+                root.focusTopBarRequested()
             } else {
-                grid.currentIndex = Math.max(0, grid.currentIndex - mediaGrid.columns)
+                grid.currentIndex = Math.max(0, grid.currentIndex - root.columns)
             }
         }
 
         Keys.onDownPressed: (event) => {
             event.accepted = true
+            holdMenuTimer.stop()
+            grid.isHoldingActionKey = false
             let currItem = grid.currentItem
             if (currItem && currItem.isMenuOpen) {
                 currItem.navigateMenuDown()
                 return
             }
-            if (grid.currentIndex + mediaGrid.columns < grid.count) {
-                grid.currentIndex += mediaGrid.columns
+            if (grid.currentIndex + root.columns < grid.count) {
+                grid.currentIndex += root.columns
             } else if (grid.currentIndex < grid.count - 1) {
                 grid.currentIndex = grid.count - 1
             }
@@ -167,11 +200,13 @@ Item {
 
         Keys.onEscapePressed: (event) => {
             event.accepted = true
+            holdMenuTimer.stop()
+            grid.isHoldingActionKey = false
             let currItem = grid.currentItem
             if (currItem && currItem.isMenuOpen) {
                 currItem.isMenuOpen = false
             } else {
-                mediaGrid.focusSidebarRequested()
+                root.focusSidebarRequested()
             }
         }
 
@@ -203,6 +238,7 @@ Item {
                 if (currItem && typeof currItem.toggleContextMenuFromKeyboard === "function") {
                     currItem.toggleContextMenuFromKeyboard()
                 }
+                return
             }
         }
 
@@ -235,7 +271,7 @@ Item {
             }
         }
 
-        // ── Delegate ─────────────────────────────────────────────────────────
+        // ── Delegate (Exact Yoru Card Aesthetics) ────────────────────────────
         delegate: Item {
             id: cell
             required property int    index
@@ -252,7 +288,11 @@ Item {
 
             property bool isMenuOpen: false
             property int menuFocusedIndex: 0
-            readonly property int menuItemCount: 6
+            readonly property int menuItemCount: 4
+
+            onIsMenuOpenChanged: {
+                if (!isMenuOpen) menuFocusedIndex = 0
+            }
 
             function openContextMenuFromKeyboard() {
                 menuFocusedIndex = 0
@@ -260,8 +300,8 @@ Item {
             }
 
             function toggleContextMenuFromKeyboard() {
-                isMenuOpen = !isMenuOpen
-                if (isMenuOpen) menuFocusedIndex = 0
+                if (isMenuOpen) isMenuOpen = false
+                else openContextMenuFromKeyboard()
             }
 
             function navigateMenuUp() {
@@ -272,27 +312,34 @@ Item {
                 menuFocusedIndex = (menuFocusedIndex + 1) % menuItemCount
             }
 
-            function triggerMenuAction() {
-                isMenuOpen = false
-                switch (menuFocusedIndex) {
-                    case 0: // Configure / Edit
-                        mediaGrid.gameDetailsRequested(cell.gameId)
+            function executeAction(actionIdx) {
+                cell.isMenuOpen = false
+                switch (actionIdx) {
+                    case 0: // Edit
+                        root.gameDetailsRequested(cell.gameId)
                         break
-                    case 1: // Winetricks
-                        mediaGrid.winetricksRequested(cell.prefixId, cell.title)
-                        break
-                    case 2: // Open Game Directory
-                        uiController.gameManager.openGameDirectory(cell.gameId)
-                        break
-                    case 3: // Open Prefix Directory
-                        uiController.prefixManager.openPrefixInFileManager(cell.prefixId)
-                        break
-                    case 4: // Favourite
+                    case 1: // Favourite
                         uiController.gameManager.toggleFavorite(cell.gameId)
                         break
-                    case 5: // Remove Game
+                    case 2: // Pin / Unpin
+                        uiController.gameManager.togglePin(cell.gameId)
+                        break
+                    case 3: // Remove Game
                         uiController.gameManager.removeGame(cell.gameId, false)
                         break
+                }
+            }
+
+            function triggerMenuAction() {
+                executeAction(menuFocusedIndex)
+            }
+
+            Connections {
+                target: uiController
+                function onKeyboardNavActiveChanged() {
+                    if (!uiController.isKeyboardNavActive) {
+                        cell.isMenuOpen = false
+                    }
                 }
             }
 
@@ -321,19 +368,21 @@ Item {
                     }
                 }
 
+                // ── Solid rounded card background base ──
                 Rectangle {
                     id: cardBg
                     anchors.fill: parent
-                    radius: mediaGrid.cardRadius
+                    radius: appSettings.cardRadius
                     color: appSettings.surfaceColor
                     antialiasing: true
                 }
 
+                // ── Squircle mask shape ──
                 Rectangle {
                     id: cardMask
                     anchors.fill: parent
                     anchors.margins: 1
-                    radius: mediaGrid.cardRadius + 2.5
+                    radius: appSettings.cardRadius + 2.5
                     color: "white"
                     antialiasing: true
                     visible: false
@@ -341,6 +390,7 @@ Item {
                     layer.smooth: true
                 }
 
+                // ── Masked card content (blur layer applies only here) ──
                 Item {
                     id: cardContent
                     anchors.fill: parent
@@ -355,55 +405,105 @@ Item {
                         blur: cell.isCardBlurred ? 1.0 : 0.0
                         blurMax: cell.isCardBlurred ? 32 : 0
                         saturation: 0.0
-                        brightness: cell.isMenuOpen ? -0.25 : (cell.isCardBlurred ? -0.28 : 0.0)
+                        brightness: cell.isMenuOpen ? -0.22 : (cell.isCardBlurred ? -0.28 : 0.0)
                         Behavior on blur { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                         Behavior on brightness { NumberAnimation { duration: 180 } }
                     }
 
                     Rectangle { anchors.fill: parent; color: appSettings.surfaceColor }
 
-                    // Metadata below cover
+                    // ── Metadata (title + runner tag/year below cover) ────────
                     Item {
                         id: metadataArea
-                        visible: mediaGrid.metaHeight > 0
+                        visible: root.metaHeight > 0
                         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-                        height: mediaGrid.metaHeight
+                        height: root.metaHeight
 
                         Rectangle {
                             anchors { top: parent.top; left: parent.left; right: parent.right }
                             height: 1
-                            color: mediaGrid.isDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.06)
+                            color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.06)
                         }
 
-                        RowLayout {
+                        ColumnLayout {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.leftMargin: 10
                             anchors.rightMargin: 10
-                            spacing: 6
+                            spacing: 4
 
-                            Label {
-                                text: cell.title
-                                color: appSettings.textColor
-                                font { pixelSize: 14; weight: Font.Medium }
-                                renderType: Text.QtRendering
-                                elide: Text.ElideRight
-                                maximumLineCount: 1
+                            // 1. Tag Row (Above Title if tagPosition === 1)
+                            RowLayout {
+                                visible: appSettings.tagPosition === 1
+                                spacing: 6
                                 Layout.fillWidth: true
+
+                                Rectangle {
+                                    width: typeLabelTop.implicitWidth + 8; height: 18; radius: 4
+                                    property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type)
+                                    color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.18)
+                                    Label {
+                                        id: typeLabelTop; anchors.centerIn: parent
+                                        text: cell.isRunning ? "RUNNING" : root.typeLabel(cell.type, cell.runnerTag)
+                                        color: parent.tagC
+                                        font { pixelSize: 10; weight: Font.Medium; letterSpacing: 0.5 }
+                                        renderType: Text.QtRendering
+                                    }
+                                }
+
+                                Item { Layout.fillWidth: true }
                             }
 
-                            Label {
-                                text: cell.year
-                                color: cell.isRunning ? "#34d399" : appSettings.textSecColor
-                                font.pixelSize: 12
-                                font.weight: cell.isRunning ? Font.Bold : Font.Normal
-                                visible: appSettings.showYear && cell.year.length > 0
+                            // 2. Main Title + Year
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                Label {
+                                    text: cell.title
+                                    color: appSettings.textColor
+                                    font { pixelSize: 15; weight: Font.Normal; letterSpacing: 0.1 }
+                                    renderType: Text.QtRendering
+                                    elide: Text.ElideRight
+                                    maximumLineCount: 1
+                                    Layout.fillWidth: true
+                                }
+
+                                Label {
+                                    text: cell.year ? ("(" + cell.year + ")") : ""
+                                    color: cell.isRunning ? "#22c55e" : appSettings.textSecColor
+                                    font.pixelSize: 13
+                                    font.weight: Font.Normal
+                                    visible: appSettings.showYear && cell.year && cell.year.length > 0
+                                }
+                            }
+
+                            // 3. Tag Row (Below Title if tagPosition === 0)
+                            RowLayout {
+                                visible: appSettings.tagPosition === 0
+                                spacing: 6
+                                Layout.fillWidth: true
+
+                                Rectangle {
+                                    width: typeLabelBottom.implicitWidth + 8; height: 18; radius: 4
+                                    property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type)
+                                    color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.18)
+                                    Label {
+                                        id: typeLabelBottom; anchors.centerIn: parent
+                                        text: cell.isRunning ? "RUNNING" : root.typeLabel(cell.type, cell.runnerTag)
+                                        color: parent.tagC
+                                        font { pixelSize: 10; weight: Font.Medium; letterSpacing: 0.5 }
+                                        renderType: Text.QtRendering
+                                    }
+                                }
+
+                                Item { Layout.fillWidth: true }
                             }
                         }
                     }
 
-                    // Cover area
+                    // ── Cover area (poster image + overlays) ─────────────────
                     Item {
                         id: coverArea
                         anchors { left: parent.left; right: parent.right; top: parent.top }
@@ -416,69 +516,256 @@ Item {
                             id: coverImg
                             anchors.fill: parent
                             source: cell.coverPath
-                            sourceSize.width: 300; sourceSize.height: 450
+                            sourceSize.width: 320; sourceSize.height: 480
                             fillMode: Image.PreserveAspectCrop; asynchronous: true
                             visible: status === Image.Ready
                         }
 
-                        // Subtle Hover darkening + Play Overlay Icon
+                        // Placeholder icon when no cover
+                        YIcon {
+                            anchors.centerIn: parent
+                            size: 44
+                            source: "qrc:/tsuki_app/icons/nav/controller.svg"
+                            color: appSettings.textTerColor
+                            opacity: 0.35
+                            visible: cell.coverPath.toString().length === 0 || coverImg.status === Image.Error
+                        }
+
+                        // Top vignette (idle view when titleVisibility === 1)
                         Rectangle {
-                            visible: !cell.isMenuOpen
+                            anchors { left: parent.left; right: parent.right; top: parent.top }
+                            height: 48
+                            visible: appSettings.titleVisibility === 1 && !cell.isCardBlurred
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.55) }
+                                GradientStop { position: 1.0; color: "transparent" }
+                            }
+                        }
+
+                        // Bottom vignette (idle view when titleVisibility === 1)
+                        Rectangle {
+                            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                            height: 48
+                            visible: appSettings.titleVisibility === 1 && !cell.isCardBlurred
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: "transparent" }
+                                GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.55) }
+                            }
+                        }
+
+                        // Bottom vignette (when metadata is below)
+                        Rectangle {
+                            visible: root.metaHeight > 0
+                            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                            height: 36
+                            gradient: Gradient {
+                                GradientStop { position: 0; color: "transparent" }
+                                GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0.3) }
+                            }
+                        }
+
+                        // Dark tint overlay when blurred on hover
+                        Rectangle {
                             anchors.fill: parent
-                            color: "#000000"
-                            opacity: cell.isHoveredOrFocused ? 0.28 : 0.0
+                            color: Qt.rgba(0, 0, 0, 0.46)
+                            opacity: (appSettings.titleVisibility === 1 && cell.isHoveredOrFocused && !cell.isMenuOpen) ? 1.0 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                        }
+
+                        // Subtle Hover darkening when title is below
+                        Rectangle {
+                            visible: appSettings.titleVisibility !== 1 && !cell.isMenuOpen
+                            anchors.fill: parent; color: "#000000"
+                            opacity: cell.isMouseActive ? 0.08 : 0
                             Behavior on opacity { NumberAnimation { duration: 160 } }
                         }
                     }
-                }
+                } // ── END OF cardContent ──
 
-                // Floating Runner / Status Tag Badge (Top-Left)
+                // ── Floating Tag Badge on Poster (when tagPosition === 2) ──
                 Rectangle {
-                    visible: !cell.isMenuOpen
+                    id: onPosterTagBadge
+                    visible: appSettings.tagPosition === 2 && !cell.isMenuOpen
                     anchors.left: parent.left
                     anchors.top: parent.top
                     anchors.margins: 8
                     z: 12
                     height: 22
                     radius: 4
-                    width: onPosterTagLabel.implicitWidth + 12
-                    property color tagC: cell.isRunning ? "#34d399" : mediaGrid.tagColor(cell.type)
-                    color: cell.isHoveredOrFocused ? tagC : Qt.rgba(0, 0, 0, 0.78)
-                    border.color: tagC
+                    width: onPosterTagLabel.implicitWidth + 10
+                    property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type)
+                    color: cell.isHoveredOrFocused ? (cell.isRunning ? "#22c55e" : appSettings.accentColor) : Qt.rgba(0, 0, 0, 0.75)
+                    border.color: cell.isHoveredOrFocused ? (cell.isRunning ? "#22c55e" : appSettings.accentColor) : Qt.rgba(tagC.r, tagC.g, tagC.b, 0.4)
                     border.width: 1
+                    Behavior on color { ColorAnimation { duration: 160 } }
 
                     Label {
                         id: onPosterTagLabel
                         anchors.centerIn: parent
-                        text: cell.isRunning ? "RUNNING" : mediaGrid.typeLabel(cell.type, cell.runnerTag)
-                        color: cell.isHoveredOrFocused ? "#0f0f11" : parent.tagC
-                        font { pixelSize: 10; weight: Font.DemiBold; letterSpacing: 0.5 }
+                        text: cell.isRunning ? "RUNNING" : root.typeLabel(cell.type, cell.runnerTag)
+                        color: cell.isHoveredOrFocused ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff") : parent.tagC
+                        font { pixelSize: 10; weight: Font.Medium; letterSpacing: 0.5 }
                         renderType: Text.QtRendering
                     }
                 }
 
-                // Center Play / Stop Pill Indicator on Hover
+                // ── Center Title Area (Visible on Hover when titleVisibility === 1) ──
+                Item {
+                    id: centerTitleArea
+                    anchors.fill: parent
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 12
+                    anchors.topMargin: 24
+                    anchors.bottomMargin: 28
+                    z: 12
+
+                    opacity: (appSettings.titleVisibility === 1 && cell.isHoveredOrFocused && !cell.isMenuOpen) ? 1.0 : 0.0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        width: parent.width
+                        spacing: 6
+
+                        // Tag Row Above Title
+                        RowLayout {
+                            Layout.alignment: Qt.AlignHCenter
+                            spacing: 6
+                            visible: appSettings.tagPosition === 1
+
+                            Rectangle {
+                                height: 20
+                                radius: 4
+                                width: hTagLblAbove.implicitWidth + 12
+                                property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type)
+                                color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.25)
+                                border.color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.6)
+                                border.width: 1
+
+                                Label {
+                                    id: hTagLblAbove
+                                    anchors.centerIn: parent
+                                    text: cell.isRunning ? "RUNNING" : root.typeLabel(cell.type, cell.runnerTag)
+                                    color: parent.tagC
+                                    font { pixelSize: 10; weight: Font.Medium; letterSpacing: 0.5 }
+                                    renderType: Text.QtRendering
+                                }
+                            }
+                        }
+
+                        // Main Title
+                        Label {
+                            Layout.fillWidth: true
+                            text: cell.title
+                            color: "#ffffff"
+                            font { pixelSize: 16; weight: Font.Normal }
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            lineHeight: 1.2
+                            wrapMode: Text.Wrap
+                            maximumLineCount: 3
+                            elide: Text.ElideRight
+                            renderType: Text.QtRendering
+                        }
+
+                        // Release Year
+                        Label {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: cell.year ? ("(" + cell.year + ")") : ""
+                            color: Qt.rgba(1, 1, 1, 0.75)
+                            font.pixelSize: 13
+                            font.weight: Font.Normal
+                            visible: appSettings.showYear && cell.year && cell.year.length > 0
+                            renderType: Text.QtRendering
+                        }
+
+                        // Tag Row Below Title
+                        RowLayout {
+                            Layout.alignment: Qt.AlignHCenter
+                            spacing: 6
+                            visible: appSettings.tagPosition === 0
+
+                            Rectangle {
+                                height: 20
+                                radius: 4
+                                width: hTagLblBelow.implicitWidth + 12
+                                property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type)
+                                color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.25)
+                                border.color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.6)
+                                border.width: 1
+
+                                Label {
+                                    id: hTagLblBelow
+                                    anchors.centerIn: parent
+                                    text: cell.isRunning ? "RUNNING" : root.typeLabel(cell.type, cell.runnerTag)
+                                    color: parent.tagC
+                                    font { pixelSize: 10; weight: Font.Medium; letterSpacing: 0.5 }
+                                    renderType: Text.QtRendering
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Bottom Action Prompt (Visible on Hover when titleVisibility === 1) ──
+                Item {
+                    id: bottomActionArea
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 10
+                    height: 18
+                    z: 12
+
+                    opacity: (appSettings.titleVisibility === 1 && cell.isHoveredOrFocused && !cell.isMenuOpen) ? 1.0 : 0.0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+                    GamepadPrompt {
+                        anchors.centerIn: parent
+                        prefixText: uiController.isKeyboardNavActive ? "Press" : ""
+                        iconSource: (uiController.gamepad && uiController.gamepad.isConnected && uiController.isKeyboardNavActive) ? uiController.gamepad.actionIconSource : ""
+                        keyName: (uiController.isKeyboardNavActive && (!uiController.gamepad || !uiController.gamepad.isConnected)) ? "Enter" : ""
+                        suffixText: {
+                            if (cell.isRunning) return uiController.isKeyboardNavActive ? "to view" : "Click to view"
+                            if (appSettings.leftClickBehavior === 1) return uiController.isKeyboardNavActive ? "to view" : "Click to view"
+                            return uiController.isKeyboardNavActive ? "to launch" : "Click to play"
+                        }
+                        textColor: cell.isRunning ? "#22c55e" : appSettings.accentColor
+                        iconColor: cell.isRunning ? "#22c55e" : appSettings.accentColor
+                        pixelSize: 12
+                        iconSize: 14
+                        isBold: false
+                    }
+                }
+
+                // ── Center Quick Play / Stop / View Floating Pill on Hover ───────────
                 Rectangle {
-                    visible: cell.isHoveredOrFocused && !cell.isMenuOpen
+                    visible: appSettings.titleVisibility !== 1 && cell.isHoveredOrFocused && !cell.isMenuOpen
                     anchors.centerIn: parent
-                    anchors.verticalCenterOffset: -mediaGrid.metaHeight / 2
+                    anchors.verticalCenterOffset: -root.metaHeight / 2
                     width: 48
                     height: 48
                     radius: 24
                     color: cell.isRunning ? "#ef4444" : appSettings.accentColor
                     z: 13
-                    scale: cell.isHoveredOrFocused ? 1.0 : 0.7
+                    scale: (cell.isHoveredOrFocused && !cell.isMenuOpen) ? 1.0 : 0.7
                     Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
                     YIcon {
                         anchors.centerIn: parent
                         size: 20
-                        source: cell.isRunning ? "qrc:/tsuki_app/icons/actions/stop.svg" : "qrc:/tsuki_app/icons/actions/play.svg"
+                        source: {
+                            if (cell.isRunning) return "qrc:/tsuki_app/icons/actions/stop.svg"
+                            if (appSettings.leftClickBehavior === 1) return "qrc:/tsuki_app/icons/actions/edit.svg"
+                            return "qrc:/tsuki_app/icons/actions/play.svg"
+                        }
                         color: cell.isRunning ? "#ffffff" : (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
                     }
                 }
 
-                // Card MouseArea (Left-click launches game, Right-click opens context menu)
+                // ── Card MouseArea ───────────────────────────────────────────
                 MouseArea {
                     id: hoverMouse
                     anchors.fill: parent
@@ -489,6 +776,10 @@ Item {
                     onPositionChanged: { uiController.setKeyboardNavActive(false) }
                     onPressed: { uiController.setKeyboardNavActive(false) }
                     onClicked: (mouse) => {
+                        if (cell.isMenuOpen) {
+                            cell.isMenuOpen = false
+                            return
+                        }
                         uiController.setKeyboardNavActive(false)
                         grid.currentIndex = cell.index
                         grid.forceActiveFocus()
@@ -496,7 +787,7 @@ Item {
                             cell.isMenuOpen = true
                         } else {
                             if (cell.isRunning) {
-                                uiController.launchPipeline.stopGame(cell.gameId)
+                                root.gameDetailsRequested(cell.gameId)
                             } else {
                                 grid.activatePrimaryAction(cell.gameId)
                             }
@@ -504,48 +795,58 @@ Item {
                     }
                 }
 
-                // Top-Right Quick Configure Button on Hover
+                // ── Top-Right Persistent Badges ──────────────────────────────
+                // 1. Persistent Pin Badge
                 Rectangle {
-                    id: quickConfigBtn
-                    visible: (cell.isHoveredOrFocused || cell.isPinned || cell.isFavorite) && !cell.isMenuOpen
+                    visible: cell.isPinned && !cell.isMenuOpen
                     anchors.top: parent.top
                     anchors.right: parent.right
                     anchors.margins: 8
-                    width: 28; height: 28; radius: 14
-                    color: quickCfgMA.containsMouse ? appSettings.accentColor : Qt.rgba(0, 0, 0, 0.78)
-                    border.color: cell.isFavorite ? "#fbbf24" : appSettings.accentColor
+                    width: 24; height: 24; radius: 12
+                    color: Qt.rgba(0, 0, 0, 0.75)
+                    border.color: appSettings.accentColor
                     border.width: 1
-                    z: 18
+                    z: 14
 
                     YIcon {
                         anchors.centerIn: parent
                         size: 14
-                        source: cell.isHoveredOrFocused
-                                ? "qrc:/tsuki_app/icons/actions/settings.svg"
-                                : (cell.isPinned ? "qrc:/tsuki_app/icons/actions/pin.svg" : "qrc:/tsuki_app/icons/nav/star.svg")
-                        color: quickCfgMA.containsMouse ? "#0f0f11" : (cell.isFavorite && !cell.isHoveredOrFocused ? "#fbbf24" : "#ffffff")
-                    }
-
-                    MouseArea {
-                        id: quickCfgMA
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: mediaGrid.gameDetailsRequested(cell.gameId)
+                        source: "qrc:/tsuki_app/icons/actions/pin.svg"
+                        color: appSettings.accentColor
                     }
                 }
 
-                // ── Glassmorphic Context Menu Overlay (Right-Click / Menu Button) ──
+                // 2. Persistent Favorite Badge (if not pinned)
+                Rectangle {
+                    visible: cell.isFavorite && !cell.isPinned && !cell.isMenuOpen
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.margins: 8
+                    width: 24; height: 24; radius: 12
+                    color: Qt.rgba(0, 0, 0, 0.75)
+                    border.color: "#fbbf24"
+                    border.width: 1
+                    z: 14
+
+                    YIcon {
+                        anchors.centerIn: parent
+                        size: 14
+                        source: "qrc:/tsuki_app/icons/nav/favourite-filled.svg"
+                        color: "#fbbf24"
+                    }
+                }
+
+                // ── Glassmorphic Action Menu Overlay (Crystal-Sharp on Top of Blur) ──
                 Rectangle {
                     id: actionOverlay
                     anchors.fill: cardContent
-                    radius: mediaGrid.cardRadius
+                    radius: appSettings.cardRadius
                     color: Qt.rgba(0, 0, 0, 0.58)
                     opacity: cell.isMenuOpen ? 1.0 : 0.0
                     visible: opacity > 0
-                    z: 25
+                    z: 20
                     clip: true
-                    Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
                     MouseArea {
                         anchors.fill: parent
@@ -553,62 +854,86 @@ Item {
                         onClicked: cell.isMenuOpen = false
                     }
 
-                    ColumnLayout {
+                    Rectangle {
                         anchors.centerIn: parent
-                        width: Math.min(parent.width - 16, 168)
-                        spacing: 6
+                        width: Math.min(parent.width - 24, 168)
+                        height: menuCol.implicitHeight + 16
+                        radius: 14
+                        color: appSettings.isEffectiveDark ? Qt.rgba(0.09, 0.09, 0.11, 0.96) : Qt.rgba(0.98, 0.98, 0.99, 0.96)
+                        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
+                        border.width: 1
 
-                        Repeater {
-                            model: [
-                                { label: "Configure / Edit", icon: "qrc:/tsuki_app/icons/actions/settings.svg", tint: appSettings.accentColor, idx: 0 },
-                                { label: "Winetricks",       icon: "qrc:/tsuki_app/icons/actions/wrench.svg",   tint: "#38bdf8",               idx: 1 },
-                                { label: "Game Directory",   icon: "qrc:/tsuki_app/icons/actions/folder.svg",   tint: "#a1a1aa",               idx: 2 },
-                                { label: "Prefix Directory", icon: "qrc:/tsuki_app/icons/nav/prefix.svg",       tint: "#a1a1aa",               idx: 3 },
-                                { label: cell.isFavorite ? "Unfavourite" : "Favourite", icon: "qrc:/tsuki_app/icons/nav/star.svg", tint: "#fbbf24", idx: 4 },
-                                { label: "Remove Game",      icon: "qrc:/tsuki_app/icons/actions/trash.svg",    tint: "#ef4444",               idx: 5 }
-                            ]
+                        transform: Translate {
+                            y: cell.isMenuOpen ? 0 : 8
+                            Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                        }
 
-                            delegate: Rectangle {
-                                required property var modelData
-                                readonly property bool isFocusedRow: uiController.isKeyboardNavActive && cell.isMenuOpen && cell.menuFocusedIndex === modelData.idx
-                                readonly property bool isRowActive: rowMA.containsMouse || isFocusedRow
+                        ColumnLayout {
+                            id: menuCol
+                            anchors.centerIn: parent
+                            width: parent.width - 12
+                            spacing: 4
 
-                                Layout.fillWidth: true
-                                height: 32
-                                radius: 16
-                                color: isRowActive ? modelData.tint : Qt.rgba(0.14, 0.14, 0.18, 0.92)
-                                border.color: isFocusedRow ? "#ffffff" : Qt.rgba(1, 1, 1, 0.14)
-                                border.width: 1
+                            Repeater {
+                                model: [
+                                    { label: "Edit", icon: "qrc:/tsuki_app/icons/actions/edit.svg", tint: appSettings.accentColor, idx: 0 },
+                                    { label: cell.isFavorite ? "Unfavourite" : "Favourite", icon: cell.isFavorite ? "qrc:/tsuki_app/icons/nav/favourite-filled.svg" : "qrc:/tsuki_app/icons/nav/favourite.svg", tint: "#fbbf24", idx: 1 },
+                                    { label: cell.isPinned ? "Unpin" : "Pin to Top", icon: "qrc:/tsuki_app/icons/actions/pin.svg", tint: appSettings.accentColor, idx: 2 },
+                                    { label: "Remove", icon: "qrc:/tsuki_app/icons/actions/trash.svg", tint: "#ef4444", idx: 3 }
+                                ]
 
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 12
-                                    anchors.rightMargin: 10
-                                    spacing: 8
+                                delegate: Rectangle {
+                                    id: menuRowBtn
+                                    required property var modelData
+                                    readonly property bool isBtnFocused: uiController.isKeyboardNavActive && cell.isMenuOpen && cell.menuFocusedIndex === modelData.idx
+                                    readonly property bool isBtnActive: mRowMA.containsMouse || isBtnFocused
 
-                                    YIcon {
-                                        size: 15
-                                        source: modelData.icon
-                                        color: parent.parent.isRowActive ? "#0f0f11" : modelData.tint
+                                    Layout.fillWidth: true
+                                    height: 38
+                                    radius: 10
+                                    color: isBtnActive
+                                        ? (modelData.idx === 3 ? Qt.rgba(239/255, 68/255, 68/255, 0.18) : Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.18))
+                                        : "transparent"
+                                    border.color: isBtnFocused ? appSettings.accentColor : "transparent"
+                                    border.width: 1
+                                    scale: mRowMA.pressed ? 0.96 : (isBtnActive ? 1.02 : 1.0)
+                                    Behavior on scale { NumberAnimation { duration: 100 } }
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 12
+                                        anchors.rightMargin: 12
+                                        spacing: 10
+
+                                        YIcon {
+                                            size: 16
+                                            source: modelData.icon
+                                            color: modelData.tint
+                                        }
+
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: modelData.label
+                                            color: modelData.idx === 3 ? "#ef4444" : appSettings.textColor
+                                            font.pixelSize: 13
+                                            font.weight: Font.Medium
+                                            elide: Text.ElideRight
+                                            renderType: Text.QtRendering
+                                        }
                                     }
-                                    Label {
-                                        text: modelData.label
-                                        color: parent.parent.isRowActive ? "#0f0f11" : "#ffffff"
-                                        font.pixelSize: 12
-                                        font.weight: Font.Medium
-                                        elide: Text.ElideRight
-                                        Layout.fillWidth: true
-                                    }
-                                }
 
-                                MouseArea {
-                                    id: rowMA
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        cell.menuFocusedIndex = modelData.idx
-                                        cell.triggerMenuAction()
+                                    MouseArea {
+                                        id: mRowMA
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        preventStealing: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: (mouse) => {
+                                            mouse.accepted = true
+                                            cell.executeAction(modelData.idx)
+                                        }
                                     }
                                 }
                             }
@@ -616,14 +941,14 @@ Item {
                     }
                 }
 
-                // Squircle border
+                // ── Squircle border ──────────────────────────────────────────
                 Rectangle {
                     anchors.fill: parent
                     color: "transparent"
-                    radius: mediaGrid.cardRadius
+                    radius: appSettings.cardRadius
                     antialiasing: true
                     border.color: cell.isRunning
-                        ? "#34d399"
+                        ? "#22c55e"
                         : ((cell.isTvFocused || cell.isMouseActive || cell.isMenuOpen)
                             ? appSettings.accentColor
                             : appSettings.borderColor)
@@ -638,58 +963,52 @@ Item {
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
     }
 
-    // Empty state
-    ColumnLayout {
+    // ── Empty State / Search Indicator (Matching Yoru Layout) ────────────────
+    Column {
         anchors.centerIn: parent
         spacing: 12
         visible: grid.count === 0
 
         YIcon {
-            Layout.alignment: Qt.AlignHCenter
-            source: "qrc:/tsuki_app/icons/brand/tsuki-sidebar.svg"
+            anchors.horizontalCenter: parent.horizontalCenter
+            source: "qrc:/tsuki_app/icons/nav/library.svg"
             color: appSettings.textTerColor
-            size: 52
+            size: 48
+            opacity: 0.6
         }
 
         Label {
-            Layout.alignment: Qt.AlignHCenter
+            anchors.horizontalCenter: parent.horizontalCenter
             text: {
                 if (uiController.searchModel.filterType === 3) return "No Favourite Games Yet"
                 if (uiController.searchModel.filterType === 4) return "No Recently Played Games"
-                return "Your Tsuki Game Library is Empty"
+                return "Your Game Library is Empty"
             }
             color: appSettings.textColor
             font.pixelSize: 20
-            font.weight: Font.DemiBold
+            font.weight: Font.Medium
         }
 
         Label {
-            Layout.alignment: Qt.AlignHCenter
-            text: "Add locally downloaded Windows games (.exe) to launch them through Wine or Proton-GE."
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: {
+                if (uiController.searchModel.filterType === 3) return "Right-click any game or tap the star button to add it to favourites."
+                if (uiController.searchModel.filterType === 4) return "Games you have launched through Tsuki will appear here."
+                return "Add locally downloaded Windows games (.exe) to launch them with Wine or Proton."
+            }
             color: appSettings.textSecColor
-            font.pixelSize: 14
+            font.pixelSize: 15
+            font.weight: Font.Normal
         }
 
-        Button {
-            Layout.alignment: Qt.AlignHCenter
-            Layout.topMargin: 6
-            text: "+ Add Windows Game (.exe)"
-            onClicked: mediaGrid.addGameRequested()
-            background: Rectangle {
-                radius: 22
-                color: appSettings.accentColor
-                implicitWidth: 230
-                implicitHeight: 44
-            }
-            contentItem: Label {
-                text: parent.text
-                color: "#0f0f11"
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
+        Item { width: 1; height: 6 }
+
+        M3Button {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: "Add Windows Game"
+            iconSource: "qrc:/tsuki_app/icons/actions/add.svg"
+            buttonType: "filled"
+            onClicked: root.addGameRequested()
         }
     }
 }
-

@@ -1,4 +1,6 @@
 #include "AppSettings.h"
+#include <QGuiApplication>
+#include <QStyleHints>
 
 namespace Tsuki {
 
@@ -16,9 +18,17 @@ AppSettings::AppSettings(QObject* parent)
     QDir().mkpath(toolsDir());
 
     m_themeMode = m_settings.value(QStringLiteral("appearance/themeMode"), 0).toInt();
-    m_accentColor = QColor(m_settings.value(QStringLiteral("appearance/accentColor"), QStringLiteral("#a855f7")).toString());
+    m_accentColor = QColor(m_settings.value(QStringLiteral("appearance/accentColor"), QStringLiteral("#5b9cf6")).toString());
     if (!m_accentColor.isValid()) {
-        m_accentColor = QColor(QStringLiteral("#a855f7"));
+        m_accentColor = QColor(QStringLiteral("#5b9cf6"));
+    }
+
+    if (QGuiApplication::styleHints()) {
+        QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme) {
+            if (m_themeMode == 2) {
+                emit themeChanged();
+            }
+        });
     }
     m_sidebarCollapsed = m_settings.value(QStringLiteral("appearance/sidebarCollapsed"), false).toBool();
     m_defaultFilter = m_settings.value(QStringLiteral("appearance/defaultFilter"), -1).toInt();
@@ -42,14 +52,14 @@ AppSettings::AppSettings(QObject* parent)
     QDir().mkpath(m_defaultRunnerLocation);
 
     m_mangohudDefault = m_settings.value(QStringLiteral("performance/mangohud"), false).toBool();
-    m_gamemodeDefault = m_settings.value(QStringLiteral("performance/gamemode"), true).toBool();
+    m_gamemodeDefault = m_settings.value(QStringLiteral("performance/gamemode"), false).toBool();
     m_dxvkDefault = m_settings.value(QStringLiteral("performance/dxvk"), true).toBool();
     m_vkd3dDefault = m_settings.value(QStringLiteral("performance/vkd3d"), true).toBool();
     m_esyncDefault = m_settings.value(QStringLiteral("performance/esync"), true).toBool();
     m_fsyncDefault = m_settings.value(QStringLiteral("performance/fsync"), true).toBool();
     m_defaultDxvkHud = m_settings.value(QStringLiteral("performance/dxvkHud"), QStringLiteral("none")).toString();
 
-    m_xboxEmulationDefault = m_settings.value(QStringLiteral("controller/xboxEmulation"), true).toBool();
+    m_xboxEmulationDefault = m_settings.value(QStringLiteral("controller/xboxEmulation"), false).toBool();
     m_defaultControllerProfileId = m_settings.value(QStringLiteral("controller/defaultProfileId"), QStringLiteral("default-xbox")).toString();
 
     m_steamGridDbApiKey = m_settings.value(QStringLiteral("integrations/steamGridDbApiKey"), QString()).toString();
@@ -133,68 +143,73 @@ void AppSettings::setAccentColor(const QColor& c) {
     emit themeChanged();
 }
 
+bool AppSettings::isEffectiveDark() const {
+    if (m_themeMode == 0) return true;
+    if (m_themeMode == 1) return false;
+    // 2: System
+    if (QGuiApplication::styleHints()) {
+        return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    }
+    return true;
+}
+
 QColor AppSettings::bgColor() const {
-    if (m_themeMode == 1) return QColor(QStringLiteral("#f8fafc"));
-    if (m_themeMode == 2) return QColor(QStringLiteral("#050507"));
+    if (!isEffectiveDark()) return QColor(QStringLiteral("#f8fafc"));
     return QColor(QStringLiteral("#0d0d11"));
 }
 
 QColor AppSettings::sidebarColor() const {
-    if (m_themeMode == 1) return QColor(QStringLiteral("#f1f5f9"));
-    if (m_themeMode == 2) return QColor(QStringLiteral("#08080b"));
+    if (!isEffectiveDark()) return QColor(QStringLiteral("#f1f5f9"));
     return QColor(QStringLiteral("#111116"));
 }
 
 QColor AppSettings::sidebarDividerColor() const {
-    if (m_themeMode == 1) return QColor(QStringLiteral("#e2e8f0"));
+    if (!isEffectiveDark()) return QColor(QStringLiteral("#e2e8f0"));
     return QColor(255, 255, 255, 16);
 }
 
 QColor AppSettings::sidebarTextSecColor() const {
-    if (m_themeMode == 1) return QColor(QStringLiteral("#475569"));
+    if (!isEffectiveDark()) return QColor(QStringLiteral("#475569"));
     return QColor(QStringLiteral("#a1a1aa"));
 }
 
 QColor AppSettings::sidebarHoverColor() const {
-    if (m_themeMode == 1) return QColor(0, 0, 0, 12);
+    if (!isEffectiveDark()) return QColor(0, 0, 0, 12);
     return QColor(255, 255, 255, 14);
 }
 
 QColor AppSettings::surfaceColor() const {
-    if (m_themeMode == 1) return QColor(QStringLiteral("#ffffff"));
-    if (m_themeMode == 2) return QColor(QStringLiteral("#0e0e12"));
+    if (!isEffectiveDark()) return QColor(QStringLiteral("#ffffff"));
     return QColor(QStringLiteral("#16161d"));
 }
 
 QColor AppSettings::surfaceAltColor() const {
-    if (m_themeMode == 1) return QColor(QStringLiteral("#f1f5f9"));
-    if (m_themeMode == 2) return QColor(QStringLiteral("#16161d"));
+    if (!isEffectiveDark()) return QColor(QStringLiteral("#f1f5f9"));
     return QColor(QStringLiteral("#1f1f29"));
 }
 
 QColor AppSettings::inputColor() const {
-    if (m_themeMode == 1) return QColor(QStringLiteral("#e2e8f0"));
-    if (m_themeMode == 2) return QColor(QStringLiteral("#121217"));
+    if (!isEffectiveDark()) return QColor(QStringLiteral("#e2e8f0"));
     return QColor(QStringLiteral("#191922"));
 }
 
 QColor AppSettings::borderColor() const {
-    if (m_themeMode == 1) return QColor(QStringLiteral("#cbd5e1"));
+    if (!isEffectiveDark()) return QColor(QStringLiteral("#cbd5e1"));
     return QColor(255, 255, 255, 22);
 }
 
 QColor AppSettings::textColor() const {
-    if (m_themeMode == 1) return QColor(QStringLiteral("#0f172a"));
+    if (!isEffectiveDark()) return QColor(QStringLiteral("#0f172a"));
     return QColor(QStringLiteral("#f4f4f5"));
 }
 
 QColor AppSettings::textSecColor() const {
-    if (m_themeMode == 1) return QColor(QStringLiteral("#475569"));
+    if (!isEffectiveDark()) return QColor(QStringLiteral("#475569"));
     return QColor(QStringLiteral("#a1a1aa"));
 }
 
 QColor AppSettings::textTerColor() const {
-    if (m_themeMode == 1) return QColor(QStringLiteral("#94a3b8"));
+    if (!isEffectiveDark()) return QColor(QStringLiteral("#94a3b8"));
     return QColor(QStringLiteral("#71717a"));
 }
 

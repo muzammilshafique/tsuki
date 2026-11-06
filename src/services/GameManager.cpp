@@ -325,7 +325,8 @@ QString GameManager::addGame(const QString& title,
 bool GameManager::updateGameDetails(const QString& gameId, const QVariantMap& updates) {
     auto opt = m_db->getGame(gameId);
     if (!opt.has_value()) return false;
-    GameRecord g = *opt;
+    const GameRecord orig = *opt;
+    GameRecord g = orig;
 
     auto cleanPath = [](const QString& p) {
         return p.startsWith(QStringLiteral("file://")) ? QUrl(p).toLocalFile() : p.trimmed();
@@ -357,6 +358,34 @@ bool GameManager::updateGameDetails(const QString& gameId, const QVariantMap& up
     if (updates.contains(QStringLiteral("xboxEmulationState"))) g.xboxEmulationState = updates.value(QStringLiteral("xboxEmulationState")).toInt();
     if (updates.contains(QStringLiteral("environmentVariables"))) g.environmentVariables = updates.value(QStringLiteral("environmentVariables")).toMap();
     if (updates.contains(QStringLiteral("dllOverrides"))) g.dllOverrides = updates.value(QStringLiteral("dllOverrides")).toMap();
+
+    if (g.title == orig.title &&
+        g.executablePath == orig.executablePath &&
+        g.workingDirectory == orig.workingDirectory &&
+        g.launchArguments == orig.launchArguments &&
+        g.runnerId == orig.runnerId &&
+        g.prefixId == orig.prefixId &&
+        g.category == orig.category &&
+        g.releaseYear == orig.releaseYear &&
+        g.dxvkState == orig.dxvkState &&
+        g.vkd3dState == orig.vkd3dState &&
+        g.esyncState == orig.esyncState &&
+        g.fsyncState == orig.fsyncState &&
+        g.dxvkHud == orig.dxvkHud &&
+        g.virtualDesktop == orig.virtualDesktop &&
+        g.virtualDesktopResolution == orig.virtualDesktopResolution &&
+        g.preLaunchScript == orig.preLaunchScript &&
+        g.postExitScript == orig.postExitScript &&
+        g.cpuAffinity == orig.cpuAffinity &&
+        g.processPriority == orig.processPriority &&
+        g.mangohudState == orig.mangohudState &&
+        g.gamemodeState == orig.gamemodeState &&
+        g.controllerProfileId == orig.controllerProfileId &&
+        g.xboxEmulationState == orig.xboxEmulationState &&
+        g.environmentVariables == orig.environmentVariables &&
+        g.dllOverrides == orig.dllOverrides) {
+        return true;
+    }
 
     const bool ok = m_db->saveGame(g);
     if (ok) {

@@ -1,17 +1,16 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
 import QtQuick.Effects
 
 Popup {
     id: root
     modal: true
     focus: true
-    width: Math.min(parent ? parent.width - 64 : 620, 620)
-    x: parent ? (parent.width - width) / 2 : 0
-    y: parent ? (parent.height - height) / 2 : 0
-    padding: 24
+    width: Math.min(parent ? parent.width - 48 : 660, 660)
+    x: parent ? Math.round((parent.width - width) / 2) : 0
+    y: parent ? Math.round((parent.height - height) / 2) : 0
+    padding: 0
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
     property string exePath: ""
@@ -41,417 +40,374 @@ Popup {
         root.open()
     }
 
-    FileDialog {
-        id: exePicker
-        title: "Select Windows Game Executable (.exe)"
-        nameFilters: ["Windows Executables (*.exe *.EXE *.msi *.MSI *.bat)", "All Files (*)"]
-        onAccepted: {
-            let local = selectedFile.toString()
-            if (local.startsWith("file://")) local = local.substring(7)
-            root.exePath = local
-            if (root.gameTitle.trim().length === 0) {
-                root.gameTitle = uiController.gameManager.guessTitleFromExecutable(local)
-                titleInput.text = root.gameTitle
-                root.customPrefixName = uiController.prefixManager.suggestShortPrefixName(root.gameTitle)
-                pfxNameInput.text = root.customPrefixName
-            }
-            let lastSlash = local.lastIndexOf("/")
-            if (lastSlash > 0 && root.workDir.trim().length === 0) {
-                root.workDir = local.substring(0, lastSlash)
-                workDirInput.text = root.workDir
-            }
-        }
-    }
-
-    FolderDialog {
-        id: prefixDirPicker
-        title: "Select Custom Prefix Base Directory"
-        onAccepted: {
-            let local = selectedFolder.toString()
-            if (local.startsWith("file://")) local = local.substring(7)
-            root.customPrefixLocation = local
-            pfxLocInput.text = local
-        }
-    }
-
     background: Rectangle {
         color: appSettings.surfaceColor
-        radius: 16
-        border.color: appSettings.borderColor
+        radius: 24
+        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.10)
         border.width: 1
         layer.enabled: true
         layer.effect: MultiEffect {
             shadowEnabled: true
             shadowColor: Qt.rgba(0, 0, 0, 0.65)
-            shadowBlur: 0.9
+            shadowBlur: 0.8
             shadowVerticalOffset: 8
         }
     }
 
     contentItem: ColumnLayout {
-        spacing: 14
+        spacing: 0
 
-        RowLayout {
+        // ── Dialog Header ────────────────────────────────────────────────────
+        Item {
             Layout.fillWidth: true
-            Label {
-                text: "Add Local Windows Game"
-                color: appSettings.textColor
-                font.pixelSize: 20
-                font.weight: Font.DemiBold
-                Layout.fillWidth: true
-            }
-            ToolButton {
-                implicitWidth: 32; implicitHeight: 32
-                background: Rectangle { radius: 16; color: parent.hovered ? appSettings.surfaceAltColor : "transparent" }
-                contentItem: YIcon { anchors.centerIn: parent; source: "qrc:/tsuki_app/icons/actions/close.svg"; color: appSettings.textSecColor; size: 18 }
-                onClicked: root.close()
-            }
-        }
+            Layout.preferredHeight: 64
 
-        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.borderColor }
-
-        // Executable Row
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 6
-            Label { text: "Game Executable (.exe)"; color: appSettings.textSecColor; font.pixelSize: 13 }
             RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                TextField {
-                    id: exeInput
-                    Layout.fillWidth: true
-                    text: root.exePath
-                    placeholderText: "/path/to/Game.exe"
+                anchors.fill: parent
+                anchors.leftMargin: 24
+                anchors.rightMargin: 20
+
+                YIcon {
+                    size: 24
+                    source: "qrc:/tsuki_app/icons/actions/add.svg"
+                    color: appSettings.accentColor
+                }
+
+                Label {
+                    text: "Add Local Windows Game"
                     color: appSettings.textColor
-                    placeholderTextColor: appSettings.textTerColor
-                    font.pixelSize: 14
-                    leftPadding: 12; rightPadding: 12
-                    onTextChanged: root.exePath = text
-                    background: Rectangle {
-                        radius: 8
-                        color: appSettings.inputColor
-                        border.color: parent.activeFocus ? appSettings.accentColor : appSettings.borderColor
-                    }
+                    font.pixelSize: 20
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: -0.3
+                    Layout.fillWidth: true
                 }
-                Button {
-                    text: "Browse…"
-                    onClicked: exePicker.open()
+
+                ToolButton {
+                    implicitWidth: 36
+                    implicitHeight: 36
                     background: Rectangle {
-                        radius: 8
-                        color: parent.hovered ? appSettings.accentColor : appSettings.surfaceAltColor
-                        border.color: appSettings.accentColor
-                        border.width: 1
+                        radius: 18
+                        color: parent.hovered ? appSettings.surfaceAltColor : "transparent"
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
-                    contentItem: Label {
-                        text: parent.text
-                        color: parent.hovered ? "#0f0f11" : appSettings.textColor
-                        font.pixelSize: 13
-                        font.weight: Font.Medium
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        leftPadding: 12; rightPadding: 12
+                    contentItem: YIcon {
+                        anchors.centerIn: parent
+                        source: "qrc:/tsuki_app/icons/actions/close.svg"
+                        color: appSettings.textSecColor
+                        size: 18
                     }
+                    onClicked: root.close()
                 }
+            }
+
+            Rectangle {
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
             }
         }
 
-        // Title & Category Row
-        RowLayout {
+        // ── Scrollable Form Body ─────────────────────────────────────────────
+        ScrollView {
             Layout.fillWidth: true
-            spacing: 12
+            Layout.preferredHeight: Math.min(520, 480)
+            contentWidth: availableWidth
+            clip: true
+
             ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 6
-                Label { text: "Game Title (SteamGridDB auto-artwork)"; color: appSettings.textSecColor; font.pixelSize: 13 }
-                TextField {
-                    id: titleInput
+                width: parent.width - 48
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 16
+
+                Item { Layout.preferredHeight: 4 }
+
+                // 1. Executable Picker
+                ColumnLayout {
                     Layout.fillWidth: true
-                    text: root.gameTitle
-                    placeholderText: "e.g. Grand Theft Auto: San Andreas"
-                    color: appSettings.textColor
-                    placeholderTextColor: appSettings.textTerColor
-                    font.pixelSize: 14
-                    leftPadding: 12; rightPadding: 12
-                    onTextChanged: {
-                        root.gameTitle = text
-                        if (pfxNameInput.text.trim().length === 0) {
-                            pfxNameInput.text = uiController.prefixManager.suggestShortPrefixName(text)
+                    spacing: 6
+                    Label { text: "Executable File (.exe)"; color: appSettings.textColor; font.pixelSize: 13; font.weight: Font.Medium }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        M3TextField {
+                            Layout.fillWidth: true
+                            text: root.exePath
+                            placeholderText: "/path/to/game.exe"
+                            onCommit: (val) => root.exePath = val
+                        }
+                        M3Button {
+                            text: "Browse…"
+                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                            buttonType: "tonal"
+                            onClicked: {
+                                let f = uiController.selectFile("Select Windows Game Executable (.exe)", "Windows Executables (*.exe *.EXE *.msi *.MSI *.bat);;All Files (*)", root.exePath)
+                                if (f && f.length > 0) {
+                                    root.exePath = f
+                                    if (root.gameTitle.trim().length === 0) {
+                                        root.gameTitle = uiController.gameManager.guessTitleFromExecutable(f)
+                                        root.customPrefixName = uiController.prefixManager.suggestShortPrefixName(root.gameTitle)
+                                    }
+                                    let lastSlash = f.lastIndexOf("/")
+                                    if (lastSlash > 0 && root.workDir.trim().length === 0) {
+                                        root.workDir = f.substring(0, lastSlash)
+                                    }
+                                }
+                            }
                         }
                     }
-                    background: Rectangle {
-                        radius: 8
-                        color: appSettings.inputColor
-                        border.color: parent.activeFocus ? appSettings.accentColor : appSettings.borderColor
+                }
+
+                // 2. Title Field
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+                    Label { text: "Game Title"; color: appSettings.textColor; font.pixelSize: 13; font.weight: Font.Medium }
+                    M3TextField {
+                        Layout.fillWidth: true
+                        text: root.gameTitle
+                        placeholderText: "e.g. Cyberpunk 2077"
+                        onCommit: (val) => {
+                            root.gameTitle = val
+                            if (root.customPrefixName.length === 0) {
+                                root.customPrefixName = uiController.prefixManager.suggestShortPrefixName(val)
+                            }
+                        }
                     }
                 }
-            }
-            ColumnLayout {
-                Layout.preferredWidth: 160
-                spacing: 6
-                Label { text: "Category"; color: appSettings.textSecColor; font.pixelSize: 13 }
-                ComboBox {
-                    id: catCombo
-                    Layout.fillWidth: true
-                    model: ["Action", "RPG", "Adventure", "Strategy", "Indie", "Racing", "Simulation", "Uncategorized"]
-                    onCurrentTextChanged: root.selectedCategory = currentText
-                }
-            }
-        }
 
-        // Working Dir & Launch Arguments
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 12
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 6
-                Label { text: "Working Directory"; color: appSettings.textSecColor; font.pixelSize: 13 }
-                TextField {
-                    id: workDirInput
+                // 3. Runner Selection
+                ColumnLayout {
                     Layout.fillWidth: true
-                    text: root.workDir
-                    placeholderText: "Defaults to executable folder"
-                    color: appSettings.textColor
-                    placeholderTextColor: appSettings.textTerColor
-                    font.pixelSize: 13
-                    leftPadding: 12; rightPadding: 12
-                    onTextChanged: root.workDir = text
-                    background: Rectangle { radius: 8; color: appSettings.inputColor; border.color: appSettings.borderColor }
-                }
-            }
-            ColumnLayout {
-                Layout.preferredWidth: 200
-                spacing: 6
-                Label { text: "Launch Arguments"; color: appSettings.textSecColor; font.pixelSize: 13 }
-                TextField {
-                    id: argsInput
-                    Layout.fillWidth: true
-                    text: root.launchArgs
-                    placeholderText: "e.g. -windowed -skipintro"
-                    color: appSettings.textColor
-                    placeholderTextColor: appSettings.textTerColor
-                    font.pixelSize: 13
-                    leftPadding: 12; rightPadding: 12
-                    onTextChanged: root.launchArgs = text
-                    background: Rectangle { radius: 8; color: appSettings.inputColor; border.color: appSettings.borderColor }
-                }
-            }
-        }
-
-        // Runner Selection
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 6
-            Label { text: "Wine / Proton Runner"; color: appSettings.textSecColor; font.pixelSize: 13 }
-            ComboBox {
-                id: runnerCombo
-                Layout.fillWidth: true
-                property var runnerList: {
-                    let arr = [{ id: "", name: "Global Default Runner" }]
-                    let installed = uiController.runnerManager.installedRunners
-                    for (let i = 0; i < installed.length; ++i) {
-                        arr.push(installed[i])
+                    spacing: 6
+                    Label { text: "Wine / Proton Runner"; color: appSettings.textColor; font.pixelSize: 13; font.weight: Font.Medium }
+                    StyledCombo {
+                        Layout.fillWidth: true
+                        readonly property var runnerList: uiController.runnerManager.installedRunners
+                        comboModel: {
+                            let list = ["Default System Wine"]
+                            for (let i = 0; i < runnerList.length; i++) {
+                                list.push(runnerList[i].name)
+                            }
+                            return list
+                        }
+                        selectedIndex: root.runnerIndex
+                        onSelected: (idx) => root.runnerIndex = idx
                     }
-                    return arr
                 }
-                model: runnerList
-                textRole: "name"
-            }
-        }
 
-        // Prefix Mode (Dedicated vs Existing)
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: pfxCol.implicitHeight + 24
-            radius: 10
-            color: appSettings.surfaceAltColor
-            border.color: appSettings.borderColor
+                // 4. Wine Prefix Mode
+                Rectangle {
+                    Layout.fillWidth: true
+                    radius: 16
+                    color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
+                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                    implicitHeight: pfxCol.implicitHeight + 28
 
-            ColumnLayout {
-                id: pfxCol
-                anchors.fill: parent
-                anchors.margins: 12
-                spacing: 10
+                    ColumnLayout {
+                        id: pfxCol
+                        anchors.fill: parent
+                        anchors.margins: 14
+                        spacing: 12
 
+                        Label { text: "Wine Prefix Isolation"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.DemiBold }
+
+                        M3SegmentedButton {
+                            Layout.fillWidth: true
+                            model: [
+                                { label: "Dedicated Isolated Prefix (Recommended)", val: 1 },
+                                { label: "Use Existing Prefix", val: 0 }
+                            ]
+                            selectedValue: root.useDedicatedPrefix ? 1 : 0
+                            onSelectionChanged: (val) => root.useDedicatedPrefix = (val === 1)
+                        }
+
+                        // Dedicated Prefix Options
+                        ColumnLayout {
+                            visible: root.useDedicatedPrefix
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+                                    Label { text: "Prefix Name (Folder)"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    M3TextField {
+                                        Layout.fillWidth: true
+                                        text: root.customPrefixName
+                                        placeholderText: "e.g. cyberpunk"
+                                        onCommit: (val) => root.customPrefixName = val
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.preferredWidth: 160
+                                    spacing: 4
+                                    Label { text: "Architecture"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    M3SegmentedButton {
+                                        Layout.fillWidth: true
+                                        model: [
+                                            { label: "64-bit", val: 0 },
+                                            { label: "32-bit", val: 1 }
+                                        ]
+                                        selectedValue: root.prefixArch === "win64" ? 0 : 1
+                                        onSelectionChanged: (val) => root.prefixArch = (val === 0 ? "win64" : "win32")
+                                    }
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 4
+                                Label { text: "Prefix Storage Directory"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    M3TextField {
+                                        Layout.fillWidth: true
+                                        text: root.customPrefixLocation
+                                        onCommit: (val) => root.customPrefixLocation = val
+                                    }
+                                    M3Button {
+                                        text: "Folder…"
+                                        buttonType: "tonal"
+                                        onClicked: {
+                                            let d = uiController.selectFolder("Select Custom Prefix Base Directory", root.customPrefixLocation)
+                                            if (d && d.length > 0) {
+                                                root.customPrefixLocation = d
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Existing Prefix Selector
+                        ColumnLayout {
+                            visible: !root.useDedicatedPrefix
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Label { text: "Select Existing Prefix"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                            StyledCombo {
+                                Layout.fillWidth: true
+                                readonly property var pfxList: uiController.prefixManager.prefixes
+                                comboModel: {
+                                    let list = []
+                                    for (let i = 0; i < pfxList.length; i++) {
+                                        list.push(pfxList[i].name)
+                                    }
+                                    return list.length > 0 ? list : ["Default Prefix"]
+                                }
+                                selectedIndex: root.existingPrefixIndex
+                                onSelected: (idx) => root.existingPrefixIndex = idx
+                            }
+                        }
+                    }
+                }
+
+                // 5. Working Directory & Launch Arguments (Optional)
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 12
-                    Label {
-                        text: "Wine Prefix Configuration"
-                        color: appSettings.textColor
-                        font.pixelSize: 14
-                        font.weight: Font.Medium
-                        Layout.fillWidth: true
-                    }
-                    Button {
-                        text: "Dedicated Prefix"
-                        onClicked: root.useDedicatedPrefix = true
-                        background: Rectangle {
-                            radius: 6
-                            color: root.useDedicatedPrefix ? appSettings.accentColor : "transparent"
-                            border.color: appSettings.accentColor
-                        }
-                        contentItem: Label {
-                            text: parent.text
-                            color: root.useDedicatedPrefix ? "#0f0f11" : appSettings.textColor
-                            font.pixelSize: 12; leftPadding: 8; rightPadding: 8
-                        }
-                    }
-                    Button {
-                        text: "Existing Prefix"
-                        onClicked: root.useDedicatedPrefix = false
-                        background: Rectangle {
-                            radius: 6
-                            color: !root.useDedicatedPrefix ? appSettings.accentColor : "transparent"
-                            border.color: appSettings.accentColor
-                        }
-                        contentItem: Label {
-                            text: parent.text
-                            color: !root.useDedicatedPrefix ? "#0f0f11" : appSettings.textColor
-                            font.pixelSize: 12; leftPadding: 8; rightPadding: 8
-                        }
-                    }
-                }
 
-                // Dedicated Prefix Options
-                ColumnLayout {
-                    visible: root.useDedicatedPrefix
-                    Layout.fillWidth: true
-                    spacing: 8
-
-                    RowLayout {
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 10
-                        ColumnLayout {
+                        spacing: 4
+                        Label { text: "Working Directory (Optional)"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                        M3TextField {
                             Layout.fillWidth: true
-                            spacing: 4
-                            Label { text: "Custom Prefix Name (independent of title)"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            TextField {
-                                id: pfxNameInput
-                                Layout.fillWidth: true
-                                text: root.customPrefixName
-                                placeholderText: "e.g. GTASA"
-                                color: appSettings.textColor
-                                placeholderTextColor: appSettings.textTerColor
-                                font.pixelSize: 13
-                                leftPadding: 10; rightPadding: 10
-                                onTextChanged: root.customPrefixName = text
-                                background: Rectangle { radius: 6; color: appSettings.inputColor; border.color: appSettings.borderColor }
-                            }
-                        }
-                        ColumnLayout {
-                            Layout.preferredWidth: 130
-                            spacing: 4
-                            Label { text: "Architecture"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            ComboBox {
-                                Layout.fillWidth: true
-                                model: ["win64", "win32"]
-                                onCurrentTextChanged: root.prefixArch = currentText
-                            }
+                            text: root.workDir
+                            placeholderText: "Default is executable folder"
+                            onCommit: (val) => root.workDir = val
                         }
                     }
 
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 4
-                        Label { text: "Prefix Base Directory"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                        RowLayout {
+                        Label { text: "Launch Arguments (Optional)"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                        M3TextField {
                             Layout.fillWidth: true
-                            spacing: 8
-                            TextField {
-                                id: pfxLocInput
-                                Layout.fillWidth: true
-                                text: root.customPrefixLocation
-                                color: appSettings.textColor
-                                font.pixelSize: 12
-                                leftPadding: 10; rightPadding: 10
-                                onTextChanged: root.customPrefixLocation = text
-                                background: Rectangle { radius: 6; color: appSettings.inputColor; border.color: appSettings.borderColor }
-                            }
-                            Button {
-                                text: "Folder…"
-                                onClicked: prefixDirPicker.open()
-                            }
+                            text: root.launchArgs
+                            placeholderText: "-fullscreen -skipintro"
+                            onCommit: (val) => root.launchArgs = val
                         }
                     }
                 }
 
-                // Existing Prefix Selector
-                ColumnLayout {
-                    visible: !root.useDedicatedPrefix
-                    Layout.fillWidth: true
-                    spacing: 4
-                    Label { text: "Select Existing Prefix"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                    ComboBox {
-                        id: existingPfxCombo
-                        Layout.fillWidth: true
-                        model: uiController.prefixManager.prefixes
-                        textRole: "name"
-                    }
-                }
+                Item { Layout.preferredHeight: 8 }
             }
         }
 
-        // Bottom Action Buttons
-        RowLayout {
+        // ── Dialog Footer Action Buttons ─────────────────────────────────────
+        Item {
             Layout.fillWidth: true
-            Layout.topMargin: 6
-            spacing: 12
-            Item { Layout.fillWidth: true }
+            Layout.preferredHeight: 68
 
-            Button {
-                text: "Cancel"
-                onClicked: root.close()
-                background: Rectangle { radius: 20; color: appSettings.surfaceAltColor; implicitWidth: 100; implicitHeight: 40 }
-                contentItem: Label { text: parent.text; color: appSettings.textColor; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
             }
 
-            Button {
-                text: "Add to Library"
-                enabled: root.exePath.trim().length > 0
-                onClicked: {
-                    let chosenRunnerId = ""
-                    if (runnerCombo.currentIndex > 0 && runnerCombo.currentIndex < runnerCombo.runnerList.length) {
-                        chosenRunnerId = runnerCombo.runnerList[runnerCombo.currentIndex].id
-                    }
-                    let pfxMode = "dedicated"
-                    if (!root.useDedicatedPrefix) {
-                        let pfxs = uiController.prefixManager.prefixes
-                        if (existingPfxCombo.currentIndex >= 0 && existingPfxCombo.currentIndex < pfxs.length) {
-                            pfxMode = pfxs[existingPfxCombo.currentIndex].id
-                        } else {
-                            pfxMode = "default-prefix"
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 24
+                anchors.rightMargin: 24
+                spacing: 12
+
+                Item { Layout.fillWidth: true }
+
+                M3Button {
+                    text: "Cancel"
+                    buttonType: "tonal"
+                    onClicked: root.close()
+                }
+
+                M3Button {
+                    text: "Add to Library"
+                    iconSource: "qrc:/tsuki_app/icons/actions/add.svg"
+                    buttonType: "filled"
+                    enabled: root.exePath.trim().length > 0
+                    opacity: enabled ? 1.0 : 0.5
+                    onClicked: {
+                        let runners = uiController.runnerManager.installedRunners
+                        let chosenRunnerId = ""
+                        if (root.runnerIndex > 0 && root.runnerIndex - 1 < runners.length) {
+                            chosenRunnerId = runners[root.runnerIndex - 1].id
                         }
+                        let pfxMode = "dedicated"
+                        if (!root.useDedicatedPrefix) {
+                            let pfxs = uiController.prefixManager.prefixes
+                            if (root.existingPrefixIndex >= 0 && root.existingPrefixIndex < pfxs.length) {
+                                pfxMode = pfxs[root.existingPrefixIndex].id
+                            } else {
+                                pfxMode = "default-prefix"
+                            }
+                        }
+                        uiController.gameManager.addGame(
+                            root.gameTitle,
+                            root.exePath,
+                            root.workDir,
+                            root.launchArgs,
+                            chosenRunnerId,
+                            pfxMode,
+                            root.customPrefixName,
+                            root.customPrefixLocation,
+                            root.prefixArch,
+                            root.selectedCategory
+                        )
+                        root.close()
                     }
-                    uiController.gameManager.addGame(
-                        root.gameTitle,
-                        root.exePath,
-                        root.workDir,
-                        root.launchArgs,
-                        chosenRunnerId,
-                        pfxMode,
-                        root.customPrefixName,
-                        root.customPrefixLocation,
-                        root.prefixArch,
-                        root.selectedCategory
-                    )
-                    root.close()
-                }
-                background: Rectangle {
-                    radius: 20
-                    color: parent.enabled ? appSettings.accentColor : appSettings.surfaceAltColor
-                    implicitWidth: 150; implicitHeight: 40
-                }
-                contentItem: Label {
-                    text: parent.text
-                    color: parent.enabled ? "#0f0f11" : appSettings.textTerColor
-                    font.weight: Font.DemiBold
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
                 }
             }
         }
     }
 }
-

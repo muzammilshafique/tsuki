@@ -11,7 +11,7 @@
 #include "services/GameManager.h"
 #include "ui/UiController.h"
 
-#include <QGuiApplication>
+#include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
@@ -20,12 +20,12 @@
 #include <QTimer>
 
 int main(int argc, char* argv[]) {
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("Tsuki"));
     app.setApplicationName(QStringLiteral("TsukiLauncher"));
     app.setApplicationDisplayName(QStringLiteral("Tsuki"));
     app.setApplicationVersion(QStringLiteral("1.0.0"));
-    app.setWindowIcon(QIcon(QStringLiteral(":/tsuki_app/icons/brand/tsuki-sidebar.svg")));
+    app.setWindowIcon(QIcon(QStringLiteral(":/tsuki_app/icons/brand/tsuki.svg")));
 
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
