@@ -81,19 +81,11 @@ Page {
             pfxIdVal = pfxs[detailPrefixCombo.selectedIndex].id
         }
 
-        let ctrlProfVal = ""
-        let cprofs = uiController.controllerManager.profiles
-        if (typeof detailCtrlCombo !== "undefined" && detailCtrlCombo && detailCtrlCombo.selectedIndex > 0 && (detailCtrlCombo.selectedIndex - 1) < cprofs.length) {
-            ctrlProfVal = cprofs[detailCtrlCombo.selectedIndex - 1].id
-        } else if (typeof detailCtrlCombo !== "undefined" && detailCtrlCombo && detailCtrlCombo.selectedIndex === 0) {
-            ctrlProfVal = ""
-        } else {
-            ctrlProfVal = root.gameData.controllerProfileId || ""
-        }
+        let ctrlProfVal = root.gameData.controllerProfileId || ""
 
-        let xboxEmuVal = (typeof xboxEmuCombo !== "undefined" && xboxEmuCombo && xboxEmuCombo.selectedIndex >= 0)
-            ? (xboxEmuCombo.selectedIndex - 1)
-            : (root.gameData.xboxEmulationState !== undefined ? root.gameData.xboxEmulationState : -1)
+        let xboxEmuVal = (typeof xboxEmuToggle !== "undefined" && xboxEmuToggle)
+            ? (xboxEmuToggle.checked ? 1 : 0)
+            : (appSettings.xboxEmulationDefault ? 1 : 0)
 
         let dxvkVal = (typeof dxvkCombo !== "undefined" && dxvkCombo && dxvkCombo.selectedIndex >= 0)
             ? (dxvkCombo.selectedIndex - 1)
@@ -1072,61 +1064,30 @@ Page {
                             Layout.bottomMargin: 2
                         }
 
-                        // Xbox 360 Emulation
+                        // Xbox Controller Emulation Toggle
                         RowLayout {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 52
                             spacing: 16
                             ColumnLayout {
                                 Layout.fillWidth: true; spacing: 2
-                                Label { text: "Xbox 360 Controller Emulation"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                Label { text: "Xbox Controller Emulation"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
                                 Label { text: "Emulates an authentic XInput gamepad via Linux /dev/uinput daemon"; color: appSettings.textSecColor; font.pixelSize: 12 }
                             }
-                            StyledCombo {
-                                id: xboxEmuCombo
-                                Layout.preferredWidth: 250
-                                comboModel: ["Global Default (" + (appSettings.xboxEmulationDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
-                                selectedIndex: (root.gameData.xboxEmulationState !== undefined ? root.gameData.xboxEmulationState : -1) + 1
-                                onSelected: root.saveAllChanges()
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // Controller Profile
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Controller Profile Mapping"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Custom button remapping and stick sensitivity response curves"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            StyledCombo {
-                                id: detailCtrlCombo
-                                Layout.preferredWidth: 250
-                                readonly property var pList: uiController.controllerManager.profiles
-                                comboModel: {
-                                    let defProf = "Xbox Standard"
-                                    for (let i = 0; i < pList.length; ++i) {
-                                        if (pList[i].id === appSettings.defaultControllerProfileId) {
-                                            defProf = pList[i].name
-                                            break
-                                        }
+                            Toggle {
+                                id: xboxEmuToggle
+                                checked: appSettings.xboxEmulationDefault
+                                Connections {
+                                    target: appSettings
+                                    function onControllerDefaultsChanged() {
+                                        xboxEmuToggle.checked = appSettings.xboxEmulationDefault
                                     }
-                                    let arr = ["Global Default (" + defProf + ")"]
-                                    for (let i = 0; i < pList.length; ++i) arr.push(pList[i].name)
-                                    return arr
                                 }
-                                selectedIndex: {
-                                    let curProf = root.gameData.controllerProfileId
-                                    for (let i = 0; i < pList.length; ++i) {
-                                        if (pList[i].id === curProf) return i + 1
-                                    }
-                                    return 0
+                                onToggled: (c) => {
+                                    appSettings.xboxEmulationDefault = c
+                                    uiController.gameManager.syncXboxEmulationToAllGames(c)
+                                    root.saveAllChanges()
                                 }
-                                onSelected: root.saveAllChanges()
                             }
                         }
 

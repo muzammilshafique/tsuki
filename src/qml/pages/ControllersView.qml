@@ -27,8 +27,8 @@ Item {
             YIcon { source: "qrc:/tsuki_app/icons/nav/controller.svg"; color: appSettings.accentColor; size: 28 }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 2
-                Label { text: "Controllers & Xbox 360 Emulation"; color: appSettings.textColor; font.pixelSize: 22; font.weight: Font.Bold; font.letterSpacing: -0.4 }
-                Label { text: "Standalone SDL2 + /dev/uinput virtual Xbox 360 controller emulation (no Steam Input needed)"; color: appSettings.textSecColor; font.pixelSize: 13 }
+                Label { text: "Controllers & Xbox Emulation"; color: appSettings.textColor; font.pixelSize: 22; font.weight: Font.Bold; font.letterSpacing: -0.4 }
+                Label { text: "Standalone SDL2 + /dev/uinput virtual Xbox controller emulation (no Steam Input needed)"; color: appSettings.textSecColor; font.pixelSize: 13 }
             }
             M3Button {
                 text: "Refresh Gamepads"
@@ -247,7 +247,7 @@ Item {
 
                     RowLayout {
                         Layout.fillWidth: true
-                        Label { text: "Xbox 360 Emulation"; color: appSettings.textColor; font.pixelSize: 13; Layout.fillWidth: true }
+                        Label { text: "Xbox Emulation"; color: appSettings.textColor; font.pixelSize: 13; Layout.fillWidth: true }
                         Toggle {
                             checked: root.currentProfileData.xboxEmulation !== undefined ? root.currentProfileData.xboxEmulation : true
                             onToggled: (c) => {

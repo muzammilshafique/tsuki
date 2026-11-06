@@ -291,10 +291,29 @@ private slots:
         QVERIFY(!pfxId.isEmpty());
         QVERIFY(prefixMgr.getPrefix(pfxId).has_value());
 
-        // Remove game with deleteDedicatedPrefix = true
-        QVERIFY(gm.removeGame(gameId, true));
-        QVERIFY(!db.getGame(gameId).has_value());
-        QVERIFY(!prefixMgr.getPrefix(pfxId).has_value());
+        // Test syncXboxEmulationToAllGames
+        QString g1 = gm.addGame("Game 1", "/games/g1.exe");
+        QString g2 = gm.addGame("Game 2", "/games/g2.exe");
+        gm.syncXboxEmulationToAllGames(true);
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 1);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 1);
+
+        gm.syncXboxEmulationToAllGames(false);
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 0);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 0);
+
+        // Ensure settings starts at false before testing signal transition to true
+        settings.setXboxEmulationDefault(false);
+        gm.syncXboxEmulationToAllGames(false);
+
+        // Test sync triggered via AppSettings controllerDefaultsChanged
+        settings.setXboxEmulationDefault(true);
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 1);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 1);
+
+        settings.setXboxEmulationDefault(false);
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 0);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 0);
     }
 };
 

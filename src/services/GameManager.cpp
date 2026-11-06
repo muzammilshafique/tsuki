@@ -222,7 +222,13 @@ GameManager::GameManager(DatabaseManager *db, AppSettings *settings,
                          LaunchPipeline *launchPipeline, QObject *parent)
     : QObject(parent), m_db(db), m_settings(settings), m_runnerMgr(runnerMgr),
       m_prefixMgr(prefixMgr), m_sgdb(sgdb), m_launchPipeline(launchPipeline),
-      m_model(new GameListModel(db, runnerMgr, launchPipeline, this)) {}
+      m_model(new GameListModel(db, runnerMgr, launchPipeline, this)) {
+  if (m_settings) {
+    connect(m_settings, &AppSettings::controllerDefaultsChanged, this, [this]() {
+      syncXboxEmulationToAllGames(m_settings->xboxEmulationDefault());
+    });
+  }
+}
 
 QStringList GameManager::categories() const { return QStringList(); }
 
@@ -814,6 +820,23 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
                                 ? QFileInfo(opt->executablePath).absolutePath()
                                 : opt->workingDirectory;
         QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+      }
+
+      void GameManager::syncXboxEmulationToAllGames(bool enabled) {
+        const int targetState = enabled ? 1 : 0;
+        const auto games = m_db->getAllGames();
+        bool anyUpdated = false;
+        for (auto g : games) {
+          if (g.xboxEmulationState != targetState) {
+            g.xboxEmulationState = targetState;
+            m_db->saveGame(g);
+            anyUpdated = true;
+          }
+        }
+        if (anyUpdated) {
+          m_model->reload();
+          emit gamesChanged();
+        }
       }
 
     } // namespace Tsuki

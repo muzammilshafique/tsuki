@@ -822,13 +822,23 @@ Page {
                 Layout.fillWidth: true
                 sectionTitle: "Controller & System Integration"
 
-                // Xbox Controller Emulation (Default disabled per request)
+                // Xbox Controller Emulation
                 SettingRow {
-                    label: "Xbox Controller Emulation by Default"
-                    description: "Emulate virtual Xbox 360 controller via Linux /dev/uinput for non-XInput devices"
+                    label: "Xbox Controller Emulation"
+                    description: "Emulate virtual Xbox controller via Linux /dev/uinput for non-XInput devices"
                     controlItem: Toggle {
+                        id: settingsXboxToggle
                         checked: appSettings.xboxEmulationDefault
-                        onToggled: (c) => appSettings.xboxEmulationDefault = c
+                        Connections {
+                            target: appSettings
+                            function onControllerDefaultsChanged() {
+                                settingsXboxToggle.checked = appSettings.xboxEmulationDefault
+                            }
+                        }
+                        onToggled: (c) => {
+                            appSettings.xboxEmulationDefault = c
+                            uiController.gameManager.syncXboxEmulationToAllGames(c)
+                        }
                     }
                 }
 

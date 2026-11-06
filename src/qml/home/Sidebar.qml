@@ -32,7 +32,6 @@ Rectangle {
             { name: "divider",     icon: "",                                         action: "",        val: 0,  section: "" },
             { name: "Runners",     icon: "qrc:/tsuki_app/icons/nav/runner.svg",      action: "section", val: 0,  section: "runners" },
             { name: "Prefixes",    icon: "qrc:/tsuki_app/icons/nav/prefixes.svg",    action: "section", val: 0,  section: "prefixes" },
-            { name: "Controllers", icon: "qrc:/tsuki_app/icons/nav/controller.svg", action: "section", val: 0, section: "controllers" },
             { name: "Diagnostics", icon: "qrc:/tsuki_app/icons/nav/diagnostics.svg", action: "section", val: 0, section: "diagnostics" }
         ]
         return items
