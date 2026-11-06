@@ -1,0 +1,59 @@
+<RCC>
+    <qresource prefix="/tsuki_app">
+        <file alias="qml/Main.qml">../src/qml/Main.qml</file>
+        <file alias="qml/components/YIcon.qml">../src/qml/components/YIcon.qml</file>
+        <file alias="qml/components/GamepadPrompt.qml">../src/qml/components/GamepadPrompt.qml</file>
+        <file alias="qml/components/AddGameDialog.qml">../src/qml/components/AddGameDialog.qml</file>
+        <file alias="qml/components/WinetricksModal.qml">../src/qml/components/WinetricksModal.qml</file>
+        <file alias="qml/home/HomePage.qml">../src/qml/home/HomePage.qml</file>
+        <file alias="qml/home/Sidebar.qml">../src/qml/home/Sidebar.qml</file>
+        <file alias="qml/home/TopBar.qml">../src/qml/home/TopBar.qml</file>
+        <file alias="qml/home/MediaGrid.qml">../src/qml/home/MediaGrid.qml</file>
+        <file alias="qml/home/DownloadsDropdown.qml">../src/qml/home/DownloadsDropdown.qml</file>
+        <file alias="qml/pages/GameDetailPage.qml">../src/qml/pages/GameDetailPage.qml</file>
+        <file alias="qml/pages/RunnersView.qml">../src/qml/pages/RunnersView.qml</file>
+        <file alias="qml/pages/PrefixesView.qml">../src/qml/pages/PrefixesView.qml</file>
+        <file alias="qml/pages/ControllersView.qml">../src/qml/pages/ControllersView.qml</file>
+        <file alias="qml/pages/DiagnosticsView.qml">../src/qml/pages/DiagnosticsView.qml</file>
+        <file alias="qml/pages/SettingsPage.qml">../src/qml/pages/SettingsPage.qml</file>
+
+        <file>icons/brand/tsuki-sidebar.svg</file>
+        <file>icons/nav/home.svg</file>
+        <file>icons/nav/home-filled.svg</file>
+        <file>icons/nav/star.svg</file>
+        <file>icons/nav/star-filled.svg</file>
+        <file>icons/nav/runner.svg</file>
+        <file>icons/nav/runner-filled.svg</file>
+        <file>icons/nav/prefix.svg</file>
+        <file>icons/nav/prefix-filled.svg</file>
+        <file>icons/nav/controller.svg</file>
+        <file>icons/nav/controller-filled.svg</file>
+        <file>icons/nav/terminal.svg</file>
+        <file>icons/nav/terminal-filled.svg</file>
+        <file>icons/nav/download.svg</file>
+        <file>icons/nav/download-filled.svg</file>
+
+        <file>icons/actions/search.svg</file>
+        <file>icons/actions/close.svg</file>
+        <file>icons/actions/download.svg</file>
+        <file>icons/actions/sort.svg</file>
+        <file>icons/actions/play.svg</file>
+        <file>icons/actions/pause.svg</file>
+        <file>icons/actions/stop.svg</file>
+        <file>icons/actions/pin.svg</file>
+        <file>icons/actions/trash.svg</file>
+        <file>icons/actions/settings.svg</file>
+        <file>icons/actions/add.svg</file>
+        <file>icons/actions/folder.svg</file>
+        <file>icons/actions/edit.svg</file>
+        <file>icons/actions/wrench.svg</file>
+        <file>icons/actions/refresh.svg</file>
+        <file>icons/actions/back.svg</file>
+        <file>icons/actions/shortcut.svg</file>
+
+        <file>icons/gamepad/btn_a.svg</file>
+        <file>icons/gamepad/btn_b.svg</file>
+        <file>icons/gamepad/btn_y.svg</file>
+    </qresource>
+</RCC>
+
