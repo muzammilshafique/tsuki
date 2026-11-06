@@ -169,6 +169,7 @@ QVariantList WinetricksManager::filterCatalog(const QString& category, const QSt
             continue;
         }
         m["isInstalled"] = installedVerbs.contains(verb);
+        m["isInstalling"] = (m_activeProcess != nullptr && m_currentVerb == verb);
         out.append(m);
     }
     return out;

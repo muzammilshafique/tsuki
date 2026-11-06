@@ -23,7 +23,6 @@ Popup {
     property string customPrefixLocation: appSettings.defaultPrefixLocation
     property string prefixArch: "win64"
     property int existingPrefixIndex: 0
-    property string selectedCategory: "Action"
 
     function resetAndOpen() {
         exePath = ""
@@ -36,7 +35,6 @@ Popup {
         customPrefixLocation = appSettings.defaultPrefixLocation
         prefixArch = "win64"
         existingPrefixIndex = 0
-        selectedCategory = "Action"
         root.open()
     }
 
@@ -132,9 +130,11 @@ Popup {
                         Layout.fillWidth: true
                         spacing: 8
                         M3TextField {
+                            id: exeInputField
                             Layout.fillWidth: true
                             text: root.exePath
                             placeholderText: "/path/to/game.exe"
+                            onTextChanged: root.exePath = text
                             onCommit: (val) => root.exePath = val
                         }
                         M3Button {
@@ -145,9 +145,10 @@ Popup {
                                 let f = uiController.selectFile("Select Windows Game Executable (.exe)", "Windows Executables (*.exe *.EXE *.msi *.MSI *.bat);;All Files (*)", root.exePath)
                                 if (f && f.length > 0) {
                                     root.exePath = f
-                                    if (root.gameTitle.trim().length === 0) {
-                                        root.gameTitle = uiController.gameManager.guessTitleFromExecutable(f)
-                                        root.customPrefixName = uiController.prefixManager.suggestShortPrefixName(root.gameTitle)
+                                    let guessed = uiController.gameManager.guessTitleFromExecutable(f)
+                                    if (guessed && guessed.length > 0) {
+                                        root.gameTitle = guessed
+                                        root.customPrefixName = uiController.prefixManager.suggestShortPrefixName(guessed)
                                     }
                                     let lastSlash = f.lastIndexOf("/")
                                     if (lastSlash > 0 && root.workDir.trim().length === 0) {
@@ -165,12 +166,16 @@ Popup {
                     spacing: 6
                     Label { text: "Game Title"; color: appSettings.textColor; font.pixelSize: 13; font.weight: Font.Medium }
                     M3TextField {
+                        id: titleInputField
                         Layout.fillWidth: true
                         text: root.gameTitle
                         placeholderText: "e.g. Cyberpunk 2077"
+                        onTextChanged: {
+                            root.gameTitle = text
+                        }
                         onCommit: (val) => {
                             root.gameTitle = val
-                            if (root.customPrefixName.length === 0) {
+                            if (root.customPrefixName.length === 0 && val.length > 0) {
                                 root.customPrefixName = uiController.prefixManager.suggestShortPrefixName(val)
                             }
                         }
@@ -320,9 +325,11 @@ Popup {
                         spacing: 4
                         Label { text: "Working Directory (Optional)"; color: appSettings.textSecColor; font.pixelSize: 12 }
                         M3TextField {
+                            id: workDirInputField
                             Layout.fillWidth: true
                             text: root.workDir
                             placeholderText: "Default is executable folder"
+                            onTextChanged: root.workDir = text
                             onCommit: (val) => root.workDir = val
                         }
                     }
@@ -332,9 +339,11 @@ Popup {
                         spacing: 4
                         Label { text: "Launch Arguments (Optional)"; color: appSettings.textSecColor; font.pixelSize: 12 }
                         M3TextField {
+                            id: argsInputField
                             Layout.fillWidth: true
                             text: root.launchArgs
                             placeholderText: "-fullscreen -skipintro"
+                            onTextChanged: root.launchArgs = text
                             onCommit: (val) => root.launchArgs = val
                         }
                     }
@@ -378,6 +387,11 @@ Popup {
                     enabled: root.exePath.trim().length > 0
                     opacity: enabled ? 1.0 : 0.5
                     onClicked: {
+                        let finalTitle = titleInputField.text.trim().length > 0 ? titleInputField.text.trim() : root.gameTitle.trim()
+                        let finalExe = exeInputField.text.trim().length > 0 ? exeInputField.text.trim() : root.exePath.trim()
+                        let finalWorkDir = workDirInputField.text.trim().length > 0 ? workDirInputField.text.trim() : root.workDir.trim()
+                        let finalArgs = argsInputField.text.trim()
+
                         let runners = uiController.runnerManager.installedRunners
                         let chosenRunnerId = ""
                         if (root.runnerIndex > 0 && root.runnerIndex - 1 < runners.length) {
@@ -393,16 +407,15 @@ Popup {
                             }
                         }
                         uiController.gameManager.addGame(
-                            root.gameTitle,
-                            root.exePath,
-                            root.workDir,
-                            root.launchArgs,
+                            finalTitle,
+                            finalExe,
+                            finalWorkDir,
+                            finalArgs,
                             chosenRunnerId,
                             pfxMode,
                             root.customPrefixName,
                             root.customPrefixLocation,
-                            root.prefixArch,
-                            root.selectedCategory
+                            root.prefixArch
                         )
                         root.close()
                     }

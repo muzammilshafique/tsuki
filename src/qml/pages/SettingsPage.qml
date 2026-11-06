@@ -22,6 +22,7 @@ Page {
 
     property var settingsCatalog: []
     property var searchResults: []
+    property int focusedResultIndex: 0
 
     function buildIndex() {
         let list = []
@@ -81,6 +82,7 @@ Page {
         }
         scored.sort((a, b) => b.score - a.score)
         searchResults = scored
+        focusedResultIndex = 0
         if (scored.length > 0) {
             if (!searchResultsPopup.visible) searchResultsPopup.open()
         } else {
@@ -92,9 +94,11 @@ Page {
         if (!targetItem || !settingsCol) return
         Qt.callLater(() => {
             let p = targetItem.mapToItem(settingsCol, 0, 0)
-            let desiredY = Math.max(0, p.y - 20)
             let maxScrollY = Math.max(0, settingsScroll.contentHeight - settingsScroll.height)
-            settingsScroll.ScrollBar.vertical.position = maxScrollY > 0 ? (desiredY / settingsScroll.contentHeight) : 0
+            let desiredY = Math.min(Math.max(0, p.y - 20), maxScrollY)
+            settingsScroll.ScrollBar.vertical.position = (maxScrollY > 0 && settingsScroll.contentHeight > 0)
+                ? (desiredY / settingsScroll.contentHeight)
+                : 0
             if (typeof targetItem.highlight === "function") {
                 targetItem.highlight()
             }
@@ -249,10 +253,50 @@ Page {
 
                     onTextChanged: settingsPage.updateSearchResults(text)
 
+                    Keys.onDownPressed: (event) => {
+                        if (searchResultsPopup.visible && settingsPage.searchResults.length > 0) {
+                            event.accepted = true
+                            settingsPage.focusedResultIndex = (settingsPage.focusedResultIndex + 1) % settingsPage.searchResults.length
+                            sResListView.positionViewAtIndex(settingsPage.focusedResultIndex, ListView.Contain)
+                        }
+                    }
+                    Keys.onUpPressed: (event) => {
+                        if (searchResultsPopup.visible && settingsPage.searchResults.length > 0) {
+                            event.accepted = true
+                            settingsPage.focusedResultIndex = (settingsPage.focusedResultIndex - 1 + settingsPage.searchResults.length) % settingsPage.searchResults.length
+                            sResListView.positionViewAtIndex(settingsPage.focusedResultIndex, ListView.Contain)
+                        }
+                    }
+                    Keys.onReturnPressed: (event) => {
+                        if (searchResultsPopup.visible && settingsPage.searchResults.length > 0) {
+                            event.accepted = true
+                            let entry = settingsPage.searchResults[settingsPage.focusedResultIndex]
+                            if (entry) {
+                                searchResultsPopup.close()
+                                searchField.focus = false
+                                settingsPage.scrollToSetting(entry.item)
+                            }
+                        }
+                    }
+                    Keys.onEnterPressed: (event) => {
+                        if (searchResultsPopup.visible && settingsPage.searchResults.length > 0) {
+                            event.accepted = true
+                            let entry = settingsPage.searchResults[settingsPage.focusedResultIndex]
+                            if (entry) {
+                                searchResultsPopup.close()
+                                searchField.focus = false
+                                settingsPage.scrollToSetting(entry.item)
+                            }
+                        }
+                    }
                     Keys.onEscapePressed: (event) => {
                         event.accepted = true
-                        searchField.clear()
-                        searchField.focus = false
+                        if (searchResultsPopup.visible) {
+                            searchResultsPopup.close()
+                        } else {
+                            searchField.clear()
+                            searchField.focus = false
+                        }
                     }
                 }
 
@@ -286,77 +330,137 @@ Page {
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                 }
 
-                // Search Results Floating Popup
+                // Search Results Floating Popup with M3 Styling & Unfold Animation
                 Popup {
                     id: searchResultsPopup
-                    y: searchTile.height + 6
+                    y: searchTile.height + 4
                     x: 0
-                    width: searchTile.width
+                    width: Math.max(searchTile.width, 360)
                     padding: 6
                     dim: false
                     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
 
+                    property real unfoldProgress: 0.0
+
+                    enter: Transition {
+                        ParallelAnimation {
+                            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 180; easing.type: Easing.OutCubic }
+                            NumberAnimation { property: "unfoldProgress"; from: 0.0; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                        }
+                    }
+                    exit: Transition {
+                        ParallelAnimation {
+                            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 140; easing.type: Easing.InCubic }
+                            NumberAnimation { property: "unfoldProgress"; from: 1.0; to: 0.0; duration: 160; easing.type: Easing.InCubic }
+                        }
+                    }
+
+                    readonly property real fullContentHeight: Math.min(290, settingsPage.searchResults.length * 48 + 12)
+                    implicitHeight: fullContentHeight * unfoldProgress
+                    height: implicitHeight
+
                     background: Rectangle {
                         color: appSettings.surfaceColor
-                        radius: 16
+                        radius: 14
                         border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)
                         border.width: 1
                         layer.enabled: true
                         layer.effect: MultiEffect {
                             shadowEnabled: true
-                            shadowColor: Qt.rgba(0, 0, 0, 0.45)
+                            shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.45 : 0.18)
                             shadowBlur: 0.6
                             shadowVerticalOffset: 4
                         }
                     }
 
-                    contentItem: ListView {
-                        implicitHeight: Math.min(260, count * 42)
+                    contentItem: Item {
                         clip: true
-                        model: settingsPage.searchResults
-                        spacing: 2
-                        boundsBehavior: Flickable.StopAtBounds
 
-                        delegate: Rectangle {
-                            id: sResRow
-                            required property var modelData
-                            required property int index
-                            width: ListView.view.width
-                            height: 40
-                            radius: 10
-                            color: sResMA.containsMouse ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : "transparent"
+                        ListView {
+                            id: sResListView
+                            anchors.fill: parent
+                            clip: true
+                            model: settingsPage.searchResults
+                            spacing: 3
+                            boundsBehavior: Flickable.StopAtBounds
 
-                            ColumnLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 12
-                                spacing: 1
-                                Label {
-                                    text: sResRow.modelData.name
-                                    color: sResMA.containsMouse ? appSettings.accentColor : appSettings.textColor
-                                    font.pixelSize: 13
-                                    font.weight: Font.DemiBold
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
+                            delegate: Rectangle {
+                                id: sResRow
+                                required property var modelData
+                                required property int index
+                                width: ListView.view.width
+                                height: 46
+                                radius: 10
+                                readonly property bool isRowFocused: sResMA.containsMouse || settingsPage.focusedResultIndex === index
+                                color: isRowFocused
+                                    ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                    : "transparent"
+                                border.color: isRowFocused ? appSettings.accentColor : "transparent"
+                                border.width: isRowFocused ? 1 : 0
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 12
+                                    anchors.rightMargin: 12
+                                    spacing: 10
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.alignment: Qt.AlignVCenter
+                                        spacing: 2
+
+                                        Label {
+                                            text: sResRow.modelData.name
+                                            color: sResRow.isRowFocused ? appSettings.accentColor : appSettings.textColor
+                                            font.pixelSize: 13
+                                            font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Label {
+                                            text: sResRow.modelData.description || sResRow.modelData.section
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 11
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                            visible: text.length > 0
+                                        }
+                                    }
+
+                                    // Section chip pill
+                                    Rectangle {
+                                        Layout.alignment: Qt.AlignVCenter
+                                        height: 20
+                                        radius: 6
+                                        implicitWidth: secTagLbl.implicitWidth + 12
+                                        color: sResRow.isRowFocused
+                                            ? Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.16)
+                                            : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05))
+
+                                        Label {
+                                            id: secTagLbl
+                                            anchors.centerIn: parent
+                                            text: sResRow.modelData.section
+                                            color: sResRow.isRowFocused ? appSettings.accentColor : appSettings.textTerColor
+                                            font.pixelSize: 10
+                                            font.weight: Font.Medium
+                                        }
+                                    }
                                 }
-                                Label {
-                                    text: sResRow.modelData.section
-                                    color: appSettings.textTerColor
-                                    font.pixelSize: 11
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-                            }
 
-                            MouseArea {
-                                id: sResMA
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    searchResultsPopup.close()
-                                    searchTile.stopEditing()
-                                    settingsPage.scrollToSetting(sResRow.modelData.item)
+                                MouseArea {
+                                    id: sResMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        searchResultsPopup.close()
+                                        searchField.focus = false
+                                        settingsPage.scrollToSetting(sResRow.modelData.item)
+                                    }
                                 }
                             }
                         }
@@ -375,7 +479,19 @@ Page {
         anchors.bottom: parent.bottom
         contentWidth: availableWidth
         clip: true
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        ScrollBar.vertical: ScrollBar {
+            id: settingsVBar
+            policy: settingsScroll.contentHeight > settingsScroll.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+            width: 6
+            contentItem: Rectangle {
+                implicitWidth: 6
+                radius: 3
+                color: appSettings.accentColor
+                opacity: settingsVBar.hovered || settingsVBar.pressed ? 0.85 : 0.45
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+            }
+        }
 
         ColumnLayout {
             id: settingsCol

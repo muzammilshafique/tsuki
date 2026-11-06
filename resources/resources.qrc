@@ -8,6 +8,8 @@
         <file alias="qml/components/M3Button.qml">../src/qml/components/M3Button.qml</file>
         <file alias="qml/components/M3TextField.qml">../src/qml/components/M3TextField.qml</file>
         <file alias="qml/components/Toggle.qml">../src/qml/components/Toggle.qml</file>
+        <file alias="qml/components/ArtworkUrlDialog.qml">../src/qml/components/ArtworkUrlDialog.qml</file>
+        <file alias="qml/components/RemoveGameDialog.qml">../src/qml/components/RemoveGameDialog.qml</file>
         <file alias="qml/components/M3SegmentedButton.qml">../src/qml/components/M3SegmentedButton.qml</file>
         <file alias="qml/components/StyledSlider.qml">../src/qml/components/StyledSlider.qml</file>
         <file alias="qml/components/StyledCombo.qml">../src/qml/components/StyledCombo.qml</file>

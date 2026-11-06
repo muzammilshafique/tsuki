@@ -112,8 +112,7 @@ public:
                                 const QString& prefixMode = QStringLiteral("dedicated"), // "dedicated" or existing prefixId
                                 const QString& customPrefixName = QString(),
                                 const QString& customPrefixLocation = QString(),
-                                const QString& prefixArch = QStringLiteral("win64"),
-                                const QString& category = QStringLiteral("Uncategorized"));
+                                const QString& prefixArch = QStringLiteral("win64"));
 
     Q_INVOKABLE bool updateGameDetails(const QString& gameId, const QVariantMap& updates);
     Q_INVOKABLE bool setGameArtwork(const QString& gameId,
@@ -121,6 +120,7 @@ public:
                                     const QString& bannerPath,
                                     const QString& logoPath,
                                     const QString& iconPath);
+    Q_INVOKABLE void setGameArtworkFromUrl(const QString& gameId, const QString& type, const QString& url);
     Q_INVOKABLE void refreshArtworkFromSteamGridDb(const QString& gameId);
     Q_INVOKABLE bool removeGame(const QString& gameId, bool deleteDedicatedPrefix = false);
 

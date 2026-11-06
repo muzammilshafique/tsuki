@@ -26,8 +26,6 @@ struct GameRecord {
     QString logoPath;
     QString iconPath;
 
-    QString releaseYear;
-    QString category = QStringLiteral("Uncategorized");
     QString steamGridAppId;
 
     bool isFavorite = false;
@@ -147,9 +145,7 @@ struct GameRecord {
         map["rawLogoPath"] = logoPath;
         map["iconPath"] = toFileUrlOrOriginal(iconPath);
         map["rawIconPath"] = iconPath;
-        map["year"] = releaseYear.isEmpty() ? formatPlaytime(playtimeSeconds) : releaseYear;
-        map["releaseYear"] = releaseYear;
-        map["category"] = category;
+        map["year"] = formatPlaytime(playtimeSeconds);
         map["steamGridAppId"] = steamGridAppId;
         map["isFavorite"] = isFavorite;
         map["isPinned"] = isPinned;

@@ -66,8 +66,6 @@ bool DatabaseManager::initialize() {
                 banner_path TEXT,
                 logo_path TEXT,
                 icon_path TEXT,
-                release_year TEXT,
-                category TEXT,
                 steamgrid_app_id TEXT,
                 is_favorite INTEGER DEFAULT 0,
                 is_pinned INTEGER DEFAULT 0,
@@ -145,12 +143,12 @@ bool DatabaseManager::saveGame(const GameRecord& game) {
         INSERT OR REPLACE INTO games (
             id, title, executable_path, working_directory, launch_arguments,
             runner_id, prefix_id, cover_path, banner_path, logo_path, icon_path,
-            release_year, category, steamgrid_app_id, is_favorite, is_pinned,
+            steamgrid_app_id, is_favorite, is_pinned,
             playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json
         ) VALUES (
             :id, :title, :executable_path, :working_directory, :launch_arguments,
             :runner_id, :prefix_id, :cover_path, :banner_path, :logo_path, :icon_path,
-            :release_year, :category, :steamgrid_app_id, :is_favorite, :is_pinned,
+            :steamgrid_app_id, :is_favorite, :is_pinned,
             :playtime_seconds, :last_played_timestamp, :added_timestamp, :launch_config_json
         )
     )"));
@@ -165,8 +163,6 @@ bool DatabaseManager::saveGame(const GameRecord& game) {
     q.bindValue(QStringLiteral(":banner_path"), game.bannerPath);
     q.bindValue(QStringLiteral(":logo_path"), game.logoPath);
     q.bindValue(QStringLiteral(":icon_path"), game.iconPath);
-    q.bindValue(QStringLiteral(":release_year"), game.releaseYear);
-    q.bindValue(QStringLiteral(":category"), game.category);
     q.bindValue(QStringLiteral(":steamgrid_app_id"), game.steamGridAppId);
     q.bindValue(QStringLiteral(":is_favorite"), game.isFavorite ? 1 : 0);
     q.bindValue(QStringLiteral(":is_pinned"), game.isPinned ? 1 : 0);
@@ -203,15 +199,13 @@ GameRecord DatabaseManager::recordFromQuery(QSqlQuery& q) {
     g.bannerPath = q.value(8).toString();
     g.logoPath = q.value(9).toString();
     g.iconPath = q.value(10).toString();
-    g.releaseYear = q.value(11).toString();
-    g.category = q.value(12).toString();
-    g.steamGridAppId = q.value(13).toString();
-    g.isFavorite = q.value(14).toInt() != 0;
-    g.isPinned = q.value(15).toInt() != 0;
-    g.playtimeSeconds = q.value(16).toLongLong();
-    g.lastPlayedTimestamp = q.value(17).toLongLong();
-    g.addedTimestamp = q.value(18).toLongLong();
-    g.applyLaunchConfigJson(q.value(19).toString());
+    g.steamGridAppId = q.value(11).toString();
+    g.isFavorite = q.value(12).toInt() != 0;
+    g.isPinned = q.value(13).toInt() != 0;
+    g.playtimeSeconds = q.value(14).toLongLong();
+    g.lastPlayedTimestamp = q.value(15).toLongLong();
+    g.addedTimestamp = q.value(16).toLongLong();
+    g.applyLaunchConfigJson(q.value(17).toString());
     return g;
 }
 
@@ -221,7 +215,7 @@ std::optional<GameRecord> DatabaseManager::getGame(const QString& gameId) const 
     q.prepare(QStringLiteral(R"(
         SELECT id, title, executable_path, working_directory, launch_arguments,
                runner_id, prefix_id, cover_path, banner_path, logo_path, icon_path,
-               release_year, category, steamgrid_app_id, is_favorite, is_pinned,
+               steamgrid_app_id, is_favorite, is_pinned,
                playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json
         FROM games WHERE id = :id
     )"));
@@ -239,7 +233,7 @@ QList<GameRecord> DatabaseManager::getAllGames() const {
     if (q.exec(QStringLiteral(R"(
         SELECT id, title, executable_path, working_directory, launch_arguments,
                runner_id, prefix_id, cover_path, banner_path, logo_path, icon_path,
-               release_year, category, steamgrid_app_id, is_favorite, is_pinned,
+               steamgrid_app_id, is_favorite, is_pinned,
                playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json
         FROM games
         ORDER BY is_pinned DESC, last_played_timestamp DESC, added_timestamp DESC

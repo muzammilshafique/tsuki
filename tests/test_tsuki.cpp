@@ -202,6 +202,53 @@ private slots:
         QVERIFY(analysis.value("summary").toString().contains("0xC0000135"));
         QVERIFY(analysis.value("recommendation").toString().contains("vcrun2022"));
     }
+
+    void testGameManagerAndArtwork() {
+        QTemporaryDir tmpDir;
+        DatabaseManager db(tmpDir.filePath("test5.db"));
+        QVERIFY(db.initialize());
+        AppSettings settings;
+        DownloadManager dl;
+        RunnerManager runnerMgr(&db, &settings, &dl);
+        PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+        ControllerManager ctrlMgr(&db, &settings);
+        DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+        LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+        SteamGridDbService sgdb(&settings, &dl);
+        GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+
+        // Test title guessing from parent directories for short/generic executables
+        QCOMPARE(gm.guessTitleFromExecutable("/home/user/Games/Silent Hill 2/sh2pc.exe"), QString("Silent Hill 2"));
+        QCOMPARE(gm.guessTitleFromExecutable("/home/user/Games/Grand Theft Auto San Andreas/gta_sa.exe"), QString("Grand Theft Auto San Andreas"));
+        QCOMPARE(gm.guessTitleFromExecutable("/games/Cyberpunk 2077/bin/x64/Cyberpunk2077.exe"), QString("Cyberpunk 2077"));
+
+        // Test minimal fallback SVG generation
+        QString posterPath = SteamGridDbService::generateFallbackPoster("test-game-1", "Silent Hill 2");
+        QVERIFY(QFile::exists(posterPath));
+        QFile posterFile(posterPath);
+        QVERIFY(posterFile.open(QIODevice::ReadOnly));
+        QString posterContent = QString::fromUtf8(posterFile.readAll());
+        // Verify dark minimal theme and no purple gradients
+        QVERIFY(posterContent.contains("#101014"));
+        QVERIFY(!posterContent.contains("#1e1b4b"));
+        QVERIFY(!posterContent.contains("#2e1065"));
+        QVERIFY(posterContent.contains("Silent Hill 2"));
+
+        // Test adding game and removing with dedicated prefix deletion
+        QString gameId = gm.addGame("Custom Title", "/home/user/Games/Test/game.exe", "", "", "", "dedicated", "CustomPfx", tmpDir.filePath("prefixes"), "win64");
+        QVERIFY(!gameId.isEmpty());
+        auto opt = db.getGame(gameId);
+        QVERIFY(opt.has_value());
+        QCOMPARE(opt->title, QString("Custom Title"));
+        QString pfxId = opt->prefixId;
+        QVERIFY(!pfxId.isEmpty());
+        QVERIFY(prefixMgr.getPrefix(pfxId).has_value());
+
+        // Remove game with deleteDedicatedPrefix = true
+        QVERIFY(gm.removeGame(gameId, true));
+        QVERIFY(!db.getGame(gameId).has_value());
+        QVERIFY(!prefixMgr.getPrefix(pfxId).has_value());
+    }
 };
 
 QTEST_MAIN(TestTsuki)

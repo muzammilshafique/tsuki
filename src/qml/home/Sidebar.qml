@@ -309,10 +309,10 @@ Rectangle {
 
         // Bottom Settings Item
         Item {
+            id: bottomSettingsItem
             Layout.fillWidth: true
             Layout.preferredHeight: 44
             readonly property bool isTvFocused: sidebar.isKeyboardNavActive && sidebar.activeFocus && sidebar.focusedNavIndex === sidebar.navModel.length
-            readonly property bool isSettingsActive: sidebar.currentSection === "settings"
 
             MouseArea {
                 id: bottomNavMouse
@@ -323,8 +323,6 @@ Rectangle {
                 onPressed: { uiController.setKeyboardNavActive(false) }
                 onClicked: {
                     uiController.setKeyboardNavActive(false)
-                    sidebar.focusedNavIndex = sidebar.navModel.length
-                    sidebar.currentSection = "settings"
                     sidebar.settingsRequested()
                 }
 
@@ -333,9 +331,29 @@ Rectangle {
                     anchors.leftMargin: 12
                     anchors.rightMargin: 12
                     radius: 8
-                    color: parent.parent.isSettingsActive ? appSettings.accentColor : appSettings.sidebarHoverColor
-                    opacity: parent.parent.isSettingsActive ? 0.15 : ((!sidebar.isKeyboardNavActive && bottomNavMouse.containsMouse) ? 1.0 : 0.0)
+                    color: appSettings.sidebarHoverColor
+                    opacity: (!sidebar.isKeyboardNavActive && bottomNavMouse.containsMouse) ? 1.0 : 0.0
                     Behavior on opacity { NumberAnimation { duration: 150 } }
+                }
+
+                // Focus Ring for Settings
+                Rectangle {
+                    visible: bottomSettingsItem.isTvFocused
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    radius: 9
+                    color: "transparent"
+                    border.color: appSettings.accentColor
+                    border.width: 2.5
+                    z: 5
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 7
+                        color: appSettings.accentColor
+                        opacity: 0.2
+                    }
                 }
 
                 Item {
@@ -349,20 +367,22 @@ Rectangle {
                         YIcon {
                             anchors.centerIn: parent
                             source: "qrc:/tsuki_app/icons/actions/settings.svg"
-                            color: parent.parent.parent.parent.isSettingsActive ? appSettings.accentColor : appSettings.sidebarTextSecColor
+                            color: bottomNavMouse.containsMouse ? appSettings.accentColor : appSettings.sidebarTextSecColor
                             size: 22
+                            Behavior on color { ColorAnimation { duration: 120 } }
                         }
                     }
                     Label {
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.left: bottomIconContainer.right
                         text: "Settings"
-                        color: parent.parent.parent.isSettingsActive ? appSettings.accentColor : appSettings.sidebarTextSecColor
+                        color: bottomNavMouse.containsMouse ? appSettings.textColor : appSettings.sidebarTextSecColor
                         font.pixelSize: 15
-                        font.weight: parent.parent.parent.isSettingsActive ? Font.DemiBold : Font.Medium
+                        font.weight: Font.Medium
                         opacity: sidebar.isCollapsed ? 0.0 : 1.0
                         visible: opacity > 0
                         Behavior on opacity { NumberAnimation { duration: 150 } }
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
                 }
             }

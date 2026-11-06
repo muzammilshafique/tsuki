@@ -213,6 +213,8 @@ Popup {
                 delegate: Rectangle {
                     id: verbRow
                     required property var modelData
+                    readonly property bool isVerbInstalling: uiController.winetricksManager.isRunning && uiController.winetricksManager.currentVerb === verbRow.modelData.verb
+                    readonly property bool isVerbInstalled: Boolean(verbRow.modelData.isInstalled)
                     width: verbListView.width
                     height: 52
                     radius: 12
@@ -270,26 +272,35 @@ Popup {
                         // Status / Action
                         Item {
                             implicitWidth: 110
-                            implicitHeight: 32
+                            implicitHeight: 34
 
-                            // 1. Installed Badge
-                            Row {
+                            // 1. Installed Badge (Clean Pill)
+                            Rectangle {
                                 anchors.centerIn: parent
-                                spacing: 4
-                                visible: verbRow.modelData.isInstalled && !verbRow.modelData.isInstalling
+                                visible: verbRow.isVerbInstalled && !verbRow.isVerbInstalling
+                                height: 28
+                                radius: 14
+                                implicitWidth: instRow.implicitWidth + 18
+                                color: Qt.rgba(34/255, 197/255, 94/255, 0.12)
+                                border.color: Qt.rgba(34/255, 197/255, 94/255, 0.35)
+                                border.width: 1
 
-                                YIcon {
-                                    size: 14
-                                    source: "qrc:/tsuki_app/icons/actions/check.svg"
-                                    color: "#22c55e"
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                                Label {
-                                    text: "Installed"
-                                    color: "#22c55e"
-                                    font.pixelSize: 12
-                                    font.weight: Font.DemiBold
-                                    anchors.verticalCenter: parent.verticalCenter
+                                RowLayout {
+                                    id: instRow
+                                    anchors.centerIn: parent
+                                    spacing: 5
+
+                                    YIcon {
+                                        size: 14
+                                        source: "qrc:/tsuki_app/icons/actions/check.svg"
+                                        color: "#22c55e"
+                                    }
+                                    Label {
+                                        text: "Installed"
+                                        color: "#22c55e"
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                    }
                                 }
                             }
 
@@ -297,12 +308,12 @@ Popup {
                             Row {
                                 anchors.centerIn: parent
                                 spacing: 6
-                                visible: verbRow.modelData.isInstalling
+                                visible: verbRow.isVerbInstalling
 
                                 BusyIndicator {
                                     width: 18; height: 18
                                     anchors.verticalCenter: parent.verticalCenter
-                                    running: parent.visible
+                                    running: verbRow.isVerbInstalling
                                 }
                                 Label {
                                     text: "Installing…"
@@ -316,9 +327,11 @@ Popup {
                             // 3. Install Button
                             M3Button {
                                 anchors.centerIn: parent
-                                visible: !verbRow.modelData.isInstalled && !verbRow.modelData.isInstalling
+                                visible: !verbRow.isVerbInstalled && !verbRow.isVerbInstalling
                                 text: "Install"
                                 buttonType: "tonal"
+                                implicitHeight: 32
+                                enabled: !uiController.winetricksManager.isRunning
                                 onClicked: {
                                     uiController.winetricksManager.installVerb(root.prefixId, verbRow.modelData.verb)
                                 }

@@ -17,8 +17,8 @@ Rectangle {
     signal focusGridRequested()
     signal focusSidebarRequested()
 
-    function forceSearchFocus() { searchTile.forceActiveFocus() }
-    function activateSearch() { searchTile.startEditing() }
+    function forceSearchFocus() { searchField.forceActiveFocus() }
+    function activateSearch() { searchField.forceActiveFocus() }
 
     readonly property var sortOptions: [
         { label: "Recently Played / Default", mode: 0 },
@@ -54,13 +54,18 @@ Rectangle {
             Layout.minimumWidth: 240
             Layout.maximumWidth: 540
             radius: 20
+            readonly property bool isSearchHovered: searchTileHover.hovered || searchField.hovered
             color: searchField.activeFocus
                 ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
-                : (searchTileHover.hovered
+                : (isSearchHovered
                     ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.06))
-                    : appSettings.inputColor)
+                    : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)))
 
-            border.color: searchField.activeFocus ? appSettings.accentColor : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+            border.color: searchField.activeFocus
+                ? appSettings.accentColor
+                : (isSearchHovered
+                    ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.14))
+                    : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)))
             border.width: searchField.activeFocus ? 2 : 1
             Behavior on color { ColorAnimation { duration: 150 } }
             Behavior on border.color { ColorAnimation { duration: 150 } }
@@ -158,6 +163,72 @@ Rectangle {
             implicitHeight: 40
             implicitWidth: sortInner.implicitWidth + 28
 
+            property int focusedPopupIndex: 0
+            function handlePopupDown() {
+                focusedPopupIndex = (focusedPopupIndex + 1) % topBar.sortOptions.length
+            }
+            function handlePopupUp() {
+                focusedPopupIndex = (focusedPopupIndex - 1 + topBar.sortOptions.length) % topBar.sortOptions.length
+            }
+            function handlePopupSelect() {
+                if (focusedPopupIndex >= 0 && focusedPopupIndex < topBar.sortOptions.length) {
+                    uiController.searchModel.sortMode = topBar.sortOptions[focusedPopupIndex].mode
+                }
+                sortPopup.close()
+            }
+
+            Keys.onReturnPressed: (event) => {
+                event.accepted = true
+                if (sortPopup.visible) sortBtn.handlePopupSelect()
+                else {
+                    sortBtn.syncActiveIndex()
+                    sortPopup.open()
+                }
+            }
+            Keys.onEnterPressed: (event) => {
+                event.accepted = true
+                if (sortPopup.visible) sortBtn.handlePopupSelect()
+                else {
+                    sortBtn.syncActiveIndex()
+                    sortPopup.open()
+                }
+            }
+            Keys.onSpacePressed: (event) => {
+                event.accepted = true
+                if (sortPopup.visible) sortBtn.handlePopupSelect()
+                else {
+                    sortBtn.syncActiveIndex()
+                    sortPopup.open()
+                }
+            }
+            Keys.onUpPressed: (event) => {
+                if (sortPopup.visible) {
+                    event.accepted = true
+                    sortBtn.handlePopupUp()
+                }
+            }
+            Keys.onDownPressed: (event) => {
+                if (sortPopup.visible) {
+                    event.accepted = true
+                    sortBtn.handlePopupDown()
+                }
+            }
+            Keys.onEscapePressed: (event) => {
+                if (sortPopup.visible) {
+                    event.accepted = true
+                    sortPopup.close()
+                }
+            }
+
+            function syncActiveIndex() {
+                for (let i = 0; i < topBar.sortOptions.length; ++i) {
+                    if (topBar.sortOptions[i].mode === uiController.searchModel.sortMode) {
+                        focusedPopupIndex = i
+                        break
+                    }
+                }
+            }
+
             background: Rectangle {
                 radius: 10
                 color: (sortBtn.hovered || sortPopup.visible || sortBtn.activeFocus)
@@ -210,83 +281,131 @@ Rectangle {
             }
 
             onClicked: {
-                if (sortPopup.visible) sortPopup.close()
-                else sortPopup.open()
+                if (sortPopup.visible) {
+                    sortPopup.close()
+                } else {
+                    sortBtn.syncActiveIndex()
+                    sortPopup.open()
+                }
             }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
 
             Popup {
                 id: sortPopup
-                y: sortBtn.height + 6
+                y: sortBtn.height + 4
                 x: sortBtn.width - width
                 width: 220
                 padding: 6
+                dim: false
                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnPressOutsideParent
+
+                property real unfoldProgress: 0.0
+
+                enter: Transition {
+                    ParallelAnimation {
+                        NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 180; easing.type: Easing.OutCubic }
+                        NumberAnimation { property: "unfoldProgress"; from: 0.0; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                    }
+                }
+                exit: Transition {
+                    ParallelAnimation {
+                        NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 140; easing.type: Easing.InCubic }
+                        NumberAnimation { property: "unfoldProgress"; from: 1.0; to: 0.0; duration: 160; easing.type: Easing.InCubic }
+                    }
+                }
+
+                readonly property real fullContentHeight: Math.min(280, topBar.sortOptions.length * 38 + 12)
+                implicitHeight: fullContentHeight * unfoldProgress
+                height: implicitHeight
 
                 background: Rectangle {
                     color: appSettings.surfaceColor
-                    radius: 12
-                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.10)
+                    radius: 14
+                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)
                     border.width: 1
                     layer.enabled: true
                     layer.effect: MultiEffect {
                         shadowEnabled: true
-                        shadowColor: Qt.rgba(0, 0, 0, 0.45)
+                        shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.45 : 0.18)
                         shadowBlur: 0.6
                         shadowVerticalOffset: 4
                     }
                 }
 
-                contentItem: Column {
-                    spacing: 2
-                    Repeater {
-                        model: topBar.sortOptions
-                        delegate: Item {
-                            required property int index
-                            required property var modelData
-                            width: sortPopup.width - 12
-                            height: 38
+                contentItem: Item {
+                    clip: true
 
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: 8
-                                color: sortItemMA.containsMouse 
-                                    ? appSettings.surfaceAltColor 
-                                    : (uiController.searchModel.sortMode === modelData.mode ? Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.12) : "transparent")
-                            }
+                    Flickable {
+                        id: sortFlick
+                        anchors.fill: parent
+                        contentHeight: sortCol.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 12
-                                spacing: 8
+                        Column {
+                            id: sortCol
+                            width: sortFlick.width
+                            spacing: 2
 
-                                Label {
-                                    Layout.fillWidth: true
-                                    verticalAlignment: Text.AlignVCenter
-                                    text: modelData.label
-                                    color: (uiController.searchModel.sortMode === modelData.mode || sortItemMA.containsMouse) ? appSettings.accentColor : appSettings.textColor
-                                    font.pixelSize: 13
-                                    font.weight: uiController.searchModel.sortMode === modelData.mode ? Font.DemiBold : Font.Normal
-                                    elide: Text.ElideRight
-                                }
+                            Repeater {
+                                model: topBar.sortOptions
+                                delegate: Item {
+                                    id: sortRow
+                                    required property int index
+                                    required property var modelData
+                                    width: sortCol.width
+                                    height: 36
+                                    readonly property bool isSelected: uiController.searchModel.sortMode === modelData.mode
+                                    readonly property bool isHovered: sortItemMA.containsMouse || sortBtn.focusedPopupIndex === index
 
-                                YIcon {
-                                    size: 14
-                                    source: "qrc:/tsuki_app/icons/actions/check.svg"
-                                    color: appSettings.accentColor
-                                    visible: uiController.searchModel.sortMode === modelData.mode
-                                }
-                            }
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 10
+                                        color: sortRow.isSelected
+                                            ? appSettings.accentColor
+                                            : (sortRow.isHovered ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : "transparent")
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                    }
 
-                            MouseArea {
-                                id: sortItemMA
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    uiController.searchModel.sortMode = modelData.mode
-                                    sortPopup.close()
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 12
+                                        anchors.rightMargin: 12
+                                        spacing: 8
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: String(sortRow.modelData.label)
+                                            color: sortRow.isSelected
+                                                ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+                                                : appSettings.textColor
+                                            font.pixelSize: 13
+                                            font.weight: sortRow.isSelected ? Font.DemiBold : Font.Normal
+                                            renderType: Text.QtRendering
+                                            verticalAlignment: Text.AlignVCenter
+                                            elide: Text.ElideRight
+                                        }
+
+                                        YIcon {
+                                            size: 14
+                                            source: "qrc:/tsuki_app/icons/actions/check.svg"
+                                            color: sortRow.isSelected
+                                                ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+                                                : appSettings.accentColor
+                                            visible: sortRow.isSelected
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: sortItemMA
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            uiController.searchModel.sortMode = modelData.mode
+                                            sortPopup.close()
+                                        }
+                                    }
                                 }
                             }
                         }

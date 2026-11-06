@@ -131,10 +131,13 @@ Item {
         Behavior on scale { NumberAnimation { duration: 100 } }
 
         RowLayout {
-            anchors.centerIn: parent
+            anchors.fill: parent
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
             spacing: 8
 
             Text {
+                Layout.fillWidth: true
                 text: (combo.comboModel && combo.comboModel[combo.selectedIndex]) ? String(combo.comboModel[combo.selectedIndex]) : ""
                 color: appSettings.textColor
                 font.pixelSize: 13
@@ -142,6 +145,7 @@ Item {
                 elide: Text.ElideRight
                 renderType: Text.QtRendering
                 verticalAlignment: Text.AlignVCenter
+                horizontalAlignment: Text.AlignHCenter
             }
 
             YIcon {
@@ -166,9 +170,16 @@ Item {
     // Floating Popup with M3 Styling and Folding Transition (Matching EpisodeDownloadDialog)
     Popup {
         id: popup
-        y: combo.height + 4
+        readonly property real fullContentHeight: Math.min(280, (combo.comboModel ? combo.comboModel.length : 1) * 38 + 12)
+        readonly property bool opensUpward: {
+            let win = combo.Window.window
+            if (!win) return false
+            let p = combo.mapToItem(null, 0, combo.height)
+            return (p.y + fullContentHeight + 16 > win.height) && (p.y - combo.height - fullContentHeight > 0)
+        }
+        y: opensUpward ? (-fullContentHeight - 4) : (combo.height + 4)
         x: Math.min(0, combo.width - width)
-        width: Math.max(combo.width, 180)
+        width: Math.max(combo.width, 240)
         padding: 6
         dim: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnPressOutsideParent
@@ -188,7 +199,6 @@ Item {
             }
         }
 
-        readonly property real fullContentHeight: Math.min(280, (combo.comboModel ? combo.comboModel.length : 1) * 38 + 12)
         implicitHeight: fullContentHeight * unfoldProgress
         height: implicitHeight
 
