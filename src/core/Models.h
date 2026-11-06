@@ -259,8 +259,8 @@ struct ControllerProfileRecord {
         QVariantMap m;
         m["a"] = QStringLiteral("BTN_SOUTH");
         m["b"] = QStringLiteral("BTN_EAST");
-        m["x"] = QStringLiteral("BTN_WEST");
-        m["y"] = QStringLiteral("BTN_NORTH");
+        m["x"] = QStringLiteral("BTN_NORTH");
+        m["y"] = QStringLiteral("BTN_WEST");
         m["lb"] = QStringLiteral("BTN_TL");
         m["rb"] = QStringLiteral("BTN_TR");
         m["back"] = QStringLiteral("BTN_SELECT");

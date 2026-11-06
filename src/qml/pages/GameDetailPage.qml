@@ -21,6 +21,7 @@ Page {
     }
 
     Component.onCompleted: reloadGame()
+    Component.onDestruction: saveAllChanges()
 
     Connections {
         target: uiController.gameManager
@@ -34,66 +35,119 @@ Page {
     background: Rectangle { color: appSettings.bgColor }
 
     function saveAllChanges() {
+        if (!root.gameId || root.gameId.length === 0) return
+
         let envMap = {}
-        let lines = envVarsArea.text.split("\n")
-        for (let i = 0; i < lines.length; ++i) {
-            let l = lines[i].trim()
-            let eq = l.indexOf("=")
-            if (eq > 0) {
-                envMap[l.substring(0, eq).trim()] = l.substring(eq + 1).trim()
+        if (typeof envVarsArea !== "undefined" && envVarsArea) {
+            let lines = envVarsArea.text.split("\n")
+            for (let i = 0; i < lines.length; ++i) {
+                let l = lines[i].trim()
+                let eq = l.indexOf("=")
+                if (eq > 0) {
+                    envMap[l.substring(0, eq).trim()] = l.substring(eq + 1).trim()
+                }
             }
+        } else if (root.gameData.environmentVariables) {
+            envMap = root.gameData.environmentVariables
         }
 
         let dllMap = {}
-        let dlines = dllOverridesArea.text.split("\n")
-        for (let j = 0; j < dlines.length; ++j) {
-            let dl = dlines[j].trim()
-            let deq = dl.indexOf("=")
-            if (deq > 0) {
-                dllMap[dl.substring(0, deq).trim()] = dl.substring(deq + 1).trim()
+        if (typeof dllOverridesArea !== "undefined" && dllOverridesArea) {
+            let dlines = dllOverridesArea.text.split("\n")
+            for (let j = 0; j < dlines.length; ++j) {
+                let dl = dlines[j].trim()
+                let deq = dl.indexOf("=")
+                if (deq > 0) {
+                    dllMap[dl.substring(0, deq).trim()] = dl.substring(deq + 1).trim()
+                }
             }
+        } else if (root.gameData.dllOverrides) {
+            dllMap = root.gameData.dllOverrides
         }
 
         let runnerIdVal = ""
         let runners = uiController.runnerManager.installedRunners
-        if (detailRunnerCombo.selectedIndex > 0 && detailRunnerCombo.selectedIndex - 1 < runners.length) {
+        if (typeof detailRunnerCombo !== "undefined" && detailRunnerCombo && detailRunnerCombo.selectedIndex > 0 && detailRunnerCombo.selectedIndex - 1 < runners.length) {
             runnerIdVal = runners[detailRunnerCombo.selectedIndex - 1].id
+        } else if (typeof detailRunnerCombo !== "undefined" && detailRunnerCombo && detailRunnerCombo.selectedIndex === 0) {
+            runnerIdVal = ""
+        } else {
+            runnerIdVal = root.gameData.runnerId || ""
         }
 
         let pfxIdVal = root.gameData.prefixId || "default-prefix"
         let pfxs = uiController.prefixManager.prefixes
-        if (detailPrefixCombo.selectedIndex >= 0 && detailPrefixCombo.selectedIndex < pfxs.length) {
+        if (typeof detailPrefixCombo !== "undefined" && detailPrefixCombo && detailPrefixCombo.selectedIndex >= 0 && detailPrefixCombo.selectedIndex < pfxs.length) {
             pfxIdVal = pfxs[detailPrefixCombo.selectedIndex].id
         }
 
         let ctrlProfVal = ""
         let cprofs = uiController.controllerManager.profiles
-        if (detailCtrlCombo.selectedIndex > 0 && (detailCtrlCombo.selectedIndex - 1) < cprofs.length) {
+        if (typeof detailCtrlCombo !== "undefined" && detailCtrlCombo && detailCtrlCombo.selectedIndex > 0 && (detailCtrlCombo.selectedIndex - 1) < cprofs.length) {
             ctrlProfVal = cprofs[detailCtrlCombo.selectedIndex - 1].id
+        } else if (typeof detailCtrlCombo !== "undefined" && detailCtrlCombo && detailCtrlCombo.selectedIndex === 0) {
+            ctrlProfVal = ""
+        } else {
+            ctrlProfVal = root.gameData.controllerProfileId || ""
+        }
+
+        let xboxEmuVal = (typeof xboxEmuCombo !== "undefined" && xboxEmuCombo && xboxEmuCombo.selectedIndex >= 0)
+            ? (xboxEmuCombo.selectedIndex - 1)
+            : (root.gameData.xboxEmulationState !== undefined ? root.gameData.xboxEmulationState : -1)
+
+        let dxvkVal = (typeof dxvkCombo !== "undefined" && dxvkCombo && dxvkCombo.selectedIndex >= 0)
+            ? (dxvkCombo.selectedIndex - 1)
+            : (root.gameData.dxvkState !== undefined ? root.gameData.dxvkState : -1)
+
+        let vkd3dVal = (typeof vkd3dCombo !== "undefined" && vkd3dCombo && vkd3dCombo.selectedIndex >= 0)
+            ? (vkd3dCombo.selectedIndex - 1)
+            : (root.gameData.vkd3dState !== undefined ? root.gameData.vkd3dState : -1)
+
+        let esyncVal = (typeof esyncCombo !== "undefined" && esyncCombo && esyncCombo.selectedIndex >= 0)
+            ? (esyncCombo.selectedIndex - 1)
+            : (root.gameData.esyncState !== undefined ? root.gameData.esyncState : -1)
+
+        let fsyncVal = (typeof fsyncCombo !== "undefined" && fsyncCombo && fsyncCombo.selectedIndex >= 0)
+            ? (fsyncCombo.selectedIndex - 1)
+            : (root.gameData.fsyncState !== undefined ? root.gameData.fsyncState : -1)
+
+        let mangohudVal = (typeof mangohudCombo !== "undefined" && mangohudCombo && mangohudCombo.selectedIndex >= 0)
+            ? (mangohudCombo.selectedIndex - 1)
+            : (root.gameData.mangohudState !== undefined ? root.gameData.mangohudState : -1)
+
+        let gamemodeVal = (typeof gamemodeCombo !== "undefined" && gamemodeCombo && gamemodeCombo.selectedIndex >= 0)
+            ? (gamemodeCombo.selectedIndex - 1)
+            : (root.gameData.gamemodeState !== undefined ? root.gameData.gamemodeState : -1)
+
+        let hudVal = ""
+        if (typeof hudCombo !== "undefined" && hudCombo && hudCombo.selectedIndex >= 0) {
+            hudVal = hudCombo.selectedIndex === 0 ? "" : ["none", "fps", "devinfo,fps,frametimes", "full"][hudCombo.selectedIndex - 1]
+        } else {
+            hudVal = root.gameData.dxvkHud || ""
         }
 
         uiController.gameManager.updateGameDetails(root.gameId, {
-            title: titleField.text,
-            executablePath: exePathField.text,
-            workingDirectory: workDirField.text,
-            launchArguments: argsField.text,
+            title: (typeof titleField !== "undefined" && titleField && titleField.text.trim().length > 0) ? titleField.text.trim() : (root.gameData.title || ""),
+            executablePath: (typeof exePathField !== "undefined" && exePathField && exePathField.text.trim().length > 0) ? exePathField.text.trim() : (root.gameData.executablePath || ""),
+            workingDirectory: (typeof workDirField !== "undefined" && workDirField) ? workDirField.text.trim() : (root.gameData.workingDirectory || ""),
+            launchArguments: (typeof argsField !== "undefined" && argsField) ? argsField.text.trim() : (root.gameData.launchArguments || ""),
             runnerId: runnerIdVal,
             prefixId: pfxIdVal,
-            dxvkState: dxvkCombo.selectedIndex - 1,
-            vkd3dState: vkd3dCombo.selectedIndex - 1,
-            esyncState: esyncCombo.selectedIndex - 1,
-            fsyncState: fsyncCombo.selectedIndex - 1,
-            dxvkHud: hudCombo.selectedIndex === 0 ? "" : ["none", "fps", "devinfo,fps,frametimes", "full"][hudCombo.selectedIndex - 1],
-            virtualDesktop: vdesktopCheck.checked,
-            virtualDesktopResolution: vdesktopResField.text,
-            mangohudState: mangohudCombo.selectedIndex - 1,
-            gamemodeState: gamemodeCombo.selectedIndex - 1,
-            cpuAffinity: affinityField.text,
-            processPriority: Number(priorityField.text) || 0,
-            xboxEmulationState: xboxEmuCombo.selectedIndex - 1,
+            dxvkState: dxvkVal,
+            vkd3dState: vkd3dVal,
+            esyncState: esyncVal,
+            fsyncState: fsyncVal,
+            dxvkHud: hudVal,
+            virtualDesktop: (typeof vdesktopCheck !== "undefined" && vdesktopCheck) ? vdesktopCheck.checked : (root.gameData.virtualDesktop || false),
+            virtualDesktopResolution: (typeof vdesktopResField !== "undefined" && vdesktopResField && vdesktopResField.text.length > 0) ? vdesktopResField.text : (root.gameData.virtualDesktopResolution || "1920x1080"),
+            mangohudState: mangohudVal,
+            gamemodeState: gamemodeVal,
+            cpuAffinity: (typeof affinityField !== "undefined" && affinityField) ? affinityField.text.trim() : (root.gameData.cpuAffinity || ""),
+            processPriority: (typeof priorityField !== "undefined" && priorityField) ? (Number(priorityField.text) || 0) : (root.gameData.processPriority || 0),
+            xboxEmulationState: xboxEmuVal,
             controllerProfileId: ctrlProfVal,
-            preLaunchScript: preScriptField.text,
-            postExitScript: postScriptField.text,
+            preLaunchScript: (typeof preScriptField !== "undefined" && preScriptField) ? preScriptField.text.trim() : (root.gameData.preLaunchScript || ""),
+            postExitScript: (typeof postScriptField !== "undefined" && postScriptField) ? postScriptField.text.trim() : (root.gameData.postExitScript || ""),
             environmentVariables: envMap,
             dllOverrides: dllMap
         })
@@ -146,7 +200,10 @@ Page {
                     text: "Library"
                     iconSource: "qrc:/tsuki_app/icons/actions/back.svg"
                     buttonType: "tonal"
-                    onClicked: root.backRequested()
+                    onClicked: {
+                        root.saveAllChanges()
+                        root.backRequested()
+                    }
                 }
 
                 // Game Summary Row
@@ -364,7 +421,10 @@ Page {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: root.activeTab = tabItem.index
+                                onClicked: {
+                                    root.saveAllChanges()
+                                    root.activeTab = tabItem.index
+                                }
                             }
                         }
                     }
@@ -613,6 +673,7 @@ Page {
                                     }
                                     return 0
                                 }
+                                onSelected: root.saveAllChanges()
                             }
                         }
 
@@ -649,6 +710,7 @@ Page {
                                     }
                                     return 0
                                 }
+                                onSelected: root.saveAllChanges()
                             }
                         }
                     }
@@ -683,6 +745,7 @@ Page {
                                 Layout.preferredWidth: 250
                                 comboModel: ["Global Default (" + (appSettings.dxvkDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
                                 selectedIndex: (root.gameData.dxvkState !== undefined ? root.gameData.dxvkState : -1) + 1
+                                onSelected: root.saveAllChanges()
                             }
                         }
 
@@ -703,6 +766,7 @@ Page {
                                 Layout.preferredWidth: 250
                                 comboModel: ["Global Default (" + (appSettings.vkd3dDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
                                 selectedIndex: (root.gameData.vkd3dState !== undefined ? root.gameData.vkd3dState : -1) + 1
+                                onSelected: root.saveAllChanges()
                             }
                         }
 
@@ -727,6 +791,7 @@ Page {
                                     let idx = ["none", "fps", "devinfo,fps,frametimes", "full"].indexOf(h)
                                     return idx >= 0 ? idx + 1 : 0
                                 }
+                                onSelected: root.saveAllChanges()
                             }
                         }
 
@@ -757,6 +822,7 @@ Page {
                                 Layout.preferredWidth: 250
                                 comboModel: ["Global Default (" + (appSettings.esyncDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
                                 selectedIndex: (root.gameData.esyncState !== undefined ? root.gameData.esyncState : -1) + 1
+                                onSelected: root.saveAllChanges()
                             }
                         }
 
@@ -777,6 +843,7 @@ Page {
                                 Layout.preferredWidth: 250
                                 comboModel: ["Global Default (" + (appSettings.fsyncDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
                                 selectedIndex: (root.gameData.fsyncState !== undefined ? root.gameData.fsyncState : -1) + 1
+                                onSelected: root.saveAllChanges()
                             }
                         }
 
@@ -797,6 +864,7 @@ Page {
                                 Toggle {
                                     id: vdesktopCheck
                                     checked: root.gameData.virtualDesktop || false
+                                    onToggled: root.saveAllChanges()
                                 }
                                 M3TextField {
                                     id: vdesktopResField
@@ -804,6 +872,7 @@ Page {
                                     text: root.gameData.virtualDesktopResolution || "1920x1080"
                                     placeholderText: "1920x1080"
                                     enabled: vdesktopCheck.checked
+                                    onCommit: root.saveAllChanges()
                                 }
                             }
                         }
@@ -852,6 +921,7 @@ Page {
                                                 return out.join("\n")
                                             }
                                             background: null
+                                            onActiveFocusChanged: if (!activeFocus) root.saveAllChanges()
                                         }
                                     }
                                 }
@@ -885,6 +955,7 @@ Page {
                                                 return out.join("\n")
                                             }
                                             background: null
+                                            onActiveFocusChanged: if (!activeFocus) root.saveAllChanges()
                                         }
                                     }
                                 }
@@ -922,6 +993,7 @@ Page {
                                 Layout.preferredWidth: 250
                                 comboModel: ["Global Default (" + (appSettings.mangohudDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
                                 selectedIndex: (root.gameData.mangohudState !== undefined ? root.gameData.mangohudState : -1) + 1
+                                onSelected: root.saveAllChanges()
                             }
                         }
 
@@ -942,6 +1014,7 @@ Page {
                                 Layout.preferredWidth: 250
                                 comboModel: ["Global Default (" + (appSettings.gamemodeDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
                                 selectedIndex: (root.gameData.gamemodeState !== undefined ? root.gameData.gamemodeState : -1) + 1
+                                onSelected: root.saveAllChanges()
                             }
                         }
 
@@ -962,6 +1035,7 @@ Page {
                                 Layout.preferredWidth: 250
                                 text: root.gameData.cpuAffinity || ""
                                 placeholderText: "e.g. 0-7"
+                                onCommit: root.saveAllChanges()
                             }
                         }
 
@@ -982,6 +1056,7 @@ Page {
                                 Layout.preferredWidth: 250
                                 text: String(root.gameData.processPriority || 0)
                                 placeholderText: "0"
+                                onCommit: root.saveAllChanges()
                             }
                         }
 
@@ -1012,6 +1087,7 @@ Page {
                                 Layout.preferredWidth: 250
                                 comboModel: ["Global Default (" + (appSettings.xboxEmulationDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
                                 selectedIndex: (root.gameData.xboxEmulationState !== undefined ? root.gameData.xboxEmulationState : -1) + 1
+                                onSelected: root.saveAllChanges()
                             }
                         }
 
@@ -1050,6 +1126,7 @@ Page {
                                     }
                                     return 0
                                 }
+                                onSelected: root.saveAllChanges()
                             }
                         }
 

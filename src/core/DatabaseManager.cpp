@@ -131,6 +131,33 @@ bool DatabaseManager::initialize() {
         defProfile.buttonMappings = ControllerProfileRecord::defaultXboxMappings();
         locker.unlock();
         saveControllerProfile(defProfile);
+        locker.relock();
+    }
+
+    // Migrate any legacy swapped X/Y button mappings in controller profiles
+    q.prepare(QStringLiteral("SELECT id, button_mappings_json FROM controller_profiles"));
+    if (q.exec()) {
+        struct MigItem { QString id; QString json; };
+        QList<MigItem> toMigrate;
+        while (q.next()) {
+            const QString pid = q.value(0).toString();
+            const QString jsonStr = q.value(1).toString();
+            if (jsonStr.contains(QStringLiteral("\"x\":\"BTN_WEST\"")) &&
+                jsonStr.contains(QStringLiteral("\"y\":\"BTN_NORTH\""))) {
+                QJsonDocument doc = QJsonDocument::fromJson(jsonStr.toUtf8());
+                QJsonObject obj = doc.object();
+                obj[QStringLiteral("x")] = QStringLiteral("BTN_NORTH");
+                obj[QStringLiteral("y")] = QStringLiteral("BTN_WEST");
+                toMigrate.append({pid, QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact))});
+            }
+        }
+        for (const auto& item : toMigrate) {
+            QSqlQuery updateQ(db());
+            updateQ.prepare(QStringLiteral("UPDATE controller_profiles SET button_mappings_json = :json WHERE id = :id"));
+            updateQ.bindValue(QStringLiteral(":json"), item.json);
+            updateQ.bindValue(QStringLiteral(":id"), item.id);
+            updateQ.exec();
+        }
     }
 
     return true;
@@ -492,6 +519,10 @@ ControllerProfileRecord DatabaseManager::controllerProfileFromQuery(QSqlQuery& q
     }
     if (c.buttonMappings.isEmpty()) {
         c.buttonMappings = ControllerProfileRecord::defaultXboxMappings();
+    } else if (c.buttonMappings.value(QStringLiteral("x")).toString() == QStringLiteral("BTN_WEST") &&
+               c.buttonMappings.value(QStringLiteral("y")).toString() == QStringLiteral("BTN_NORTH")) {
+        c.buttonMappings[QStringLiteral("x")] = QStringLiteral("BTN_NORTH");
+        c.buttonMappings[QStringLiteral("y")] = QStringLiteral("BTN_WEST");
     }
     return c;
 }

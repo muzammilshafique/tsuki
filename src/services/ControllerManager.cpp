@@ -178,15 +178,15 @@ void ControllerManager::refreshControllers() {
 }
 
 quint16 ControllerManager::linuxKeyCodeForName(const QString& name) {
-    if (name == QStringLiteral("BTN_SOUTH")) return BTN_SOUTH;
-    if (name == QStringLiteral("BTN_EAST")) return BTN_EAST;
-    if (name == QStringLiteral("BTN_WEST")) return BTN_WEST;
-    if (name == QStringLiteral("BTN_NORTH")) return BTN_NORTH;
+    if (name == QStringLiteral("BTN_SOUTH") || name == QStringLiteral("BTN_A")) return BTN_SOUTH;
+    if (name == QStringLiteral("BTN_EAST") || name == QStringLiteral("BTN_B")) return BTN_EAST;
+    if (name == QStringLiteral("BTN_NORTH") || name == QStringLiteral("BTN_X")) return BTN_NORTH;
+    if (name == QStringLiteral("BTN_WEST") || name == QStringLiteral("BTN_Y")) return BTN_WEST;
     if (name == QStringLiteral("BTN_TL")) return BTN_TL;
     if (name == QStringLiteral("BTN_TR")) return BTN_TR;
-    if (name == QStringLiteral("BTN_SELECT")) return BTN_SELECT;
+    if (name == QStringLiteral("BTN_SELECT") || name == QStringLiteral("BTN_BACK")) return BTN_SELECT;
     if (name == QStringLiteral("BTN_START")) return BTN_START;
-    if (name == QStringLiteral("BTN_MODE")) return BTN_MODE;
+    if (name == QStringLiteral("BTN_MODE") || name == QStringLiteral("BTN_GUIDE")) return BTN_MODE;
     if (name == QStringLiteral("BTN_THUMBL")) return BTN_THUMBL;
     if (name == QStringLiteral("BTN_THUMBR")) return BTN_THUMBR;
     return BTN_SOUTH;
@@ -198,6 +198,12 @@ bool ControllerManager::startXboxEmulation(const QString& profileId) {
     const QString targetId = profileId.isEmpty() ? m_settings->defaultControllerProfileId() : profileId;
     if (auto p = m_db->getControllerProfile(targetId); p.has_value()) {
         m_activeProfile = *p;
+    } else {
+        m_activeProfile.id = QStringLiteral("default-xbox");
+        m_activeProfile.name = QStringLiteral("Xbox 360 Standard (XInput)");
+        m_activeProfile.xboxEmulation = true;
+        m_activeProfile.deadzone = 4000;
+        m_activeProfile.buttonMappings = ControllerProfileRecord::defaultXboxMappings();
     }
 
     if (!m_activeProfile.xboxEmulation) {
@@ -382,10 +388,18 @@ void ControllerManager::syncVirtualXboxPad() {
     emit liveInputChanged();
 
     if (m_uinputFd >= 0) {
+        // Resolve mappings (with backward compatibility fix for legacy swapped X/Y profiles)
+        QString xMap = map.value(QStringLiteral("x"), QStringLiteral("BTN_NORTH")).toString();
+        QString yMap = map.value(QStringLiteral("y"), QStringLiteral("BTN_WEST")).toString();
+        if (xMap == QStringLiteral("BTN_WEST") && yMap == QStringLiteral("BTN_NORTH")) {
+            xMap = QStringLiteral("BTN_NORTH");
+            yMap = QStringLiteral("BTN_WEST");
+        }
+
         emitUinputEvent(EV_KEY, linuxKeyCodeForName(map.value(QStringLiteral("a"), QStringLiteral("BTN_SOUTH")).toString()), a ? 1 : 0);
         emitUinputEvent(EV_KEY, linuxKeyCodeForName(map.value(QStringLiteral("b"), QStringLiteral("BTN_EAST")).toString()), b ? 1 : 0);
-        emitUinputEvent(EV_KEY, linuxKeyCodeForName(map.value(QStringLiteral("x"), QStringLiteral("BTN_WEST")).toString()), x ? 1 : 0);
-        emitUinputEvent(EV_KEY, linuxKeyCodeForName(map.value(QStringLiteral("y"), QStringLiteral("BTN_NORTH")).toString()), y ? 1 : 0);
+        emitUinputEvent(EV_KEY, linuxKeyCodeForName(xMap), x ? 1 : 0);
+        emitUinputEvent(EV_KEY, linuxKeyCodeForName(yMap), y ? 1 : 0);
         emitUinputEvent(EV_KEY, linuxKeyCodeForName(map.value(QStringLiteral("lb"), QStringLiteral("BTN_TL")).toString()), lb ? 1 : 0);
         emitUinputEvent(EV_KEY, linuxKeyCodeForName(map.value(QStringLiteral("rb"), QStringLiteral("BTN_TR")).toString()), rb ? 1 : 0);
         emitUinputEvent(EV_KEY, linuxKeyCodeForName(map.value(QStringLiteral("back"), QStringLiteral("BTN_SELECT")).toString()), back ? 1 : 0);
@@ -417,16 +431,25 @@ QString ControllerManager::buildSdlGameControllerConfig(const QString& profileId
     const QVariantMap map = profOpt.has_value() ? profOpt->buttonMappings : ControllerProfileRecord::defaultXboxMappings();
 
     auto btnCode = [&map](const QString& key, const QString& defBtn) -> QString {
-        const QString target = map.value(key, defBtn).toString();
-        if (target == QStringLiteral("BTN_SOUTH")) return QStringLiteral("b0");
-        if (target == QStringLiteral("BTN_EAST")) return QStringLiteral("b1");
-        if (target == QStringLiteral("BTN_WEST")) return QStringLiteral("b2");
-        if (target == QStringLiteral("BTN_NORTH")) return QStringLiteral("b3");
+        QString target = map.value(key, defBtn).toString();
+        // Backward compatibility fix for legacy swapped X/Y profiles
+        if (key == QStringLiteral("x") && target == QStringLiteral("BTN_WEST") &&
+            map.value(QStringLiteral("y")).toString() == QStringLiteral("BTN_NORTH")) {
+            target = QStringLiteral("BTN_NORTH");
+        } else if (key == QStringLiteral("y") && target == QStringLiteral("BTN_NORTH") &&
+                   map.value(QStringLiteral("x")).toString() == QStringLiteral("BTN_WEST")) {
+            target = QStringLiteral("BTN_WEST");
+        }
+
+        if (target == QStringLiteral("BTN_SOUTH") || target == QStringLiteral("BTN_A")) return QStringLiteral("b0");
+        if (target == QStringLiteral("BTN_EAST") || target == QStringLiteral("BTN_B")) return QStringLiteral("b1");
+        if (target == QStringLiteral("BTN_NORTH") || target == QStringLiteral("BTN_X")) return QStringLiteral("b2");
+        if (target == QStringLiteral("BTN_WEST") || target == QStringLiteral("BTN_Y")) return QStringLiteral("b3");
         if (target == QStringLiteral("BTN_TL")) return QStringLiteral("b4");
         if (target == QStringLiteral("BTN_TR")) return QStringLiteral("b5");
-        if (target == QStringLiteral("BTN_SELECT")) return QStringLiteral("b6");
+        if (target == QStringLiteral("BTN_SELECT") || target == QStringLiteral("BTN_BACK")) return QStringLiteral("b6");
         if (target == QStringLiteral("BTN_START")) return QStringLiteral("b7");
-        if (target == QStringLiteral("BTN_MODE")) return QStringLiteral("b8");
+        if (target == QStringLiteral("BTN_MODE") || target == QStringLiteral("BTN_GUIDE")) return QStringLiteral("b8");
         if (target == QStringLiteral("BTN_THUMBL")) return QStringLiteral("b9");
         if (target == QStringLiteral("BTN_THUMBR")) return QStringLiteral("b10");
         return QStringLiteral("b0");
@@ -437,8 +460,8 @@ QString ControllerManager::buildSdlGameControllerConfig(const QString& profileId
              name,
              btnCode(QStringLiteral("a"), QStringLiteral("BTN_SOUTH")),
              btnCode(QStringLiteral("b"), QStringLiteral("BTN_EAST")),
-             btnCode(QStringLiteral("x"), QStringLiteral("BTN_WEST")),
-             btnCode(QStringLiteral("y"), QStringLiteral("BTN_NORTH")),
+             btnCode(QStringLiteral("x"), QStringLiteral("BTN_NORTH")),
+             btnCode(QStringLiteral("y"), QStringLiteral("BTN_WEST")),
              btnCode(QStringLiteral("back"), QStringLiteral("BTN_SELECT")),
              btnCode(QStringLiteral("guide"), QStringLiteral("BTN_MODE")),
              btnCode(QStringLiteral("start"), QStringLiteral("BTN_START")),

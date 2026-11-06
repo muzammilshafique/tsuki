@@ -64,6 +64,8 @@ public:
     // Generate SDL_GAMECONTROLLERCONFIG string for game launch environment
     QString buildSdlGameControllerConfig(const QString& profileId = QString()) const;
 
+    static quint16 linuxKeyCodeForName(const QString& name);
+
 signals:
     void controllersChanged();
     void profilesChanged();
@@ -91,7 +93,6 @@ private:
     void emitUinputEvent(quint16 type, quint16 code, qint32 value);
     void syncVirtualXboxPad();
     static qint16 applyDeadzone(qint16 val, int deadzone);
-    static quint16 linuxKeyCodeForName(const QString& name);
 };
 
 } // namespace Tsuki

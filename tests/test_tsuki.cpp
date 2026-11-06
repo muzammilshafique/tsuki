@@ -29,6 +29,28 @@ private slots:
         auto defProf = db.getControllerProfile("default-xbox");
         QVERIFY(defProf.has_value());
         QCOMPARE(defProf->xboxEmulation, true);
+        QCOMPARE(defProf->buttonMappings.value("x").toString(), QString("BTN_NORTH"));
+        QCOMPARE(defProf->buttonMappings.value("y").toString(), QString("BTN_WEST"));
+
+        // Verify key codes: in Linux evdev, BTN_NORTH is BTN_X (0x133) and BTN_WEST is BTN_Y (0x134)
+        QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_NORTH"), static_cast<quint16>(0x133));
+        QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_X"), static_cast<quint16>(0x133));
+        QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_WEST"), static_cast<quint16>(0x134));
+        QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_Y"), static_cast<quint16>(0x134));
+
+        // Test legacy profile migration/normalization
+        ControllerProfileRecord legacyProf;
+        legacyProf.id = "prof-legacy";
+        legacyProf.name = "Legacy Profile";
+        legacyProf.xboxEmulation = true;
+        legacyProf.deadzone = 4000;
+        legacyProf.buttonMappings["x"] = "BTN_WEST";
+        legacyProf.buttonMappings["y"] = "BTN_NORTH";
+        QVERIFY(db.saveControllerProfile(legacyProf));
+        auto loadedLegacy = db.getControllerProfile("prof-legacy");
+        QVERIFY(loadedLegacy.has_value());
+        QCOMPARE(loadedLegacy->buttonMappings.value("x").toString(), QString("BTN_NORTH"));
+        QCOMPARE(loadedLegacy->buttonMappings.value("y").toString(), QString("BTN_WEST"));
 
         // Save and retrieve a prefix with custom name independent of game title
         PrefixRecord pfx;
@@ -177,6 +199,31 @@ private slots:
         QVERIFY(plan.environment.value("WINEDLLOVERRIDES").contains("dinput8=n,b"));
         QVERIFY(plan.environment.value("WINEDLLOVERRIDES").contains("d3d11=n,b"));
         QVERIFY(plan.environment.value("WINEDLLOVERRIDES").contains("d3d12=n,b"));
+
+        // Test Xbox controller emulation resolution:
+        // 1. Settings default is false, but game has xboxEmulationState = 1 -> should enable
+        settings.setXboxEmulationDefault(false);
+        game.xboxEmulationState = 1;
+        const LaunchPlan planXboxOn = pipeline.buildLaunchPlan(game, protonRunner, prefix);
+        QVERIFY(planXboxOn.useXboxEmulation);
+
+        // 2. Settings default is true, but game has xboxEmulationState = 0 -> should disable
+        settings.setXboxEmulationDefault(true);
+        game.xboxEmulationState = 0;
+        const LaunchPlan planXboxOff = pipeline.buildLaunchPlan(game, protonRunner, prefix);
+        QVERIFY(!planXboxOff.useXboxEmulation);
+
+        // 3. Settings default is false, and game has xboxEmulationState = -1 -> should follow default (false)
+        settings.setXboxEmulationDefault(false);
+        game.xboxEmulationState = -1;
+        const LaunchPlan planXboxDefOff = pipeline.buildLaunchPlan(game, protonRunner, prefix);
+        QVERIFY(!planXboxDefOff.useXboxEmulation);
+
+        // 4. Settings default is true, and game has xboxEmulationState = -1 -> should follow default (true)
+        settings.setXboxEmulationDefault(true);
+        game.xboxEmulationState = -1;
+        const LaunchPlan planXboxDefOn = pipeline.buildLaunchPlan(game, protonRunner, prefix);
+        QVERIFY(planXboxDefOn.useXboxEmulation);
     }
 
     void testWinetricksAndDiagnosticsErrorAnalysis() {
