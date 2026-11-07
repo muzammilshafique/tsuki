@@ -28,6 +28,12 @@ struct GameRecord {
 
     QString steamGridAppId;
 
+    QString platform = QStringLiteral("windows"); // "windows" or "linux"
+
+    bool isNative() const {
+        return platform == QStringLiteral("linux");
+    }
+
     bool isFavorite = false;
     bool isPinned = false;
     qint64 playtimeSeconds = 0;
@@ -154,14 +160,23 @@ struct GameRecord {
         map["lastPlayedTimestamp"] = lastPlayedTimestamp;
         map["lastPlayedFormatted"] = formatLastPlayed(lastPlayedTimestamp);
         map["addedTimestamp"] = addedTimestamp;
+        map["platform"] = platform;
+        map["isNative"] = isNative();
         map["isRunning"] = isRunning;
-        map["runnerTag"] = resolvedRunnerTag;
 
-        // Type integer for tag coloring (0: Proton/GE, 1: Wine, 2: Custom/Staging)
+        const QString effectiveRunnerTag = isNative() ? QStringLiteral("LINUX") : resolvedRunnerTag;
+        map["runnerTag"] = effectiveRunnerTag;
+
+        // Type integer for tag coloring (0: Proton/GE, 1: Wine, 2: Custom/Staging, 3: Linux)
         int tagType = 1;
-        if (resolvedRunnerTag.contains(QStringLiteral("PROTON"), Qt::CaseInsensitive)) tagType = 0;
-        else if (resolvedRunnerTag.contains(QStringLiteral("STAGING"), Qt::CaseInsensitive) ||
-                 resolvedRunnerTag.contains(QStringLiteral("CUSTOM"), Qt::CaseInsensitive)) tagType = 2;
+        if (isNative()) {
+            tagType = 3;
+        } else if (effectiveRunnerTag.contains(QStringLiteral("PROTON"), Qt::CaseInsensitive)) {
+            tagType = 0;
+        } else if (effectiveRunnerTag.contains(QStringLiteral("STAGING"), Qt::CaseInsensitive) ||
+                   effectiveRunnerTag.contains(QStringLiteral("CUSTOM"), Qt::CaseInsensitive)) {
+            tagType = 2;
+        }
         map["type"] = tagType;
 
         map["environmentVariables"] = environmentVariables;

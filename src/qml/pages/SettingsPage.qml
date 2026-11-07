@@ -545,6 +545,27 @@ Page {
 
                 RowDiv {}
 
+                // Linux Tag Color
+                SettingRow {
+                    label: "Linux Tag Color"
+                    description: "Badge and highlight color for native Linux games in library and details"
+                    controlItem: M3ColorPicker {
+                        presets: [
+                            { name: "Amber",  color: "#f59e0b" },
+                            { name: "Orange", color: "#f97316" },
+                            { name: "Green",  color: "#10b981" },
+                            { name: "Cyan",   color: "#06b6d4" },
+                            { name: "Blue",   color: "#3b82f6" },
+                            { name: "Purple", color: "#a855f7" },
+                            { name: "Red",    color: "#ef4444" }
+                        ]
+                        currentColor: String(appSettings.tagColorLinux)
+                        onColorSelected: (hex) => appSettings.tagColorLinux = hex
+                    }
+                }
+
+                RowDiv {}
+
                 // Poster Size Target
                 SettingRow {
                     label: "Poster Card Size"

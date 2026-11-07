@@ -48,6 +48,7 @@ public:
     LaunchPlan buildLaunchPlan(const GameRecord& game,
                                const RunnerRecord& runner,
                                const PrefixRecord& prefix) const;
+    LaunchPlan buildNativeLaunchPlan(const GameRecord& game) const;
 
     Q_INVOKABLE bool launchGame(const QString& gameId);
     Q_INVOKABLE void stopGame(const QString& gameId);
@@ -68,6 +69,7 @@ private:
         QString postExitScript;
         qint64 startTimeEpoch = 0;
         QProcess* process = nullptr;
+        bool isNative = false;
     };
 
     DatabaseManager* m_db;

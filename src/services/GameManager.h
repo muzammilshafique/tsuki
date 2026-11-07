@@ -42,7 +42,9 @@ public:
         LastPlayedFormattedRole,
         CategoryRole,
         PrefixIdRole,
-        ExecutablePathRole
+        ExecutablePathRole,
+        PlatformRole,
+        IsNativeRole
     };
 
     explicit GameListModel(DatabaseManager* db,
@@ -104,6 +106,8 @@ public:
     QStringList categories() const;
 
     // Core Game CRUD
+    Q_INVOKABLE QString detectPlatform(const QString& path) const;
+
     Q_INVOKABLE QString addGame(const QString& title,
                                 const QString& executablePath,
                                 const QString& workingDirectory = QString(),
@@ -113,6 +117,11 @@ public:
                                 const QString& customPrefixName = QString(),
                                 const QString& customPrefixLocation = QString(),
                                 const QString& prefixArch = QStringLiteral("win64"));
+
+    Q_INVOKABLE QString addNativeGame(const QString& title,
+                                      const QString& executablePath,
+                                      const QString& workingDirectory = QString(),
+                                      const QString& launchArguments = QString());
 
     Q_INVOKABLE bool updateGameDetails(const QString& gameId, const QVariantMap& updates);
     Q_INVOKABLE bool setGameArtwork(const QString& gameId,

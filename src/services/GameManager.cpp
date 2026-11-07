@@ -52,7 +52,9 @@ QHash<int, QByteArray> GameListModel::roleNames() const {
           {LastPlayedFormattedRole, "lastPlayedFormatted"},
           {CategoryRole, "category"},
           {PrefixIdRole, "prefixId"},
-          {ExecutablePathRole, "executablePath"}};
+          {ExecutablePathRole, "executablePath"},
+          {PlatformRole, "platform"},
+          {IsNativeRole, "isNative"}};
 }
 
 QVariant GameListModel::data(const QModelIndex &index, int role) const {
@@ -85,6 +87,8 @@ QVariant GameListModel::data(const QModelIndex &index, int role) const {
   case IconPathRole:
     return QUrl(GameRecord::toFileUrlOrOriginal(g.iconPath));
   case TypeRole: {
+    if (g.isNative())
+      return 3;
     if (runnerTag.contains(QStringLiteral("PROTON")))
       return 0;
     if (runnerTag.contains(QStringLiteral("STAGING")) ||
@@ -93,7 +97,7 @@ QVariant GameListModel::data(const QModelIndex &index, int role) const {
     return 1;
   }
   case RunnerTagRole:
-    return runnerTag;
+    return g.isNative() ? QStringLiteral("LINUX") : runnerTag;
   case IsPinnedRole:
     return g.isPinned;
   case IsFavoriteRole:
@@ -112,6 +116,10 @@ QVariant GameListModel::data(const QModelIndex &index, int role) const {
     return g.prefixId;
   case ExecutablePathRole:
     return g.executablePath;
+  case PlatformRole:
+    return g.platform;
+  case IsNativeRole:
+    return g.isNative();
   default:
     return QVariant();
   }
@@ -122,7 +130,7 @@ QVariantMap GameListModel::get(int row) const {
     return QVariantMap();
   const GameRecord &g = m_visibleGames.at(row);
   return g.toVariantMap(m_launchPipeline->isGameRunning(g.id),
-                        m_runnerMgr->runnerTagForId(g.runnerId));
+                        g.isNative() ? QStringLiteral("LINUX") : m_runnerMgr->runnerTagForId(g.runnerId));
 }
 
 void GameListModel::setFilterType(int type) {
@@ -167,9 +175,9 @@ void GameListModel::reload() {
     const QString rTag = m_runnerMgr->runnerTagForId(g.runnerId);
     const bool running = m_launchPipeline->isGameRunning(g.id);
 
-    if (m_filterType == 0 && !rTag.contains(QStringLiteral("PROTON")))
+    if (m_filterType == 0 && (g.isNative() || !rTag.contains(QStringLiteral("PROTON"))))
       continue;
-    if (m_filterType == 1 && rTag.contains(QStringLiteral("PROTON")))
+    if (m_filterType == 1 && (g.isNative() || rTag.contains(QStringLiteral("PROTON"))))
       continue;
     if (m_filterType == 2 && !running)
       continue;
@@ -232,6 +240,51 @@ GameManager::GameManager(DatabaseManager *db, AppSettings *settings,
 
 QStringList GameManager::categories() const { return QStringList(); }
 
+QString GameManager::detectPlatform(const QString &path) const {
+  QString clean = path.trimmed();
+  if (clean.startsWith(QStringLiteral("file://"))) {
+    clean = QUrl(clean).toLocalFile();
+  }
+  if (clean.isEmpty()) {
+    return QStringLiteral("windows");
+  }
+
+  // 1. Check file magic bytes if file exists
+  QFile f(clean);
+  if (f.open(QIODevice::ReadOnly)) {
+    const QByteArray magic = f.read(4);
+    f.close();
+    if (magic.size() >= 2 && magic[0] == 'M' && magic[1] == 'Z') {
+      return QStringLiteral("windows");
+    }
+    if (magic.size() >= 4 && magic[0] == 0x7f && magic[1] == 'E' &&
+        magic[2] == 'L' && magic[3] == 'F') {
+      return QStringLiteral("linux");
+    }
+    if (magic.size() >= 2 && magic[0] == '#' && magic[1] == '!') {
+      return QStringLiteral("linux");
+    }
+  }
+
+  // 2. Fall back to extension
+  const QString lower = clean.toLower();
+  if (lower.endsWith(QStringLiteral(".exe")) ||
+      lower.endsWith(QStringLiteral(".msi")) ||
+      lower.endsWith(QStringLiteral(".bat")) ||
+      lower.endsWith(QStringLiteral(".lnk"))) {
+    return QStringLiteral("windows");
+  }
+  if (lower.endsWith(QStringLiteral(".sh")) ||
+      lower.endsWith(QStringLiteral(".appimage")) ||
+      lower.endsWith(QStringLiteral(".x86_64")) ||
+      lower.endsWith(QStringLiteral(".x86")) ||
+      lower.endsWith(QStringLiteral(".bin"))) {
+    return QStringLiteral("linux");
+  }
+
+  return QStringLiteral("windows");
+}
+
 QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
   QString clean = exePath.trimmed();
   if (clean.startsWith(QStringLiteral("file://"))) {
@@ -240,12 +293,26 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
   QFileInfo fi(clean);
   QString candidate = fi.completeBaseName();
 
+  const QStringList linuxSuffixes = {
+      QStringLiteral(".x86_64"), QStringLiteral(".x86"),
+      QStringLiteral(".bin"),    QStringLiteral(".sh"),
+      QStringLiteral(".AppImage"), QStringLiteral("-linux"),
+      QStringLiteral("_linux"), QStringLiteral("_x86_64"),
+      QStringLiteral("-x86_64")
+  };
+  for (const QString &s : linuxSuffixes) {
+    if (candidate.endsWith(s, Qt::CaseInsensitive)) {
+      candidate.chop(s.length());
+    }
+  }
+
   const QStringList genericNames = {
       QStringLiteral("game"),     QStringLiteral("Shipping"),
       QStringLiteral("Launcher"), QStringLiteral("start"),
       QStringLiteral("play"),     QStringLiteral("bin"),
       QStringLiteral("x64"),      QStringLiteral("Release"),
-      QStringLiteral("App"),      QStringLiteral("Main")};
+      QStringLiteral("App"),      QStringLiteral("Main"),
+      QStringLiteral("run")};
   bool isGeneric = candidate.length() <= 3;
   for (const QString &g : genericNames) {
     if (candidate.contains(g, Qt::CaseInsensitive)) {
@@ -398,6 +465,68 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         return rec.id;
       }
 
+      QString GameManager::addNativeGame(
+          const QString &title, const QString &executablePath,
+          const QString &workingDirectory, const QString &launchArguments) {
+        QString cleanExe = executablePath.trimmed();
+        if (cleanExe.startsWith(QStringLiteral("file://"))) {
+          cleanExe = QUrl(cleanExe).toLocalFile();
+        }
+        if (cleanExe.isEmpty()) {
+          emit gameOperationStatus(
+              QStringLiteral("Please select a valid Linux executable or script."),
+              true);
+          return QString();
+        }
+
+        QFileInfo exeFi(cleanExe);
+        if (exeFi.exists()) {
+          QFile::Permissions perms = QFile::permissions(cleanExe);
+          if (!(perms & QFile::ExeUser)) {
+            QFile::setPermissions(cleanExe, perms | QFile::ExeUser | QFile::ExeGroup | QFile::ExeOther);
+          }
+        }
+
+        const QString cleanTitle = title.trimmed().isEmpty()
+                                       ? guessTitleFromExecutable(cleanExe)
+                                       : title.trimmed();
+
+        QString cleanWorkDir = workingDirectory.trimmed();
+        if (cleanWorkDir.startsWith(QStringLiteral("file://"))) {
+          cleanWorkDir = QUrl(cleanWorkDir).toLocalFile();
+        }
+        if (cleanWorkDir.isEmpty()) {
+          cleanWorkDir = exeFi.absolutePath();
+        }
+
+        GameRecord rec;
+        rec.id = QStringLiteral("game-") +
+                 QUuid::createUuid().toString(QUuid::Id128).left(10);
+        rec.platform = QStringLiteral("linux");
+        rec.title = cleanTitle;
+        rec.executablePath = exeFi.absoluteFilePath();
+        rec.workingDirectory = cleanWorkDir;
+        rec.launchArguments = launchArguments.trimmed();
+        rec.runnerId.clear();
+        rec.prefixId.clear();
+        rec.addedTimestamp = QDateTime::currentSecsSinceEpoch();
+
+        rec.coverPath =
+            SteamGridDbService::generateFallbackPoster(rec.id, rec.title);
+        rec.bannerPath =
+            SteamGridDbService::generateFallbackBanner(rec.id, rec.title);
+
+        m_db->saveGame(rec);
+        m_model->reload();
+        emit gamesChanged();
+        emit gameAdded(rec.id, rec.title);
+        emit gameOperationStatus(
+            QStringLiteral("Added '%1' to library.").arg(rec.title), false);
+
+        refreshArtworkFromSteamGridDb(rec.id);
+        return rec.id;
+      }
+
       bool GameManager::updateGameDetails(const QString &gameId,
                                           const QVariantMap &updates) {
         auto opt = m_db->getGame(gameId);
@@ -476,6 +605,11 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         if (updates.contains(QStringLiteral("dllOverrides")))
           g.dllOverrides =
               updates.value(QStringLiteral("dllOverrides")).toMap();
+
+        if (g.isNative()) {
+          g.runnerId.clear();
+          g.prefixId.clear();
+        }
 
         if (g.title == orig.title && g.executablePath == orig.executablePath &&
             g.workingDirectory == orig.workingDirectory &&
@@ -679,7 +813,7 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
           m_launchPipeline->stopGame(gameId);
         }
 
-        if (deleteDedicatedPrefix && !g.prefixId.isEmpty() &&
+        if (deleteDedicatedPrefix && !g.isNative() && !g.prefixId.isEmpty() &&
             g.prefixId != QStringLiteral("default-prefix")) {
           m_prefixMgr->deletePrefix(g.prefixId, true);
         }
@@ -726,7 +860,7 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         if (!opt.has_value())
           return QVariantMap();
         return opt->toVariantMap(m_launchPipeline->isGameRunning(gameId),
-                                 m_runnerMgr->runnerTagForId(opt->runnerId));
+                                 opt->isNative() ? QStringLiteral("LINUX") : m_runnerMgr->runnerTagForId(opt->runnerId));
       }
 
       bool GameManager::createDesktopShortcut(const QString &gameId,

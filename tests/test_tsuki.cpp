@@ -1,5 +1,7 @@
 #include <QtTest>
 #include <QTemporaryDir>
+#include <QSqlDatabase>
+#include <QSqlQuery>
 #include "../src/core/AppSettings.h"
 #include "../src/core/DatabaseManager.h"
 #include "../src/services/DownloadManager.h"
@@ -314,6 +316,169 @@ private slots:
         settings.setXboxEmulationDefault(false);
         QCOMPARE(db.getGame(g1)->xboxEmulationState, 0);
         QCOMPARE(db.getGame(g2)->xboxEmulationState, 0);
+    }
+
+    void testNativeGameSupport() {
+        QTemporaryDir tmpDir;
+        QVERIFY(tmpDir.isValid());
+        DatabaseManager db(tmpDir.filePath("test_native.db"));
+        QVERIFY(db.initialize());
+        AppSettings settings;
+        DownloadManager dl;
+        RunnerManager runnerMgr(&db, &settings, &dl);
+        PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+        ControllerManager ctrlMgr(&db, &settings);
+        DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+        LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+        SteamGridDbService sgdb(&settings, &dl);
+        GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+
+        // 1. Platform Detection
+        // Create mock files
+        const QString pePath = tmpDir.filePath("test.exe");
+        QFile peFile(pePath);
+        QVERIFY(peFile.open(QIODevice::WriteOnly));
+        peFile.write("MZ\x90\x00");
+        peFile.close();
+        QCOMPARE(gm.detectPlatform(pePath), QString("windows"));
+
+        const QString elfPath = tmpDir.filePath("test.x86_64");
+        QFile elfFile(elfPath);
+        QVERIFY(elfFile.open(QIODevice::WriteOnly));
+        elfFile.write("\x7f\x45\x4c\x46");
+        elfFile.close();
+        QCOMPARE(gm.detectPlatform(elfPath), QString("linux"));
+
+        const QString shPath = tmpDir.filePath("run.sh");
+        QFile shFile(shPath);
+        QVERIFY(shFile.open(QIODevice::WriteOnly));
+        shFile.write("#!/bin/bash\nexit 0\n");
+        shFile.close();
+        QCOMPARE(gm.detectPlatform(shPath), QString("linux"));
+
+        // Extension fallback when file does not exist
+        QCOMPARE(gm.detectPlatform("/opt/games/celeste.AppImage"), QString("linux"));
+        QCOMPARE(gm.detectPlatform("C:/Games/game.bat"), QString("windows"));
+
+        // 2. Add Native Game
+        const QString nativeId = gm.addNativeGame("Celeste", elfPath, tmpDir.path(), "--fullscreen");
+        QVERIFY(!nativeId.isEmpty());
+
+        auto opt = db.getGame(nativeId);
+        QVERIFY(opt.has_value());
+        QCOMPARE(opt->title, QString("Celeste"));
+        QCOMPARE(opt->platform, QString("linux"));
+        QVERIFY(opt->isNative());
+        QVERIFY(opt->runnerId.isEmpty());
+        QVERIFY(opt->prefixId.isEmpty());
+
+        // Verify variant map produces LINUX tag and type 3
+        const QVariantMap vmap = gm.getGameMap(nativeId);
+        QCOMPARE(vmap.value("platform").toString(), QString("linux"));
+        QCOMPARE(vmap.value("isNative").toBool(), true);
+        QCOMPARE(vmap.value("runnerTag").toString(), QString("LINUX"));
+        QCOMPARE(vmap.value("type").toInt(), 3);
+
+        // 3. GameListModel integration
+        GameListModel* model = gm.model();
+        QVERIFY(model != nullptr);
+        QVERIFY(model->rowCount() >= 1);
+
+        // Model role verification
+        QModelIndex idx = model->index(0, 0);
+        QCOMPARE(model->data(idx, GameListModel::TypeRole).toInt(), 3);
+        QCOMPARE(model->data(idx, GameListModel::RunnerTagRole).toString(), QString("LINUX"));
+        QCOMPARE(model->data(idx, GameListModel::PlatformRole).toString(), QString("linux"));
+        QCOMPARE(model->data(idx, GameListModel::IsNativeRole).toBool(), true);
+
+        // Filters: Proton (0) and Wine (1) filters must exclude native games
+        model->setFilterType(0);
+        QCOMPARE(model->rowCount(), 0);
+        model->setFilterType(1);
+        QCOMPARE(model->rowCount(), 0);
+        model->setFilterType(-1);
+        QVERIFY(model->rowCount() >= 1);
+
+        // 4. Update Game Details: cannot alter platform or set runner/prefix for native game
+        QVariantMap updates;
+        updates["title"] = "Celeste (Updated)";
+        updates["platform"] = "windows";
+        updates["runnerId"] = "some-wine-runner";
+        updates["prefixId"] = "some-pfx";
+        updates["environmentVariables"] = QVariantMap{{"SDL_VIDEODRIVER", "wayland"}};
+        QVERIFY(gm.updateGameDetails(nativeId, updates));
+
+        auto updated = db.getGame(nativeId);
+        QVERIFY(updated.has_value());
+        QCOMPARE(updated->title, QString("Celeste (Updated)"));
+        QCOMPARE(updated->platform, QString("linux"));
+        QVERIFY(updated->runnerId.isEmpty());
+        QVERIFY(updated->prefixId.isEmpty());
+        QCOMPARE(updated->environmentVariables.value("SDL_VIDEODRIVER").toString(), QString("wayland"));
+
+        // 5. Build Native Launch Plan
+        const LaunchPlan plan = pipeline.buildNativeLaunchPlan(*updated);
+        QCOMPARE(plan.runnerName, QString("Native Linux"));
+        QVERIFY(plan.prefixPath.isEmpty());
+        QCOMPARE(plan.program, elfPath);
+        QVERIFY(plan.arguments.contains("--fullscreen"));
+        QCOMPARE(plan.environment.value("SDL_VIDEODRIVER"), QString("wayland"));
+        QVERIFY(plan.environment.value("WINEPREFIX").isEmpty());
+        QVERIFY(plan.environment.value("STEAM_COMPAT_DATA_PATH").isEmpty());
+        QVERIFY(plan.environment.value("WINEDLLOVERRIDES").isEmpty());
+
+        // 6. Settings: tagColorLinux
+        {
+            QSettings rawSettings(QStringLiteral("Tsuki"), QStringLiteral("TsukiLauncher"));
+            const bool hadKey = rawSettings.contains(QStringLiteral("appearance/tagColorLinux"));
+            const QVariant oldVal = rawSettings.value(QStringLiteral("appearance/tagColorLinux"));
+
+            // Remove key to verify the clean default
+            rawSettings.remove(QStringLiteral("appearance/tagColorLinux"));
+            AppSettings freshSettings;
+            QCOMPARE(freshSettings.tagColorLinux().name().toLower(), QString("#f59e0b"));
+
+            freshSettings.setTagColorLinux(QColor("#10b981"));
+            QCOMPARE(freshSettings.tagColorLinux().name().toLower(), QString("#10b981"));
+
+            // Restore previous environment state
+            if (hadKey) {
+                rawSettings.setValue(QStringLiteral("appearance/tagColorLinux"), oldVal);
+            } else {
+                rawSettings.remove(QStringLiteral("appearance/tagColorLinux"));
+            }
+        }
+
+        // 7. Remove game does not delete any prefix
+        QVERIFY(gm.removeGame(nativeId, true));
+        QVERIFY(!db.getGame(nativeId).has_value());
+
+        // 8. Test legacy database migration (schema without 'platform' column)
+        const QString legacyDbPath = tmpDir.filePath("legacy.db");
+        {
+            QSqlDatabase rawDb = QSqlDatabase::addDatabase("QSQLITE", "legacy_conn");
+            rawDb.setDatabaseName(legacyDbPath);
+            QVERIFY(rawDb.open());
+            QSqlQuery q(rawDb);
+            q.exec("CREATE TABLE games ("
+                   "id TEXT PRIMARY KEY, title TEXT NOT NULL, executable_path TEXT NOT NULL, "
+                   "working_directory TEXT, launch_arguments TEXT, runner_id TEXT, prefix_id TEXT, "
+                   "cover_path TEXT, banner_path TEXT, logo_path TEXT, icon_path TEXT, "
+                   "steamgrid_app_id TEXT, is_favorite INTEGER DEFAULT 0, is_pinned INTEGER DEFAULT 0, "
+                   "playtime_seconds INTEGER DEFAULT 0, last_played_timestamp INTEGER DEFAULT 0, "
+                   "added_timestamp INTEGER DEFAULT 0, launch_config_json TEXT);");
+            q.exec("INSERT INTO games (id, title, executable_path) VALUES ('legacy-1', 'Legacy Game', '/bin/sh');");
+            rawDb.close();
+        }
+        QSqlDatabase::removeDatabase("legacy_conn");
+
+        // Initialize DatabaseManager on legacy db -> should migrate smoothly
+        DatabaseManager migDb(legacyDbPath);
+        QVERIFY(migDb.initialize());
+        auto legGame = migDb.getGame("legacy-1");
+        QVERIFY(legGame.has_value());
+        QCOMPARE(legGame->platform, QString("windows"));
+        QVERIFY(!legGame->isNative());
     }
 };
 

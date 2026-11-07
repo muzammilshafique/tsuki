@@ -28,6 +28,35 @@ LaunchPipeline::~LaunchPipeline() {
     stopAllGames();
 }
 
+static QStringList buildPerformanceWrappers(const GameRecord& game, bool useGamemode, bool useMangohud) {
+    QStringList fullCmd;
+    if (!game.cpuAffinity.trimmed().isEmpty()) {
+        const QString tasksetBin = QStandardPaths::findExecutable(QStringLiteral("taskset"));
+        if (!tasksetBin.isEmpty()) {
+            fullCmd << tasksetBin << QStringLiteral("-c") << game.cpuAffinity.trimmed();
+        }
+    }
+    if (game.processPriority != 0) {
+        const QString niceBin = QStandardPaths::findExecutable(QStringLiteral("nice"));
+        if (!niceBin.isEmpty()) {
+            fullCmd << niceBin << QStringLiteral("-n") << QString::number(qBound(-20, game.processPriority, 19));
+        }
+    }
+    if (useGamemode) {
+        const QString gmBin = QStandardPaths::findExecutable(QStringLiteral("gamemoderun"));
+        if (!gmBin.isEmpty()) {
+            fullCmd << gmBin;
+        }
+    }
+    if (useMangohud) {
+        const QString mhBin = QStandardPaths::findExecutable(QStringLiteral("mangohud"));
+        if (!mhBin.isEmpty()) {
+            fullCmd << mhBin;
+        }
+    }
+    return fullCmd;
+}
+
 LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
                                            const RunnerRecord& runner,
                                            const PrefixRecord& prefix) const
@@ -133,35 +162,7 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
     }
 
     // Build wrapper chain: [taskset] -> [nice] -> [gamemoderun] -> [mangohud] -> [wine/proton] -> [virtual desktop] -> [exe] [args]
-    QStringList fullCmd;
-
-    if (!game.cpuAffinity.trimmed().isEmpty()) {
-        const QString tasksetBin = QStandardPaths::findExecutable(QStringLiteral("taskset"));
-        if (!tasksetBin.isEmpty()) {
-            fullCmd << tasksetBin << QStringLiteral("-c") << game.cpuAffinity.trimmed();
-        }
-    }
-
-    if (game.processPriority != 0) {
-        const QString niceBin = QStandardPaths::findExecutable(QStringLiteral("nice"));
-        if (!niceBin.isEmpty()) {
-            fullCmd << niceBin << QStringLiteral("-n") << QString::number(qBound(-20, game.processPriority, 19));
-        }
-    }
-
-    if (useGamemode) {
-        const QString gmBin = QStandardPaths::findExecutable(QStringLiteral("gamemoderun"));
-        if (!gmBin.isEmpty()) {
-            fullCmd << gmBin;
-        }
-    }
-
-    if (useMangohud) {
-        const QString mhBin = QStandardPaths::findExecutable(QStringLiteral("mangohud"));
-        if (!mhBin.isEmpty()) {
-            fullCmd << mhBin;
-        }
-    }
+    QStringList fullCmd = buildPerformanceWrappers(game, useGamemode, useMangohud);
 
     if (runner.isProton()) {
         fullCmd << runner.binaryPath << QStringLiteral("waitforexitandrun");
@@ -176,6 +177,59 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
             const QString res = game.virtualDesktopResolution.isEmpty() ? QStringLiteral("1920x1080") : game.virtualDesktopResolution;
             fullCmd << QStringLiteral("explorer") << QStringLiteral("/desktop=Tsuki,%1").arg(res);
         }
+        fullCmd << game.executablePath;
+    }
+
+    if (!game.launchArguments.trimmed().isEmpty()) {
+        fullCmd.append(QProcess::splitCommand(game.launchArguments.trimmed()));
+    }
+
+    plan.program = fullCmd.takeFirst();
+    plan.arguments = fullCmd;
+    plan.environment = env;
+    return plan;
+}
+
+LaunchPlan LaunchPipeline::buildNativeLaunchPlan(const GameRecord& game) const {
+    LaunchPlan plan;
+    plan.prefixPath.clear();
+    plan.runnerName = QStringLiteral("Native Linux");
+    plan.workingDirectory = game.workingDirectory.trimmed().isEmpty()
+                                ? QFileInfo(game.executablePath).absolutePath()
+                                : game.workingDirectory.trimmed();
+
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+
+    const bool useMangohud = (game.mangohudState == -1) ? m_settings->mangohudDefault() : (game.mangohudState == 1);
+    const bool useGamemode = (game.gamemodeState == -1) ? m_settings->gamemodeDefault() : (game.gamemodeState == 1);
+    plan.useXboxEmulation = (game.xboxEmulationState == -1) ? m_settings->xboxEmulationDefault() : (game.xboxEmulationState == 1);
+    plan.controllerProfileId = game.controllerProfileId.isEmpty() ? m_settings->defaultControllerProfileId() : game.controllerProfileId;
+
+    if (plan.useXboxEmulation) {
+        const QString sdlCfg = m_controllerMgr->buildSdlGameControllerConfig(plan.controllerProfileId);
+        if (!sdlCfg.isEmpty()) {
+            env.insert(QStringLiteral("SDL_GAMECONTROLLERCONFIG"), sdlCfg);
+        }
+        env.insert(QStringLiteral("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS"), QStringLiteral("1"));
+    }
+
+    if (useMangohud) {
+        env.insert(QStringLiteral("MANGOHUD"), QStringLiteral("1"));
+    }
+
+    // Per-game custom environment variables
+    for (auto it = game.environmentVariables.constBegin(); it != game.environmentVariables.constEnd(); ++it) {
+        if (!it.key().isEmpty()) {
+            env.insert(it.key(), it.value().toString());
+        }
+    }
+
+    QStringList fullCmd = buildPerformanceWrappers(game, useGamemode, useMangohud);
+
+    QFileInfo exeFi(game.executablePath);
+    if (exeFi.suffix().compare(QStringLiteral("sh"), Qt::CaseInsensitive) == 0 && !exeFi.isExecutable()) {
+        fullCmd << QStringLiteral("/bin/sh") << game.executablePath;
+    } else {
         fullCmd << game.executablePath;
     }
 
@@ -228,66 +282,98 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
         return false;
     }
 
-    auto runnerOpt = m_runnerMgr->resolveRunner(game.runnerId);
-    if (!runnerOpt.has_value()) {
-        const QString msg = QStringLiteral("No Wine or Proton runner available. Please install or detect a runner in Runners.");
-        m_diagMgr->startNewGameLog(gameId, QStringLiteral("=== Launch Failed ===\n") + msg);
-        emit gameLaunchFailed(gameId, msg);
-        return false;
+    const bool isNative = game.isNative();
+    if (isNative) {
+        QFile::Permissions perms = QFile::permissions(game.executablePath);
+        if (!(perms & QFile::ExeUser)) {
+            QFile::setPermissions(game.executablePath, perms | QFile::ExeUser | QFile::ExeGroup | QFile::ExeOther);
+        }
     }
-
+    LaunchPlan plan;
+    std::optional<RunnerRecord> runnerOpt;
     PrefixRecord prefix;
-    if (!game.prefixId.isEmpty()) {
-        if (auto pOpt = m_db->getPrefix(game.prefixId); pOpt.has_value()) {
-            prefix = *pOpt;
+
+    if (isNative) {
+        plan = buildNativeLaunchPlan(game);
+    } else {
+        runnerOpt = m_runnerMgr->resolveRunner(game.runnerId);
+        if (!runnerOpt.has_value()) {
+            const QString msg = QStringLiteral("No Wine or Proton runner available. Please install or detect a runner in Runners.");
+            m_diagMgr->startNewGameLog(gameId, QStringLiteral("=== Launch Failed ===\n") + msg);
+            emit gameLaunchFailed(gameId, msg);
+            return false;
         }
+
+        if (!game.prefixId.isEmpty()) {
+            if (auto pOpt = m_db->getPrefix(game.prefixId); pOpt.has_value()) {
+                prefix = *pOpt;
+            }
+        }
+        if (prefix.id.isEmpty()) {
+            if (auto defOpt = m_db->getPrefix(QStringLiteral("default-prefix")); defOpt.has_value()) {
+                prefix = *defOpt;
+            } else {
+                prefix.id = QStringLiteral("default-prefix");
+                prefix.name = QStringLiteral("Default");
+                prefix.path = m_settings->defaultPrefixLocation() + QStringLiteral("/Default");
+                prefix.arch = QStringLiteral("win64");
+            }
+        }
+
+        PrefixManager::ensureProtonSymlink(prefix.path);
+
+        // Ensure DXVK / VKD3D DLLs are linked into Wine prefixes when requested
+        const bool useDxvk = (game.dxvkState == -1) ? m_settings->dxvkDefault() : (game.dxvkState == 1);
+        const bool useVkd3d = (game.vkd3dState == -1) ? m_settings->vkd3dDefault() : (game.vkd3dState == 1);
+        if (!runnerOpt->isProton()) {
+            if (useDxvk && !prefix.dxvkInstalled) {
+                m_prefixMgr->installDxvk(prefix.id, true);
+            }
+            if (useVkd3d && !prefix.vkd3dInstalled) {
+                m_prefixMgr->installVkd3d(prefix.id, true);
+            }
+        }
+
+        plan = buildLaunchPlan(game, *runnerOpt, prefix);
     }
-    if (prefix.id.isEmpty()) {
-        if (auto defOpt = m_db->getPrefix(QStringLiteral("default-prefix")); defOpt.has_value()) {
-            prefix = *defOpt;
-        } else {
-            prefix.id = QStringLiteral("default-prefix");
-            prefix.name = QStringLiteral("Default");
-            prefix.path = m_settings->defaultPrefixLocation() + QStringLiteral("/Default");
-            prefix.arch = QStringLiteral("win64");
-        }
+
+    QString header;
+    if (isNative) {
+        header = QStringLiteral(
+            "=== Tsuki Game Launch Log ===\n"
+            "Timestamp : %1\n"
+            "Game      : %2 (%3)\n"
+            "Platform  : Native Linux\n"
+            "Executable: %4\n"
+            "Command   : %5 %6\n"
+            "=============================\n")
+            .arg(QDateTime::currentDateTime().toString(Qt::ISODate),
+                 game.title,
+                 game.id,
+                 game.executablePath,
+                 plan.program,
+                 plan.arguments.join(QLatin1Char(' ')));
+    } else {
+        header = QStringLiteral(
+            "=== Tsuki Game Launch Log ===\n"
+            "Timestamp : %1\n"
+            "Game      : %2 (%3)\n"
+            "Executable: %4\n"
+            "Runner    : %5 (%6)\n"
+            "Prefix    : %7 (%8)\n"
+            "Command   : %9 %10\n"
+            "=============================\n")
+            .arg(QDateTime::currentDateTime().toString(Qt::ISODate),
+                 game.title,
+                 game.id,
+                 game.executablePath,
+                 runnerOpt->name,
+                 runnerOpt->binaryPath,
+                 prefix.name,
+                 prefix.path,
+                 plan.program,
+                 plan.arguments.join(QLatin1Char(' ')));
     }
-
-    PrefixManager::ensureProtonSymlink(prefix.path);
-
-    // Ensure DXVK / VKD3D DLLs are linked into Wine prefixes when requested
-    const bool useDxvk = (game.dxvkState == -1) ? m_settings->dxvkDefault() : (game.dxvkState == 1);
-    const bool useVkd3d = (game.vkd3dState == -1) ? m_settings->vkd3dDefault() : (game.vkd3dState == 1);
-    if (!runnerOpt->isProton()) {
-        if (useDxvk && !prefix.dxvkInstalled) {
-            m_prefixMgr->installDxvk(prefix.id, true);
-        }
-        if (useVkd3d && !prefix.vkd3dInstalled) {
-            m_prefixMgr->installVkd3d(prefix.id, true);
-        }
-    }
-
-    const LaunchPlan plan = buildLaunchPlan(game, *runnerOpt, prefix);
-
-    const QString header = QStringLiteral(
-        "=== Tsuki Game Launch Log ===\n"
-        "Timestamp : %1\n"
-        "Game      : %2 (%3)\n"
-        "Executable: %4\n"
-        "Runner    : %5 (%6)\n"
-        "Prefix    : %7 (%8)\n"
-        "Command   : %9 %10\n"
-        "=============================\n")
-        .arg(QDateTime::currentDateTime().toString(Qt::ISODate),
-             game.title,
-             game.id,
-             game.executablePath,
-             runnerOpt->name,
-             runnerOpt->binaryPath,
-             prefix.name,
-             prefix.path,
-             plan.program,
-             plan.arguments.join(QLatin1Char(' ')));
 
     m_diagMgr->startNewGameLog(gameId, header);
 
@@ -304,15 +390,21 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
     auto* proc = new QProcess(this);
     proc->setWorkingDirectory(plan.workingDirectory);
     proc->setProcessEnvironment(plan.environment);
+    if (isNative) {
+        proc->setChildProcessModifier([]() {
+            ::setsid();
+        });
+    }
 
     auto* session = new RunningSession();
     session->gameId = gameId;
     session->title = game.title;
     session->prefixPath = prefix.path;
-    session->runnerId = runnerOpt->id;
+    session->runnerId = runnerOpt.has_value() ? runnerOpt->id : QString();
     session->postExitScript = game.postExitScript;
     session->startTimeEpoch = QDateTime::currentSecsSinceEpoch();
     session->process = proc;
+    session->isNative = isNative;
 
     m_running.insert(gameId, session);
     emit runningGamesChanged();
@@ -369,28 +461,37 @@ void LaunchPipeline::stopGame(const QString& gameId) {
     if (!m_running.contains(gameId)) return;
     RunningSession* sess = m_running.value(gameId);
 
-    m_diagMgr->appendGameLog(gameId, QStringLiteral("\n[Tsuki] Terminating game & Wine server processes…\n"));
+    m_diagMgr->appendGameLog(gameId, QStringLiteral("\n[Tsuki] Terminating game processes…\n"));
 
     // 1. Run wineserver -k for this prefix so all Wine child processes exit cleanly
-    if (auto runnerOpt = m_runnerMgr->resolveRunner(sess->runnerId); runnerOpt.has_value()) {
-        const QString wineserverBin = m_runnerMgr->findWineserverBinaryForRunner(*runnerOpt);
-        if (!wineserverBin.isEmpty()) {
-            QProcess killWs;
-            QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-            env.insert(QStringLiteral("WINEPREFIX"), sess->prefixPath);
-            killWs.setProcessEnvironment(env);
-            killWs.start(wineserverBin, {QStringLiteral("-k")});
-            killWs.waitForFinished(2000);
+    if (!sess->isNative) {
+        if (auto runnerOpt = m_runnerMgr->resolveRunner(sess->runnerId); runnerOpt.has_value()) {
+            const QString wineserverBin = m_runnerMgr->findWineserverBinaryForRunner(*runnerOpt);
+            if (!wineserverBin.isEmpty()) {
+                QProcess killWs;
+                QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+                env.insert(QStringLiteral("WINEPREFIX"), sess->prefixPath);
+                killWs.setProcessEnvironment(env);
+                killWs.start(wineserverBin, {QStringLiteral("-k")});
+                killWs.waitForFinished(2000);
+            }
         }
     }
 
     // 2. Terminate and kill QProcess if still alive
     if (sess->process && sess->process->state() != QProcess::NotRunning) {
         const qint64 pid = sess->process->processId();
+        if (sess->isNative && pid > 0) {
+            ::kill(-static_cast<pid_t>(pid), SIGTERM);
+        }
         sess->process->terminate();
         if (!sess->process->waitForFinished(1500)) {
             if (pid > 0) {
-                ::kill(static_cast<pid_t>(pid), SIGKILL);
+                if (sess->isNative) {
+                    ::kill(-static_cast<pid_t>(pid), SIGKILL);
+                } else {
+                    ::kill(static_cast<pid_t>(pid), SIGKILL);
+                }
             }
             sess->process->kill();
         }

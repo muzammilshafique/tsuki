@@ -10,6 +10,32 @@ Page {
     property var gameData: ({})
     property int activeTab: 0
 
+    readonly property bool isNative: root.gameData.isNative === true
+
+    readonly property var tabList: {
+        if (root.isNative) {
+            return [
+                { label: "General & Paths", stackIndex: 0 },
+                { label: "Performance & Controller", stackIndex: 2 },
+                { label: "Artwork & Media", stackIndex: 3 },
+                { label: "Execution Logs", stackIndex: 4 }
+            ]
+        }
+        return [
+            { label: "General & Paths", stackIndex: 0 },
+            { label: "Wine & DXVK", stackIndex: 1 },
+            { label: "Performance & Controller", stackIndex: 2 },
+            { label: "Artwork & Media", stackIndex: 3 },
+            { label: "Execution Logs", stackIndex: 4 }
+        ]
+    }
+
+    onGameDataChanged: {
+        if (root.isNative && root.activeTab === 1) {
+            root.activeTab = 0
+        }
+    }
+
     signal backRequested()
     signal winetricksRequested(string prefixId, string gameTitle)
 
@@ -55,8 +81,12 @@ Page {
         if (!root.gameId || root.gameId.length === 0) return
 
         let envMap = {}
-        if (typeof envVarsArea !== "undefined" && envVarsArea) {
-            let lines = envVarsArea.text.split("\n")
+        let activeEnvArea = root.isNative
+            ? ((typeof nativeEnvVarsArea !== "undefined" && nativeEnvVarsArea) ? nativeEnvVarsArea : null)
+            : ((typeof envVarsArea !== "undefined" && envVarsArea) ? envVarsArea : null)
+
+        if (activeEnvArea) {
+            let lines = activeEnvArea.text.split("\n")
             for (let i = 0; i < lines.length; ++i) {
                 let l = lines[i].trim()
                 let eq = l.indexOf("=")
@@ -69,32 +99,34 @@ Page {
         }
 
         let dllMap = {}
-        if (typeof dllOverridesArea !== "undefined" && dllOverridesArea) {
-            let dlines = dllOverridesArea.text.split("\n")
-            for (let j = 0; j < dlines.length; ++j) {
-                let dl = dlines[j].trim()
-                let deq = dl.indexOf("=")
-                if (deq > 0) {
-                    dllMap[dl.substring(0, deq).trim()] = dl.substring(deq + 1).trim()
+        if (!root.isNative) {
+            if (typeof dllOverridesArea !== "undefined" && dllOverridesArea) {
+                let dlines = dllOverridesArea.text.split("\n")
+                for (let j = 0; j < dlines.length; ++j) {
+                    let dl = dlines[j].trim()
+                    let deq = dl.indexOf("=")
+                    if (deq > 0) {
+                        dllMap[dl.substring(0, deq).trim()] = dl.substring(deq + 1).trim()
+                    }
                 }
+            } else if (root.gameData.dllOverrides) {
+                dllMap = root.gameData.dllOverrides
             }
-        } else if (root.gameData.dllOverrides) {
-            dllMap = root.gameData.dllOverrides
         }
 
         let runnerIdVal = ""
         let runners = uiController.runnerManager.installedRunners
-        if (typeof detailRunnerCombo !== "undefined" && detailRunnerCombo && detailRunnerCombo.selectedIndex > 0 && detailRunnerCombo.selectedIndex - 1 < runners.length) {
+        if (!root.isNative && typeof detailRunnerCombo !== "undefined" && detailRunnerCombo && detailRunnerCombo.selectedIndex > 0 && detailRunnerCombo.selectedIndex - 1 < runners.length) {
             runnerIdVal = runners[detailRunnerCombo.selectedIndex - 1].id
-        } else if (typeof detailRunnerCombo !== "undefined" && detailRunnerCombo && detailRunnerCombo.selectedIndex === 0) {
+        } else if (!root.isNative && typeof detailRunnerCombo !== "undefined" && detailRunnerCombo && detailRunnerCombo.selectedIndex === 0) {
             runnerIdVal = ""
         } else {
-            runnerIdVal = root.gameData.runnerId || ""
+            runnerIdVal = root.isNative ? "" : (root.gameData.runnerId || "")
         }
 
-        let pfxIdVal = root.gameData.prefixId || "default-prefix"
+        let pfxIdVal = root.isNative ? "" : (root.gameData.prefixId || "default-prefix")
         let pfxs = uiController.prefixManager.prefixes
-        if (typeof detailPrefixCombo !== "undefined" && detailPrefixCombo && detailPrefixCombo.selectedIndex >= 0 && detailPrefixCombo.selectedIndex < pfxs.length) {
+        if (!root.isNative && typeof detailPrefixCombo !== "undefined" && detailPrefixCombo && detailPrefixCombo.selectedIndex >= 0 && detailPrefixCombo.selectedIndex < pfxs.length) {
             pfxIdVal = pfxs[detailPrefixCombo.selectedIndex].id
         }
 
@@ -104,21 +136,21 @@ Page {
             ? (xboxEmuToggle.checked ? 1 : 0)
             : (appSettings.xboxEmulationDefault ? 1 : 0)
 
-        let dxvkVal = (typeof dxvkCombo !== "undefined" && dxvkCombo && dxvkCombo.selectedIndex >= 0)
+        let dxvkVal = (!root.isNative && typeof dxvkCombo !== "undefined" && dxvkCombo && dxvkCombo.selectedIndex >= 0)
             ? (dxvkCombo.selectedIndex - 1)
-            : (root.gameData.dxvkState !== undefined ? root.gameData.dxvkState : -1)
+            : (root.isNative ? -1 : (root.gameData.dxvkState !== undefined ? root.gameData.dxvkState : -1))
 
-        let vkd3dVal = (typeof vkd3dCombo !== "undefined" && vkd3dCombo && vkd3dCombo.selectedIndex >= 0)
+        let vkd3dVal = (!root.isNative && typeof vkd3dCombo !== "undefined" && vkd3dCombo && vkd3dCombo.selectedIndex >= 0)
             ? (vkd3dCombo.selectedIndex - 1)
-            : (root.gameData.vkd3dState !== undefined ? root.gameData.vkd3dState : -1)
+            : (root.isNative ? -1 : (root.gameData.vkd3dState !== undefined ? root.gameData.vkd3dState : -1))
 
-        let esyncVal = (typeof esyncCombo !== "undefined" && esyncCombo && esyncCombo.selectedIndex >= 0)
+        let esyncVal = (!root.isNative && typeof esyncCombo !== "undefined" && esyncCombo && esyncCombo.selectedIndex >= 0)
             ? (esyncCombo.selectedIndex - 1)
-            : (root.gameData.esyncState !== undefined ? root.gameData.esyncState : -1)
+            : (root.isNative ? -1 : (root.gameData.esyncState !== undefined ? root.gameData.esyncState : -1))
 
-        let fsyncVal = (typeof fsyncCombo !== "undefined" && fsyncCombo && fsyncCombo.selectedIndex >= 0)
+        let fsyncVal = (!root.isNative && typeof fsyncCombo !== "undefined" && fsyncCombo && fsyncCombo.selectedIndex >= 0)
             ? (fsyncCombo.selectedIndex - 1)
-            : (root.gameData.fsyncState !== undefined ? root.gameData.fsyncState : -1)
+            : (root.isNative ? -1 : (root.gameData.fsyncState !== undefined ? root.gameData.fsyncState : -1))
 
         let mangohudVal = (typeof mangohudCombo !== "undefined" && mangohudCombo && mangohudCombo.selectedIndex >= 0)
             ? (mangohudCombo.selectedIndex - 1)
@@ -129,10 +161,10 @@ Page {
             : (root.gameData.gamemodeState !== undefined ? root.gameData.gamemodeState : -1)
 
         let hudVal = ""
-        if (typeof hudCombo !== "undefined" && hudCombo && hudCombo.selectedIndex >= 0) {
+        if (!root.isNative && typeof hudCombo !== "undefined" && hudCombo && hudCombo.selectedIndex >= 0) {
             hudVal = hudCombo.selectedIndex === 0 ? "" : ["none", "fps", "devinfo,fps,frametimes", "full"][hudCombo.selectedIndex - 1]
         } else {
-            hudVal = root.gameData.dxvkHud || ""
+            hudVal = root.isNative ? "" : (root.gameData.dxvkHud || "")
         }
 
         uiController.gameManager.updateGameDetails(root.gameId, {
@@ -147,8 +179,8 @@ Page {
             esyncState: esyncVal,
             fsyncState: fsyncVal,
             dxvkHud: hudVal,
-            virtualDesktop: (typeof vdesktopCheck !== "undefined" && vdesktopCheck) ? vdesktopCheck.checked : (root.gameData.virtualDesktop || false),
-            virtualDesktopResolution: (typeof vdesktopResField !== "undefined" && vdesktopResField && vdesktopResField.text.length > 0) ? vdesktopResField.text : (root.gameData.virtualDesktopResolution || "1920x1080"),
+            virtualDesktop: (!root.isNative && typeof vdesktopCheck !== "undefined" && vdesktopCheck) ? vdesktopCheck.checked : false,
+            virtualDesktopResolution: (!root.isNative && typeof vdesktopResField !== "undefined" && vdesktopResField && vdesktopResField.text.length > 0) ? vdesktopResField.text : (root.gameData.virtualDesktopResolution || "1920x1080"),
             mangohudState: mangohudVal,
             gamemodeState: gamemodeVal,
             cpuAffinity: (typeof affinityField !== "undefined" && affinityField) ? affinityField.text.trim() : (root.gameData.cpuAffinity || ""),
@@ -241,6 +273,7 @@ Page {
                             spacing: 10
 
                             Rectangle {
+                                id: rTagRect
                                 radius: 6
                                 height: 24
                                 implicitHeight: 24
@@ -248,15 +281,18 @@ Page {
                                 Layout.preferredWidth: implicitWidth
                                 Layout.preferredHeight: 24
                                 Layout.alignment: Qt.AlignVCenter
-                                color: root.gameData.isRunning ? Qt.rgba(34/255, 197/255, 94/255, 0.2) : Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.2)
-                                border.color: root.gameData.isRunning ? "#22c55e" : appSettings.accentColor
+                                readonly property color effectiveTagColor: root.gameData.isRunning
+                                    ? "#22c55e"
+                                    : (root.isNative ? appSettings.tagColorLinux : appSettings.accentColor)
+                                color: Qt.rgba(effectiveTagColor.r, effectiveTagColor.g, effectiveTagColor.b, 0.2)
+                                border.color: effectiveTagColor
                                 border.width: 1
 
                                 Label {
                                     id: rTagLbl
                                     anchors.centerIn: parent
-                                    text: root.gameData.isRunning ? "RUNNING" : (root.gameData.runnerTag || "WINE")
-                                    color: root.gameData.isRunning ? "#22c55e" : appSettings.accentColor
+                                    text: root.gameData.isRunning ? "RUNNING" : (root.gameData.runnerTag || (root.isNative ? "LINUX" : "WINE"))
+                                    color: rTagRect.effectiveTagColor
                                     font.pixelSize: 11
                                     font.weight: Font.Bold
                                     renderType: Text.QtRendering
@@ -302,6 +338,7 @@ Page {
                             }
 
                             M3Button {
+                                visible: !root.isNative
                                 text: "Winetricks"
                                 iconSource: "qrc:/tsuki_app/icons/actions/wrench.svg"
                                 buttonType: "tonal"
@@ -326,6 +363,7 @@ Page {
                             }
 
                             M3Button {
+                                visible: !root.isNative && Boolean(root.gameData.prefixId && root.gameData.prefixId.length > 0)
                                 text: "Prefix Folder"
                                 iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                                 buttonType: "tonal"
@@ -374,19 +412,13 @@ Page {
 
                     Repeater {
                         id: tabRepeater
-                        model: [
-                            "General & Paths",
-                            "Wine & DXVK",
-                            "Performance & Controller",
-                            "Artwork & Media",
-                            "Execution Logs"
-                        ]
+                        model: root.tabList
 
                         Item {
                             id: tabItem
                             required property int index
-                            required property string modelData
-                            readonly property bool isSelected: root.activeTab === index
+                            required property var modelData
+                            readonly property bool isSelected: root.activeTab === tabItem.modelData.stackIndex
                             height: parent.height
                             width: tabItemLbl.implicitWidth + 32
 
@@ -403,7 +435,7 @@ Page {
                             Label {
                                 id: tabItemLbl
                                 anchors.centerIn: parent
-                                text: tabItem.modelData
+                                text: tabItem.modelData.label
                                 color: tabItem.isSelected ? appSettings.accentColor : (tabItemMA.containsMouse ? appSettings.textColor : appSettings.textSecColor)
                                 font.pixelSize: 14
                                 font.weight: tabItem.isSelected ? Font.DemiBold : Font.Normal
@@ -418,7 +450,7 @@ Page {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     root.saveAllChanges()
-                                    root.activeTab = tabItem.index
+                                    root.activeTab = tabItem.modelData.stackIndex
                                 }
                             }
                         }
@@ -433,7 +465,17 @@ Page {
                     color: appSettings.accentColor
                     anchors.bottom: parent.bottom
 
-                    property var currentItem: tabRepeater.itemAt(root.activeTab)
+                    property var currentItem: {
+                        let _tab = root.activeTab
+                        let _nat = root.isNative
+                        for (let i = 0; i < tabRepeater.count; i++) {
+                            let it = tabRepeater.itemAt(i)
+                            if (it && it.modelData && it.modelData.stackIndex === _tab) {
+                                return it
+                            }
+                        }
+                        return tabRepeater.count > 0 ? tabRepeater.itemAt(0) : null
+                    }
                     x: currentItem ? currentItem.x + 12 : 0
                     width: currentItem ? currentItem.width - 24 : 0
 
@@ -524,8 +566,19 @@ Page {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 2
-                                Label { text: "Executable Path (.exe)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Target Windows binary to launch through Wine or Proton"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                Label {
+                                    text: root.isNative ? "Executable / Script" : "Executable Path (.exe)"
+                                    color: appSettings.textColor
+                                    font.pixelSize: 14
+                                    font.weight: Font.Medium
+                                }
+                                Label {
+                                    text: root.isNative
+                                        ? "Target Linux binary or script to execute directly"
+                                        : "Target Windows binary to launch through Wine or Proton"
+                                    color: appSettings.textSecColor
+                                    font.pixelSize: 12
+                                }
                             }
 
                             RowLayout {
@@ -542,7 +595,11 @@ Page {
                                     iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                                     buttonType: "tonal"
                                     onClicked: {
-                                        let p = uiController.selectFile("Select Game Executable", "Executable Files (*.exe *.bat *.sh *.bin *.AppImage);;All Files (*)", exePathField.text)
+                                        let prompt = root.isNative ? "Select Linux Game Executable" : "Select Game Executable"
+                                        let filter = root.isNative
+                                            ? "All Files (*);;Executables & Scripts (*.sh *.AppImage *.x86_64 *.x86 *.bin)"
+                                            : "Executable Files (*.exe *.bat *.sh *.bin *.AppImage);;All Files (*)"
+                                        let p = uiController.selectFile(prompt, filter, exePathField.text)
                                         if (p && p.length > 0) {
                                             exePathField.text = p
                                             root.saveAllChanges()
@@ -617,97 +674,154 @@ Page {
 
                         Item { Layout.fillWidth: true; Layout.preferredHeight: 8 }
 
-                        // ── Section 2: Runner & Prefix Environment ──
-                        Label {
-                            text: "RUNNER & PREFIX ENVIRONMENT"
-                            color: appSettings.accentColor
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.8
-                            Layout.bottomMargin: 2
-                        }
-
-                        // Row 5: Wine / Proton Runner Override
-                        RowLayout {
+                        // ── Section 2 (Windows): Runner & Prefix Environment ──
+                        ColumnLayout {
+                            visible: !root.isNative
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
+                            spacing: 10
 
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-                                Label { text: "Wine / Proton Runner Override"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Select a custom Wine or Proton build, or inherit global default runner"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                            Label {
+                                text: "RUNNER & PREFIX ENVIRONMENT"
+                                color: appSettings.accentColor
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 0.8
+                                Layout.bottomMargin: 2
                             }
 
-                            StyledCombo {
-                                id: detailRunnerCombo
-                                openUpward: true
-                                Layout.preferredWidth: Math.min(340, root.width * 0.40)
-                                readonly property var runners: uiController.runnerManager.installedRunners
-                                comboModel: {
-                                    let defName = "System Wine"
-                                    for (let i = 0; i < runners.length; i++) {
-                                        if (runners[i].id === appSettings.defaultRunnerId) {
-                                            defName = runners[i].name
-                                            break
+                            // Row 5: Wine / Proton Runner Override
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 52
+                                spacing: 16
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+                                    Label { text: "Wine / Proton Runner Override"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                    Label { text: "Select a custom Wine or Proton build, or inherit global default runner"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                }
+
+                                StyledCombo {
+                                    id: detailRunnerCombo
+                                    openUpward: true
+                                    Layout.preferredWidth: Math.min(340, root.width * 0.40)
+                                    readonly property var runners: uiController.runnerManager.installedRunners
+                                    comboModel: {
+                                        let defName = "System Wine"
+                                        for (let i = 0; i < runners.length; i++) {
+                                            if (runners[i].id === appSettings.defaultRunnerId) {
+                                                defName = runners[i].name
+                                                break
+                                            }
                                         }
+                                        if (defName === "System Wine" && runners.length > 0) {
+                                            defName = runners[0].name
+                                        }
+                                        let list = ["Global Default (" + defName + ")"]
+                                        for (let i = 0; i < runners.length; i++) {
+                                            list.push(runners[i].name)
+                                        }
+                                        return list
                                     }
-                                    if (defName === "System Wine" && runners.length > 0) {
-                                        defName = runners[0].name
+                                    selectedIndex: {
+                                        let curId = root.gameData.runnerId
+                                        for (let i = 0; i < runners.length; i++) {
+                                            if (runners[i].id === curId) return i + 1
+                                        }
+                                        return 0
                                     }
-                                    let list = ["Global Default (" + defName + ")"]
-                                    for (let i = 0; i < runners.length; i++) {
-                                        list.push(runners[i].name)
-                                    }
-                                    return list
+                                    onSelected: root.saveAllChanges()
                                 }
-                                selectedIndex: {
-                                    let curId = root.gameData.runnerId
-                                    for (let i = 0; i < runners.length; i++) {
-                                        if (runners[i].id === curId) return i + 1
-                                    }
-                                    return 0
+                            }
+
+                            Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
+
+                            // Row 6: Wine Prefix Environment
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 52
+                                spacing: 16
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+                                    Label { text: "Wine Prefix Environment"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                    Label { text: "Virtual Windows filesystem (C: drive) and registry container"; color: appSettings.textSecColor; font.pixelSize: 12 }
                                 }
-                                onSelected: root.saveAllChanges()
+
+                                StyledCombo {
+                                    id: detailPrefixCombo
+                                    openUpward: true
+                                    Layout.preferredWidth: Math.min(340, root.width * 0.40)
+                                    readonly property var pfxs: uiController.prefixManager.prefixes
+                                    comboModel: {
+                                        let list = []
+                                        for (let i = 0; i < pfxs.length; i++) {
+                                            list.push(pfxs[i].name)
+                                        }
+                                        return list.length > 0 ? list : ["Default Prefix"]
+                                    }
+                                    selectedIndex: {
+                                        let curId = root.gameData.prefixId
+                                        for (let i = 0; i < pfxs.length; i++) {
+                                            if (pfxs[i].id === curId) return i
+                                        }
+                                        return 0
+                                    }
+                                    onSelected: root.saveAllChanges()
+                                }
                             }
                         }
 
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // Row 6: Wine Prefix Environment
-                        RowLayout {
+                        // ── Section 2 (Native): Environment Variables ──
+                        ColumnLayout {
+                            visible: root.isNative
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
+                            spacing: 8
 
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-                                Label { text: "Wine Prefix Environment"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Virtual Windows filesystem (C: drive) and registry container"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                            Label {
+                                text: "ENVIRONMENT VARIABLES"
+                                color: appSettings.accentColor
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 0.8
+                                Layout.bottomMargin: 2
                             }
 
-                            StyledCombo {
-                                id: detailPrefixCombo
-                                openUpward: true
-                                Layout.preferredWidth: Math.min(340, root.width * 0.40)
-                                readonly property var pfxs: uiController.prefixManager.prefixes
-                                comboModel: {
-                                    let list = []
-                                    for (let i = 0; i < pfxs.length; i++) {
-                                        list.push(pfxs[i].name)
+                            Label {
+                                text: "Custom Environment Variables (KEY=VALUE, one per line)"
+                                color: appSettings.textSecColor
+                                font.pixelSize: 12
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 120
+                                radius: 12
+                                color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
+                                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+
+                                ScrollView {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    TextArea {
+                                        id: nativeEnvVarsArea
+                                        color: appSettings.textColor
+                                        font.family: "monospace"
+                                        font.pixelSize: 12
+                                        placeholderText: "SDL_VIDEODRIVER=wayland\n__GL_THREADED_OPTIMIZATIONS=1\nENABLE_VKBASALT=1"
+                                        placeholderTextColor: appSettings.textTerColor
+                                        text: {
+                                            let m = root.gameData.environmentVariables || {}
+                                            let out = []
+                                            for (let k in m) out.push(k + "=" + m[k])
+                                            return out.join("\n")
+                                        }
+                                        background: null
+                                        onActiveFocusChanged: if (!activeFocus) root.saveAllChanges()
                                     }
-                                    return list.length > 0 ? list : ["Default Prefix"]
                                 }
-                                selectedIndex: {
-                                    let curId = root.gameData.prefixId
-                                    for (let i = 0; i < pfxs.length; i++) {
-                                        if (pfxs[i].id === curId) return i
-                                    }
-                                    return 0
-                                }
-                                onSelected: root.saveAllChanges()
                             }
                         }
                     }
@@ -715,6 +829,7 @@ Page {
                     // TAB 1: Wine & DXVK
                     ColumnLayout {
                         id: tab1Wine
+                        visible: !root.isNative
                         spacing: 10
 
                         // ── Section 1: Direct3D Translators ──

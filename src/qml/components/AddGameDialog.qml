@@ -14,6 +14,7 @@ Popup {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
     property string exePath: ""
+    property string platform: "windows"
     property string gameTitle: ""
     property string workDir: ""
     property string launchArgs: ""
@@ -26,6 +27,7 @@ Popup {
 
     function resetAndOpen() {
         exePath = ""
+        platform = "windows"
         gameTitle = ""
         workDir = ""
         launchArgs = ""
@@ -72,7 +74,7 @@ Popup {
                 }
 
                 Label {
-                    text: "Add Local Windows Game"
+                    text: "Add Game"
                     color: appSettings.textColor
                     font.pixelSize: 20
                     font.weight: Font.DemiBold
@@ -121,11 +123,32 @@ Popup {
 
                 Item { Layout.preferredHeight: 4 }
 
+                // 0. Platform Mode Selector
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+                    Label { text: "Platform"; color: appSettings.textColor; font.pixelSize: 13; font.weight: Font.Medium }
+                    M3SegmentedButton {
+                        Layout.fillWidth: true
+                        model: [
+                            { label: "Windows (Wine / Proton)", val: 0 },
+                            { label: "Linux (Native)", val: 1 }
+                        ]
+                        selectedValue: root.platform === "linux" ? 1 : 0
+                        onSelectionChanged: (val) => root.platform = (val === 1 ? "linux" : "windows")
+                    }
+                }
+
                 // 1. Executable Picker
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 6
-                    Label { text: "Executable File (.exe)"; color: appSettings.textColor; font.pixelSize: 13; font.weight: Font.Medium }
+                    Label {
+                        text: root.platform === "linux" ? "Executable / Script" : "Executable File (.exe)"
+                        color: appSettings.textColor
+                        font.pixelSize: 13
+                        font.weight: Font.Medium
+                    }
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 8
@@ -133,7 +156,7 @@ Popup {
                             id: exeInputField
                             Layout.fillWidth: true
                             text: root.exePath
-                            placeholderText: "/path/to/game.exe"
+                            placeholderText: root.platform === "linux" ? "/path/to/game.x86_64 or run.sh" : "/path/to/game.exe"
                             onTextChanged: root.exePath = text
                             onCommit: (val) => root.exePath = val
                         }
@@ -142,13 +165,23 @@ Popup {
                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                             buttonType: "tonal"
                             onClicked: {
-                                let f = uiController.selectFile("Select Windows Game Executable (.exe)", "Windows Executables (*.exe *.EXE *.msi *.MSI *.bat);;All Files (*)", root.exePath)
+                                let filter = root.platform === "linux"
+                                    ? "All Files (*);;Executables & Scripts (*.sh *.AppImage *.x86_64 *.x86 *.bin)"
+                                    : "Windows Executables (*.exe *.EXE *.msi *.MSI *.bat);;All Files (*)"
+                                let prompt = root.platform === "linux"
+                                    ? "Select Linux Game Executable"
+                                    : "Select Windows Game Executable (.exe)"
+                                let f = uiController.selectFile(prompt, filter, root.exePath)
                                 if (f && f.length > 0) {
                                     root.exePath = f
+                                    let detected = uiController.gameManager.detectPlatform(f)
+                                    root.platform = detected
                                     let guessed = uiController.gameManager.guessTitleFromExecutable(f)
                                     if (guessed && guessed.length > 0) {
                                         root.gameTitle = guessed
-                                        root.customPrefixName = uiController.prefixManager.suggestShortPrefixName(guessed)
+                                        if (root.platform === "windows") {
+                                            root.customPrefixName = uiController.prefixManager.suggestShortPrefixName(guessed)
+                                        }
                                     }
                                     let lastSlash = f.lastIndexOf("/")
                                     if (lastSlash > 0 && root.workDir.trim().length === 0) {
@@ -175,7 +208,7 @@ Popup {
                         }
                         onCommit: (val) => {
                             root.gameTitle = val
-                            if (root.customPrefixName.length === 0 && val.length > 0) {
+                            if (root.platform === "windows" && root.customPrefixName.length === 0 && val.length > 0) {
                                 root.customPrefixName = uiController.prefixManager.suggestShortPrefixName(val)
                             }
                         }
@@ -184,6 +217,7 @@ Popup {
 
                 // 3. Runner Selection
                 ColumnLayout {
+                    visible: root.platform === "windows"
                     Layout.fillWidth: true
                     spacing: 6
                     Label { text: "Wine / Proton Runner"; color: appSettings.textColor; font.pixelSize: 13; font.weight: Font.Medium }
@@ -204,6 +238,7 @@ Popup {
 
                 // 4. Wine Prefix Mode
                 Rectangle {
+                    visible: root.platform === "windows"
                     Layout.fillWidth: true
                     radius: 16
                     color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
@@ -392,31 +427,40 @@ Popup {
                         let finalWorkDir = workDirInputField.text.trim().length > 0 ? workDirInputField.text.trim() : root.workDir.trim()
                         let finalArgs = argsInputField.text.trim()
 
-                        let runners = uiController.runnerManager.installedRunners
-                        let chosenRunnerId = ""
-                        if (root.runnerIndex > 0 && root.runnerIndex - 1 < runners.length) {
-                            chosenRunnerId = runners[root.runnerIndex - 1].id
-                        }
-                        let pfxMode = "dedicated"
-                        if (!root.useDedicatedPrefix) {
-                            let pfxs = uiController.prefixManager.prefixes
-                            if (root.existingPrefixIndex >= 0 && root.existingPrefixIndex < pfxs.length) {
-                                pfxMode = pfxs[root.existingPrefixIndex].id
-                            } else {
-                                pfxMode = "default-prefix"
+                        if (root.platform === "linux") {
+                            uiController.gameManager.addNativeGame(
+                                finalTitle,
+                                finalExe,
+                                finalWorkDir,
+                                finalArgs
+                            )
+                        } else {
+                            let runners = uiController.runnerManager.installedRunners
+                            let chosenRunnerId = ""
+                            if (root.runnerIndex > 0 && root.runnerIndex - 1 < runners.length) {
+                                chosenRunnerId = runners[root.runnerIndex - 1].id
                             }
+                            let pfxMode = "dedicated"
+                            if (!root.useDedicatedPrefix) {
+                                let pfxs = uiController.prefixManager.prefixes
+                                if (root.existingPrefixIndex >= 0 && root.existingPrefixIndex < pfxs.length) {
+                                    pfxMode = pfxs[root.existingPrefixIndex].id
+                                } else {
+                                    pfxMode = "default-prefix"
+                                }
+                            }
+                            uiController.gameManager.addGame(
+                                finalTitle,
+                                finalExe,
+                                finalWorkDir,
+                                finalArgs,
+                                chosenRunnerId,
+                                pfxMode,
+                                root.customPrefixName,
+                                root.customPrefixLocation,
+                                root.prefixArch
+                            )
                         }
-                        uiController.gameManager.addGame(
-                            finalTitle,
-                            finalExe,
-                            finalWorkDir,
-                            finalArgs,
-                            chosenRunnerId,
-                            pfxMode,
-                            root.customPrefixName,
-                            root.customPrefixLocation,
-                            root.prefixArch
-                        )
                         root.close()
                     }
                 }

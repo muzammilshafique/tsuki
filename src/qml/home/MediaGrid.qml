@@ -40,13 +40,15 @@ Item {
     function typeLabel(t, runnerTag) {
         if (runnerTag && runnerTag.length > 0) {
             let upper = runnerTag.toUpperCase()
+            if (upper === "LINUX" || upper === "NATIVE") return "LINUX"
             if (upper === "PROTON-GE" || upper === "PROTON") return "PROTON"
             return runnerTag
         }
-        return t === 0 ? "PROTON" : (t === 1 ? "WINE" : "CUSTOM")
+        return t === 3 ? "LINUX" : (t === 0 ? "PROTON" : (t === 1 ? "WINE" : "CUSTOM"))
     }
 
     function tagColor(t) {
+        if (t === 3) return appSettings.tagColorLinux
         return t === 0 ? appSettings.tagColorSeries
                        : (t === 1 ? appSettings.tagColorMovie
                                   : appSettings.tagColorAnime)
@@ -285,6 +287,7 @@ Item {
             required property bool   isPinned
             required property bool   isFavorite
             required property bool   isRunning
+            required property bool   isNative
 
             property bool isMenuOpen: false
             property int menuFocusedIndex: 0
@@ -1132,7 +1135,7 @@ Item {
 
         M3Button {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "Add Windows Game"
+            text: "Add Game"
             iconSource: "qrc:/tsuki_app/icons/actions/add.svg"
             buttonType: "filled"
             onClicked: root.addGameRequested()

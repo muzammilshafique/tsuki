@@ -72,7 +72,8 @@ bool DatabaseManager::initialize() {
                 playtime_seconds INTEGER DEFAULT 0,
                 last_played_timestamp INTEGER DEFAULT 0,
                 added_timestamp INTEGER DEFAULT 0,
-                launch_config_json TEXT
+                launch_config_json TEXT,
+                platform TEXT DEFAULT 'windows'
             )
         )"),
         QStringLiteral(R"(
@@ -117,6 +118,22 @@ bool DatabaseManager::initialize() {
         if (!q.exec(sql)) {
             qWarning() << "Failed to execute schema SQL:" << q.lastError().text();
             return false;
+        }
+    }
+
+    // Ensure 'platform' column exists in 'games' table (migration for existing databases)
+    bool hasPlatform = false;
+    if (q.exec(QStringLiteral("PRAGMA table_info(games)"))) {
+        while (q.next()) {
+            if (q.value(1).toString().compare(QStringLiteral("platform"), Qt::CaseInsensitive) == 0) {
+                hasPlatform = true;
+                break;
+            }
+        }
+    }
+    if (!hasPlatform) {
+        if (!q.exec(QStringLiteral("ALTER TABLE games ADD COLUMN platform TEXT DEFAULT 'windows'"))) {
+            qWarning() << "Failed to migrate games table for platform column:" << q.lastError().text();
         }
     }
 
@@ -171,12 +188,14 @@ bool DatabaseManager::saveGame(const GameRecord& game) {
             id, title, executable_path, working_directory, launch_arguments,
             runner_id, prefix_id, cover_path, banner_path, logo_path, icon_path,
             steamgrid_app_id, is_favorite, is_pinned,
-            playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json
+            playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json,
+            platform
         ) VALUES (
             :id, :title, :executable_path, :working_directory, :launch_arguments,
             :runner_id, :prefix_id, :cover_path, :banner_path, :logo_path, :icon_path,
             :steamgrid_app_id, :is_favorite, :is_pinned,
-            :playtime_seconds, :last_played_timestamp, :added_timestamp, :launch_config_json
+            :playtime_seconds, :last_played_timestamp, :added_timestamp, :launch_config_json,
+            :platform
         )
     )"));
     q.bindValue(QStringLiteral(":id"), game.id);
@@ -197,6 +216,7 @@ bool DatabaseManager::saveGame(const GameRecord& game) {
     q.bindValue(QStringLiteral(":last_played_timestamp"), game.lastPlayedTimestamp);
     q.bindValue(QStringLiteral(":added_timestamp"), game.addedTimestamp);
     q.bindValue(QStringLiteral(":launch_config_json"), game.launchConfigToJson());
+    q.bindValue(QStringLiteral(":platform"), game.platform.isEmpty() ? QStringLiteral("windows") : game.platform);
 
     if (!q.exec()) {
         qWarning() << "saveGame failed:" << q.lastError().text();
@@ -233,6 +253,10 @@ GameRecord DatabaseManager::recordFromQuery(QSqlQuery& q) {
     g.lastPlayedTimestamp = q.value(15).toLongLong();
     g.addedTimestamp = q.value(16).toLongLong();
     g.applyLaunchConfigJson(q.value(17).toString());
+    g.platform = q.value(18).toString();
+    if (g.platform.isEmpty()) {
+        g.platform = QStringLiteral("windows");
+    }
     return g;
 }
 
@@ -243,7 +267,8 @@ std::optional<GameRecord> DatabaseManager::getGame(const QString& gameId) const 
         SELECT id, title, executable_path, working_directory, launch_arguments,
                runner_id, prefix_id, cover_path, banner_path, logo_path, icon_path,
                steamgrid_app_id, is_favorite, is_pinned,
-               playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json
+               playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json,
+               platform
         FROM games WHERE id = :id
     )"));
     q.bindValue(QStringLiteral(":id"), gameId);
@@ -261,7 +286,8 @@ QList<GameRecord> DatabaseManager::getAllGames() const {
         SELECT id, title, executable_path, working_directory, launch_arguments,
                runner_id, prefix_id, cover_path, banner_path, logo_path, icon_path,
                steamgrid_app_id, is_favorite, is_pinned,
-               playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json
+               playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json,
+               platform
         FROM games
         ORDER BY is_pinned DESC, last_played_timestamp DESC, added_timestamp DESC
     )"))) {

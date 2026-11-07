@@ -113,26 +113,42 @@ QVariantMap DiagnosticsManager::analyzeGameLogForErrors(const QString& gameId, i
     QString summary;
     QString recommendation;
 
-    if (log.contains(QStringLiteral("c0000135"), Qt::CaseInsensitive) ||
-        log.contains(QStringLiteral("module not found"), Qt::CaseInsensitive) ||
-        log.contains(QStringLiteral("failed to load"), Qt::CaseInsensitive)) {
-        summary = QStringLiteral("Missing DLL Dependency (STATUS_DLL_NOT_FOUND / 0xC0000135)");
-        recommendation = QStringLiteral("Open Winetricks for this game's prefix and install Visual C++ 2015–2022 (vcrun2022) and DirectX 9/11 (d3dx9, d3dcompiler_47).");
-    } else if (log.contains(QStringLiteral("0xc000007b"), Qt::CaseInsensitive) ||
-               log.contains(QStringLiteral("bad_exe_format"), Qt::CaseInsensitive)) {
-        summary = QStringLiteral("32-bit / 64-bit Architecture Mismatch (0xC000007B)");
-        recommendation = QStringLiteral("Ensure both 32-bit and 64-bit Visual C++ redistributables are installed in the prefix, or recreate the prefix as 64-bit (win64).");
-    } else if (log.contains(QStringLiteral("vulkan"), Qt::CaseInsensitive) &&
-               (log.contains(QStringLiteral("failed"), Qt::CaseInsensitive) ||
-                log.contains(QStringLiteral("VK_ERROR"), Qt::CaseInsensitive))) {
-        summary = QStringLiteral("Vulkan / DXVK Initialization Error");
-        recommendation = QStringLiteral("Verify that host Vulkan ICD drivers are installed, or disable DXVK in the game's launch configuration to fall back to WineD3D (OpenGL).");
-    } else if (log.contains(QStringLiteral("mscoree.dll"), Qt::CaseInsensitive)) {
-        summary = QStringLiteral("Missing .NET Framework / Wine Mono Runtime");
-        recommendation = QStringLiteral("Install dotnet48 via Winetricks for this game's prefix.");
-    } else if (exitCode != 0) {
-        summary = QStringLiteral("Game process exited with code %1").arg(exitCode);
-        recommendation = QStringLiteral("Check the game executable path, working directory, or switch the runner between Proton-GE and System Wine.");
+    auto gameOpt = m_db->getGame(gameId);
+    const bool isNative = gameOpt.has_value() && gameOpt->isNative();
+
+    if (isNative) {
+        if (log.contains(QStringLiteral("error while loading shared libraries"), Qt::CaseInsensitive)) {
+            summary = QStringLiteral("Missing Native Shared Library (.so)");
+            recommendation = QStringLiteral("A required native Linux system library is missing. Install the missing package using your Linux distribution package manager.");
+        } else if (log.contains(QStringLiteral("Permission denied"), Qt::CaseInsensitive)) {
+            summary = QStringLiteral("Executable Permission Denied");
+            recommendation = QStringLiteral("Ensure the game binary or launch script has executable permissions (chmod +x).");
+        } else if (exitCode != 0) {
+            summary = QStringLiteral("Native game process exited with code %1").arg(exitCode);
+            recommendation = QStringLiteral("Check the game log output above, working directory, or missing runtime dependencies.");
+        }
+    } else {
+        if (log.contains(QStringLiteral("c0000135"), Qt::CaseInsensitive) ||
+            log.contains(QStringLiteral("module not found"), Qt::CaseInsensitive) ||
+            log.contains(QStringLiteral("failed to load"), Qt::CaseInsensitive)) {
+            summary = QStringLiteral("Missing DLL Dependency (STATUS_DLL_NOT_FOUND / 0xC0000135)");
+            recommendation = QStringLiteral("Open Winetricks for this game's prefix and install Visual C++ 2015–2022 (vcrun2022) and DirectX 9/11 (d3dx9, d3dcompiler_47).");
+        } else if (log.contains(QStringLiteral("0xc000007b"), Qt::CaseInsensitive) ||
+                   log.contains(QStringLiteral("bad_exe_format"), Qt::CaseInsensitive)) {
+            summary = QStringLiteral("32-bit / 64-bit Architecture Mismatch (0xC000007B)");
+            recommendation = QStringLiteral("Ensure both 32-bit and 64-bit Visual C++ redistributables are installed in the prefix, or recreate the prefix as 64-bit (win64).");
+        } else if (log.contains(QStringLiteral("vulkan"), Qt::CaseInsensitive) &&
+                   (log.contains(QStringLiteral("failed"), Qt::CaseInsensitive) ||
+                    log.contains(QStringLiteral("VK_ERROR"), Qt::CaseInsensitive))) {
+            summary = QStringLiteral("Vulkan / DXVK Initialization Error");
+            recommendation = QStringLiteral("Verify that host Vulkan ICD drivers are installed, or disable DXVK in the game's launch configuration to fall back to WineD3D (OpenGL).");
+        } else if (log.contains(QStringLiteral("mscoree.dll"), Qt::CaseInsensitive)) {
+            summary = QStringLiteral("Missing .NET Framework / Wine Mono Runtime");
+            recommendation = QStringLiteral("Install dotnet48 via Winetricks for this game's prefix.");
+        } else if (exitCode != 0) {
+            summary = QStringLiteral("Game process exited with code %1").arg(exitCode);
+            recommendation = QStringLiteral("Check the game executable path, working directory, or switch the runner between Proton-GE and System Wine.");
+        }
     }
 
     diag["summary"] = summary;

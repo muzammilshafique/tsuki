@@ -22,6 +22,10 @@ AppSettings::AppSettings(QObject* parent)
     if (!m_accentColor.isValid()) {
         m_accentColor = QColor(QStringLiteral("#5b9cf6"));
     }
+    m_tagColorLinux = QColor(m_settings.value(QStringLiteral("appearance/tagColorLinux"), QStringLiteral("#f59e0b")).toString());
+    if (!m_tagColorLinux.isValid()) {
+        m_tagColorLinux = QColor(QStringLiteral("#f59e0b"));
+    }
 
     if (QGuiApplication::styleHints()) {
         QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme) {
@@ -140,6 +144,13 @@ void AppSettings::setAccentColor(const QColor& c) {
     if (!c.isValid() || m_accentColor == c) return;
     m_accentColor = c;
     m_settings.setValue(QStringLiteral("appearance/accentColor"), c.name());
+    emit themeChanged();
+}
+
+void AppSettings::setTagColorLinux(const QColor& c) {
+    if (!c.isValid() || m_tagColorLinux == c) return;
+    m_tagColorLinux = c;
+    m_settings.setValue(QStringLiteral("appearance/tagColorLinux"), c.name());
     emit themeChanged();
 }
 
