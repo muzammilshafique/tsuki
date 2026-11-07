@@ -7,6 +7,7 @@ Item {
     id: combo
     property var comboModel: []
     property int selectedIndex: 0
+    property bool openUpward: false
     signal selected(int idx)
 
     property alias popup: popup
@@ -172,12 +173,13 @@ Item {
         id: popup
         readonly property real fullContentHeight: Math.min(280, (combo.comboModel ? combo.comboModel.length : 1) * 38 + 12)
         readonly property bool opensUpward: {
+            if (combo.openUpward) return true
             let win = combo.Window.window
             if (!win) return false
             let p = combo.mapToItem(null, 0, combo.height)
-            return (p.y + fullContentHeight + 16 > win.height) && (p.y - combo.height - fullContentHeight > 0)
+            return (p.y + fullContentHeight + 16 > win.height) && (p.y > win.height / 2)
         }
-        y: opensUpward ? (-fullContentHeight - 4) : (combo.height + 4)
+        y: opensUpward ? (-height - 4) : (combo.height + 4)
         x: Math.min(0, combo.width - width)
         width: Math.max(combo.width, 240)
         padding: 6

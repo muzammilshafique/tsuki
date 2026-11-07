@@ -66,5 +66,28 @@
         <file>icons/actions/shortcut.svg</file>
         <file>icons/actions/check.svg</file>
         <file>icons/actions/chevron_down.svg</file>
+
+        <file>icons/gamepad/gamepad-up.svg</file>
+        <file>icons/gamepad/gamepad-down.svg</file>
+        <file>icons/gamepad/gamepad-left.svg</file>
+        <file>icons/gamepad/gamepad-right.svg</file>
+        <file>icons/gamepad/left-analog.svg</file>
+        <file>icons/gamepad/right-analog.svg</file>
+        <file>icons/gamepad/left-btn.svg</file>
+        <file>icons/gamepad/right-btn.svg</file>
+        <file>icons/gamepad/dpad-up.svg</file>
+        <file>icons/gamepad/dpad-down.svg</file>
+        <file>icons/gamepad/dpad-left.svg</file>
+        <file>icons/gamepad/dpad-right.svg</file>
+        <file>icons/gamepad/ps/l1.svg</file>
+        <file>icons/gamepad/ps/r1.svg</file>
+        <file>icons/gamepad/ps/l2.svg</file>
+        <file>icons/gamepad/ps/r2.svg</file>
+        <file>icons/gamepad/ps/options.svg</file>
+        <file>icons/gamepad/xbox/lb.svg</file>
+        <file>icons/gamepad/xbox/rb.svg</file>
+        <file>icons/gamepad/xbox/lt.svg</file>
+        <file>icons/gamepad/xbox/rt.svg</file>
+        <file>icons/gamepad/xbox/xbox-menu.svg</file>
     </qresource>
 </RCC>

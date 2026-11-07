@@ -642,6 +642,7 @@ Page {
 
                             StyledCombo {
                                 id: detailRunnerCombo
+                                openUpward: true
                                 Layout.preferredWidth: Math.min(340, root.width * 0.40)
                                 readonly property var runners: uiController.runnerManager.installedRunners
                                 comboModel: {
@@ -689,6 +690,7 @@ Page {
 
                             StyledCombo {
                                 id: detailPrefixCombo
+                                openUpward: true
                                 Layout.preferredWidth: Math.min(340, root.width * 0.40)
                                 readonly property var pfxs: uiController.prefixManager.prefixes
                                 comboModel: {

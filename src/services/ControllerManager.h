@@ -24,6 +24,7 @@ class ControllerManager : public QObject {
     Q_PROPERTY(QString actionIconSource READ actionIconSource CONSTANT)
     Q_PROPERTY(QString backIconSource READ backIconSource CONSTANT)
     Q_PROPERTY(QString searchIconSource READ searchIconSource CONSTANT)
+    Q_PROPERTY(QString optionsIconSource READ optionsIconSource CONSTANT)
 
     // Tsuki Controller Management Properties
     Q_PROPERTY(QVariantList detectedControllers READ detectedControllers NOTIFY controllersChanged)
@@ -39,9 +40,10 @@ public:
 
     bool isConnected() const { return !m_detectedControllers.isEmpty(); }
     QString connectedDeviceName() const;
-    QString actionIconSource() const { return QStringLiteral("qrc:/tsuki_app/icons/gamepad/btn_a.svg"); }
-    QString backIconSource() const { return QStringLiteral("qrc:/tsuki_app/icons/gamepad/btn_b.svg"); }
-    QString searchIconSource() const { return QStringLiteral("qrc:/tsuki_app/icons/gamepad/btn_y.svg"); }
+    QString actionIconSource() const { return QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-down.svg"); }
+    QString backIconSource() const { return QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-right.svg"); }
+    QString searchIconSource() const { return QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-up.svg"); }
+    QString optionsIconSource() const { return QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-left.svg"); }
 
     QVariantList detectedControllers() const { return m_detectedControllers; }
     QVariantList profilesVariant() const;
