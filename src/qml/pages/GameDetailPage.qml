@@ -13,6 +13,14 @@ Page {
     signal backRequested()
     signal winetricksRequested(string prefixId, string gameTitle)
 
+    focus: true
+
+    Keys.onEscapePressed: (event) => {
+        event.accepted = true
+        root.saveAllChanges()
+        root.backRequested()
+    }
+
     function reloadGame() {
         if (gameId.length > 0) {
             gameData = uiController.gameManager.getGameMap(gameId)
@@ -20,8 +28,17 @@ Page {
         }
     }
 
-    Component.onCompleted: reloadGame()
+    Component.onCompleted: {
+        reloadGame()
+        root.forceActiveFocus()
+    }
     Component.onDestruction: saveAllChanges()
+
+    StackView.onStatusChanged: {
+        if (StackView.status === StackView.Active) {
+            root.forceActiveFocus()
+        }
+    }
 
     Connections {
         target: uiController.gameManager
@@ -181,20 +198,6 @@ Page {
                         GradientStop { position: 0.35; color: "transparent" }
                         GradientStop { position: 0.65; color: Qt.rgba(13/255, 13/255, 17/255, 0.55) }
                         GradientStop { position: 1.0; color: appSettings.bgColor }
-                    }
-                }
-
-                // Back Button (Top-Left)
-                M3Button {
-                    anchors.top: parent.top
-                    anchors.left: parent.left
-                    anchors.margins: 24
-                    text: "Library"
-                    iconSource: "qrc:/tsuki_app/icons/actions/back.svg"
-                    buttonType: "tonal"
-                    onClicked: {
-                        root.saveAllChanges()
-                        root.backRequested()
                     }
                 }
 
@@ -1479,6 +1482,90 @@ Page {
                 Layout.preferredHeight: 36
             }
         }
+    }
+
+    // ── Fixed Floating Back Button (Top-Left) ────────────────────────────────
+    Button {
+        id: backBtn
+        font.pixelSize: 13
+        font.weight: Font.DemiBold
+        padding: 0
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.leftMargin: 28
+        anchors.topMargin: 24
+        z: 100
+
+        readonly property bool isBtnActive: backBtn.hovered || backBtn.activeFocus
+        property real expandedWidth: 10 + 18 + 8 + backLabel.implicitWidth + 14
+        implicitWidth: isBtnActive ? expandedWidth : 40
+        implicitHeight: 40
+
+        Behavior on implicitWidth {
+            SpringAnimation { spring: 4; damping: 0.25; epsilon: 0.25 }
+        }
+
+        background: Rectangle {
+            property color accent: appSettings.accentColor
+            radius: 20
+            color: backBtn.isBtnActive ? accent : (appSettings.isEffectiveDark ? Qt.rgba(0.08, 0.08, 0.10, 0.70) : Qt.rgba(1, 1, 1, 0.75))
+            border.color: backBtn.isBtnActive ? "transparent" : accent
+            border.width: backBtn.isBtnActive ? 0 : 1.5
+            scale: backBtn.pressed ? 0.96 : (backBtn.activeFocus ? 1.02 : 1.0)
+            Behavior on color { ColorAnimation { duration: 150 } }
+            Behavior on border.color { ColorAnimation { duration: 150 } }
+            Behavior on scale { NumberAnimation { duration: 100 } }
+
+            layer.enabled: true
+            layer.effect: MultiEffect {
+                shadowEnabled: true
+                shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.50 : 0.20)
+                shadowBlur: 0.5
+                shadowVerticalOffset: 2
+            }
+        }
+
+        contentItem: Item {
+            clip: true
+            implicitWidth: backBtn.implicitWidth
+            implicitHeight: 40
+
+            Row {
+                anchors.left: parent.left
+                anchors.leftMargin: 9
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                spacing: 8
+
+                Item {
+                    width: 18
+                    height: parent.height
+                    YIcon {
+                        anchors.centerIn: parent
+                        size: 18
+                        source: "qrc:/tsuki_app/icons/actions/back.svg"
+                        color: backBtn.isBtnActive ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff") : appSettings.accentColor
+                    }
+                }
+
+                Label {
+                    id: backLabel
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Back"
+                    color: backBtn.isBtnActive ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff") : appSettings.accentColor
+                    font: backBtn.font
+                    renderType: Text.QtRendering
+                    opacity: backBtn.isBtnActive ? 1.0 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: 150 } }
+                }
+            }
+        }
+
+        onClicked: {
+            root.saveAllChanges()
+            root.backRequested()
+        }
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
     }
 
     ArtworkUrlDialog {
