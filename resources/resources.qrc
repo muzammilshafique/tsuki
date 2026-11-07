@@ -66,9 +66,5 @@
         <file>icons/actions/shortcut.svg</file>
         <file>icons/actions/check.svg</file>
         <file>icons/actions/chevron_down.svg</file>
-
-        <file>icons/gamepad/btn_a.svg</file>
-        <file>icons/gamepad/btn_b.svg</file>
-        <file>icons/gamepad/btn_y.svg</file>
     </qresource>
 </RCC>
