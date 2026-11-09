@@ -23,10 +23,11 @@ tar -czf "${WORK_DIR}/SOURCES/tsuki-${VERSION}.tar.gz" -C "${ROOT_DIR}" \
     --transform "s,^\.,tsuki-${VERSION}," .
 
 cp "${ROOT_DIR}/packaging/fedora/tsuki.spec" "${WORK_DIR}/SPECS/"
+sed -i "s/^Version:.*/Version:        ${VERSION}/" "${WORK_DIR}/SPECS/tsuki.spec"
 
 rpmbuild --define "_topdir ${WORK_DIR}" -ba "${WORK_DIR}/SPECS/tsuki.spec"
 
-RPM_FILE=$(find "${WORK_DIR}/RPMS" -type f -name "tsuki-${VERSION}-*.x86_64.rpm" ! -name "*-debuginfo-*" ! -name "*-debugsource-*" | head -n 1)
+RPM_FILE=$(find "${WORK_DIR}/RPMS" -type f -name "*.rpm" ! -name "*-debuginfo-*" ! -name "*-debugsource-*" | head -n 1)
 if [[ -n "${RPM_FILE}" && -f "${RPM_FILE}" ]]; then
     cp "${RPM_FILE}" "${OUTPUT_DIR}/"
     echo "=== Fedora RPM created: ${OUTPUT_DIR}/$(basename "${RPM_FILE}") ==="

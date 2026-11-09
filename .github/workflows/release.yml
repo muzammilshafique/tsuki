@@ -97,7 +97,7 @@ jobs:
           
           # Install and test application execution
           sudo dpkg -i "${DEB_FILE}" || sudo apt-get install -f -y
-          tsuki --help
+          QT_QPA_PLATFORM=offscreen tsuki --help
           QT_QPA_PLATFORM=offscreen tsuki --smoke-test
           
           # Test clean uninstall
@@ -140,7 +140,7 @@ jobs:
           dnf install -y --setopt=install_weak_deps=False \
             gcc-c++ cmake ninja-build pkgconfig \
             qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel SDL2-devel \
-            rpm-build rpmdevtools systemd udev git desktop-file-utils tar findutils
+            rpm-build rpmdevtools systemd udev git desktop-file-utils tar findutils libappstream-glib
 
       - name: Build Fedora RPM
         run: |
@@ -156,7 +156,7 @@ jobs:
           
           # Install and test application execution
           dnf install -y "${RPM_FILE}"
-          tsuki --help
+          QT_QPA_PLATFORM=offscreen tsuki --help
           QT_QPA_PLATFORM=offscreen tsuki --smoke-test
           
           # Test clean uninstall
@@ -220,7 +220,7 @@ jobs:
           
           # Install and test application execution
           pacman -U --noconfirm "${PKG_FILE}"
-          tsuki --help
+          QT_QPA_PLATFORM=offscreen tsuki --help
           QT_QPA_PLATFORM=offscreen tsuki --smoke-test
           
           # Test clean uninstall
@@ -281,7 +281,7 @@ jobs:
           APPIMAGE=$(find dist -name "*.AppImage" | head -n 1)
           chmod +x "${APPIMAGE}"
           export APPIMAGE_EXTRACT_AND_RUN=1
-          "${APPIMAGE}" --help
+          QT_QPA_PLATFORM=offscreen "${APPIMAGE}" --help
           QT_QPA_PLATFORM=offscreen "${APPIMAGE}" --smoke-test
 
       - name: Upload AppImage

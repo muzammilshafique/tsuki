@@ -10,14 +10,14 @@ echo "=== Building Debian/Ubuntu Package (v${VERSION}) ==="
 mkdir -p "${OUTPUT_DIR}"
 
 if [[ ! -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
-    cmake -B "${BUILD_DIR}" -S "${ROOT_DIR}" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+    cmake -B "${BUILD_DIR}" -S "${ROOT_DIR}" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCPACK_PACKAGE_VERSION="${VERSION}"
 fi
 cmake --build "${BUILD_DIR}"
 
-cpack --config "${BUILD_DIR}/CPackConfig.cmake" -G DEB -B "${OUTPUT_DIR}"
+cpack -D CPACK_PACKAGE_VERSION="${VERSION}" --config "${BUILD_DIR}/CPackConfig.cmake" -G DEB -B "${OUTPUT_DIR}"
 rm -rf "${OUTPUT_DIR}/_CPack_Packages"
 
-DEB_FILE=$(find "${OUTPUT_DIR}" -maxdepth 1 -name "tsuki*${VERSION}*.deb" | head -n 1)
+DEB_FILE=$(find "${OUTPUT_DIR}" -maxdepth 1 -name "*.deb" | head -n 1)
 if [[ -n "${DEB_FILE}" && -f "${DEB_FILE}" ]]; then
     echo "=== Debian package created: ${DEB_FILE} ==="
 else

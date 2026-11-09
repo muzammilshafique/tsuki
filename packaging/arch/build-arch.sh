@@ -23,11 +23,12 @@ tar -czf "${WORK_DIR}/tsuki-${VERSION}.tar.gz" -C "${ROOT_DIR}" \
     --transform "s,^\.,tsuki-${VERSION}," .
 
 cp "${ROOT_DIR}/packaging/arch/PKGBUILD" "${WORK_DIR}/"
+sed -i "s/^pkgver=.*/pkgver=${VERSION}/" "${WORK_DIR}/PKGBUILD"
 
 cd "${WORK_DIR}"
 makepkg -f --nodeps
 
-PKG_FILE=$(find "${WORK_DIR}" -maxdepth 1 -name "tsuki-${VERSION}-*.pkg.tar.zst" ! -name "*-debug-*" | head -n 1)
+PKG_FILE=$(find "${WORK_DIR}" -maxdepth 1 -name "*.pkg.tar.zst" ! -name "*-debug-*" | head -n 1)
 if [[ -n "${PKG_FILE}" && -f "${PKG_FILE}" ]]; then
     cp "${PKG_FILE}" "${OUTPUT_DIR}/"
     echo "=== Arch Linux package created: ${OUTPUT_DIR}/$(basename "${PKG_FILE}") ==="
