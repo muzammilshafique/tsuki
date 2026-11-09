@@ -9,7 +9,8 @@ Build-Depends: debhelper-compat (= 13),
                libsdl2-dev,
                qt6-base-dev,
                qt6-declarative-dev,
-               libqt6svg6-dev
+               libqt6svg6-dev,
+               libqt6sql6-sqlite
 Standards-Version: 4.6.2
 Homepage: https://github.com/muzammilshafique/tsuki
 
@@ -24,6 +25,7 @@ Depends: ${shlibs:Depends},
          libqt6quick6,
          libqt6quickcontrols2-6,
          libqt6sql6,
+         libqt6sql6-sqlite,
          libqt6network6,
          libqt6svg6,
          libqt6concurrent6,

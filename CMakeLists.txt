@@ -160,7 +160,7 @@ set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${CMAKE_CURRENT_SOURCE_DIR}/packaging/debian/postinst;${CMAKE_CURRENT_SOURCE_DIR}/packaging/debian/postrm")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.34), libstdc++6 (>= 11), libqt6core6, libqt6gui6, libqt6widgets6, libqt6qml6, libqt6quick6, libqt6quickcontrols2-6, libqt6sql6, libqt6network6, libqt6svg6, libqt6concurrent6, libsdl2-2.0-0, tar")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.34), libstdc++6 (>= 11), libqt6core6, libqt6gui6, libqt6widgets6, libqt6qml6, libqt6quick6, libqt6quickcontrols2-6, libqt6sql6, libqt6sql6-sqlite, libqt6network6, libqt6svg6, libqt6concurrent6, libsdl2-2.0-0, tar")
 set(CPACK_DEBIAN_PACKAGE_SUGGESTS "wine, winetricks, mangohud, gamemode, p7zip-full")
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 

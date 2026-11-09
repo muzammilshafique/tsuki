@@ -27,7 +27,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build build-essential pkg-config \
-            qt6-base-dev qt6-declarative-dev libqt6svg6-dev libsdl2-dev
+            qt6-base-dev qt6-declarative-dev libqt6svg6-dev libsdl2-dev \
+            libqt6sql6-sqlite \
+            qml6-module-qtquick qml6-module-qtquick-controls \
+            qml6-module-qtquick-layouts qml6-module-qtquick-window \
+            qml6-module-qtquick-templates
 
       - name: Configure CMake
         run: |
@@ -69,6 +73,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build build-essential pkg-config \
             qt6-base-dev qt6-declarative-dev libqt6svg6-dev libsdl2-dev \
+            libqt6sql6-sqlite \
             qml6-module-qtquick qml6-module-qtquick-controls \
             qml6-module-qtquick-layouts qml6-module-qtquick-window \
             qml6-module-qtquick-templates \
@@ -87,7 +92,7 @@ jobs:
           dpkg-deb -c "${DEB_FILE}"
           
           # Install and test application execution
-          sudo dpkg -i "${DEB_FILE}"
+          sudo dpkg -i "${DEB_FILE}" || sudo apt-get install -f -y
           tsuki --help
           QT_QPA_PLATFORM=offscreen tsuki --smoke-test
           
@@ -253,10 +258,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build build-essential pkg-config \
             qt6-base-dev qt6-declarative-dev libqt6svg6-dev libsdl2-dev \
+            libqt6sql6-sqlite \
             qml6-module-qtquick qml6-module-qtquick-controls \
             qml6-module-qtquick-layouts qml6-module-qtquick-window \
             qml6-module-qtquick-templates \
             curl file
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2 || true
 
       - name: Build Universal AppImage
         run: |
@@ -267,6 +274,7 @@ jobs:
         run: |
           APPIMAGE=$(find dist -name "*.AppImage" | head -n 1)
           chmod +x "${APPIMAGE}"
+          export APPIMAGE_EXTRACT_AND_RUN=1
           "${APPIMAGE}" --help
           QT_QPA_PLATFORM=offscreen "${APPIMAGE}" --smoke-test
 
