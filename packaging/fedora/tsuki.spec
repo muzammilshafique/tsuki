@@ -44,7 +44,7 @@ controller emulation.
 %cmake_build
 
 %check
-%ctest
+QT_QPA_PLATFORM=offscreen %ctest
 
 %install
 %cmake_install

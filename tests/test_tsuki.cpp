@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QApplication>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QSqlDatabase>
@@ -1174,6 +1175,13 @@ private slots:
     }
 };
 
-QTEST_MAIN(TestTsuki)
+int main(int argc, char* argv[]) {
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    }
+    QApplication app(argc, argv);
+    TestTsuki tc;
+    return QTest::qExec(&tc, argc, argv);
+}
 #include "test_tsuki.moc"
 

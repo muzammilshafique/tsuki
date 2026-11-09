@@ -84,6 +84,7 @@ add_executable(tsuki_tests
 )
 target_link_libraries(tsuki_tests PRIVATE tsuki_core Qt6::Test)
 add_test(NAME TsukiUnitTests COMMAND tsuki_tests)
+set_tests_properties(TsukiUnitTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 include(GNUInstallDirs)
 
