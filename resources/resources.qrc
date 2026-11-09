@@ -88,4 +88,8 @@
         <file>icons/gamepad/xbox/rt.svg</file>
         <file>icons/gamepad/xbox/xbox-menu.svg</file>
     </qresource>
+    <qresource prefix="/tsuki_fallback">
+        <file alias="QtQuick/Effects/qmldir">qml/fallback/QtQuick/Effects/qmldir</file>
+        <file alias="QtQuick/Effects/MultiEffect.qml">qml/fallback/QtQuick/Effects/MultiEffect.qml</file>
+    </qresource>
 </RCC>

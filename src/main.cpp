@@ -82,6 +82,7 @@ int main(int argc, char* argv[]) {
     }
 
     QQmlApplicationEngine engine;
+    engine.addImportPath(QStringLiteral(":/tsuki_fallback"));
     engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), &appSettings);
     engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"), &downloadManager);
     engine.rootContext()->setContextProperty(QStringLiteral("uiController"), &uiController);
