@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Tsuki
+GenericName=Game Launcher
+Comment=Native Linux Game Launcher for Wine and Proton
+Exec=tsuki %u
+Icon=tsuki
+Terminal=false
+Categories=Game;
+MimeType=x-scheme-handler/tsuki;
+Keywords=game;launcher;wine;proton;gaming;dxvk;winetricks;
+StartupNotify=true
+StartupWMClass=TsukiLauncher
+

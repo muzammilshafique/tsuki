@@ -1,0 +1,413 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release version tag (e.g. v1.0.0)'
+        required: false
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Build & Test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential pkg-config \
+            qt6-base-dev qt6-declarative-dev libqt6svg6-dev libsdl2-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr
+
+      - name: Build Tsuki and Test Suite
+        run: cmake --build build
+
+      - name: Run Unit Tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Run Engine Smoke Test
+        run: QT_QPA_PLATFORM=offscreen ./build/tsuki --smoke-test
+
+  package-deb:
+    name: Package Debian/Ubuntu (.deb)
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: vars
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ -z "${TAG}" || "${TAG}" == "main" ]]; then
+            TAG="${{ github.event.inputs.tag || 'v1.0.0' }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential pkg-config \
+            qt6-base-dev qt6-declarative-dev libqt6svg6-dev libsdl2-dev \
+            qml6-module-qtquick qml6-module-qtquick-controls \
+            qml6-module-qtquick-layouts qml6-module-qtquick-window \
+            qml6-module-qtquick-effects \
+            dpkg-dev file
+
+      - name: Build & Package Debian Package
+        run: |
+          mkdir -p dist
+          VERSION="${{ steps.vars.outputs.version }}" ./packaging/debian/build-deb.sh build dist
+
+      - name: Verify Debian Package & Test Install/Uninstall
+        run: |
+          DEB_FILE=$(find dist -name "*.deb" | head -n 1)
+          echo "Inspecting Debian package: ${DEB_FILE}"
+          dpkg-deb -I "${DEB_FILE}"
+          dpkg-deb -c "${DEB_FILE}"
+          
+          # Install and test application execution
+          sudo dpkg -i "${DEB_FILE}"
+          tsuki --help
+          QT_QPA_PLATFORM=offscreen tsuki --smoke-test
+          
+          # Test clean uninstall
+          sudo dpkg -r tsuki
+          if command -v tsuki >/dev/null 2>&1; then
+            echo "Error: tsuki binary still exists after package removal!" >&2
+            exit 1
+          fi
+
+      - name: Upload Debian Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: dist/*.deb
+          if-no-files-found: error
+
+  package-rpm:
+    name: Package Fedora (.rpm)
+    needs: test
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:41
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: vars
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ -z "${TAG}" || "${TAG}" == "main" ]]; then
+            TAG="${{ github.event.inputs.tag || 'v1.0.0' }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Fedora build dependencies
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            gcc-c++ cmake ninja-build pkgconfig \
+            qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel SDL2-devel \
+            rpm-build rpmdevtools systemd udev git desktop-file-utils tar findutils
+
+      - name: Build Fedora RPM
+        run: |
+          mkdir -p dist
+          VERSION="${{ steps.vars.outputs.version }}" ./packaging/fedora/build-rpm.sh dist
+
+      - name: Verify Fedora RPM & Test Install/Uninstall
+        run: |
+          RPM_FILE=$(find dist -name "*.rpm" ! -name "*-debug-*" ! -name "*-debuginfo-*" | head -n 1)
+          echo "Inspecting RPM package: ${RPM_FILE}"
+          rpm -qip "${RPM_FILE}"
+          rpm -qlp "${RPM_FILE}"
+          
+          # Install and test application execution
+          dnf install -y "${RPM_FILE}"
+          tsuki --help
+          QT_QPA_PLATFORM=offscreen tsuki --smoke-test
+          
+          # Test clean uninstall
+          dnf remove -y tsuki
+          if command -v tsuki >/dev/null 2>&1; then
+            echo "Error: tsuki binary still exists after package removal!" >&2
+            exit 1
+          fi
+
+      - name: Upload Fedora RPM
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-package
+          path: dist/*.rpm
+          if-no-files-found: error
+
+  package-arch:
+    name: Package Arch Linux (.pkg.tar.zst)
+    needs: test
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: vars
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ -z "${TAG}" || "${TAG}" == "main" ]]; then
+            TAG="${{ github.event.inputs.tag || 'v1.0.0' }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Arch build dependencies
+        run: |
+          pacman -Syu --noconfirm git cmake ninja pkgconf qt6-base qt6-declarative qt6-svg sdl2 sudo tar zstd
+
+      - name: Setup Non-Root Build User
+        run: |
+          useradd -m -s /bin/bash builduser
+          echo "builduser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builduser:builduser .
+
+      - name: Build Arch Linux Package
+        run: |
+          su builduser -c "
+            export VERSION='${{ steps.vars.outputs.version }}'
+            ./packaging/arch/build-arch.sh dist
+          "
+
+      - name: Verify Arch Package & Test Install/Uninstall
+        run: |
+          PKG_FILE=$(find dist -name "*.pkg.tar.zst" ! -name "*-debug-*" | head -n 1)
+          echo "Inspecting Arch package: ${PKG_FILE}"
+          pacman -Qip "${PKG_FILE}"
+          pacman -Qlp "${PKG_FILE}"
+          
+          # Install and test application execution
+          pacman -U --noconfirm "${PKG_FILE}"
+          tsuki --help
+          QT_QPA_PLATFORM=offscreen tsuki --smoke-test
+          
+          # Test clean uninstall
+          pacman -R --noconfirm tsuki
+          if command -v tsuki >/dev/null 2>&1; then
+            echo "Error: tsuki binary still exists after package removal!" >&2
+            exit 1
+          fi
+
+      - name: Upload Arch Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: dist/*.pkg.tar.zst
+          if-no-files-found: error
+
+  package-appimage:
+    name: Package Universal AppImage (.AppImage)
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: vars
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ -z "${TAG}" || "${TAG}" == "main" ]]; then
+            TAG="${{ github.event.inputs.tag || 'v1.0.0' }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential pkg-config \
+            qt6-base-dev qt6-declarative-dev libqt6svg6-dev libsdl2-dev \
+            qml6-module-qtquick qml6-module-qtquick-controls \
+            qml6-module-qtquick-layouts qml6-module-qtquick-window \
+            qml6-module-qtquick-effects \
+            libfuse2 curl file libegl1-mesa-dev
+
+      - name: Build Universal AppImage
+        run: |
+          mkdir -p dist
+          VERSION="${{ steps.vars.outputs.version }}" ./packaging/appimage/build-appimage.sh build dist/Tsuki-${{ steps.vars.outputs.version }}-x86_64.AppImage
+
+      - name: Verify AppImage
+        run: |
+          APPIMAGE=$(find dist -name "*.AppImage" | head -n 1)
+          chmod +x "${APPIMAGE}"
+          "${APPIMAGE}" --help
+          QT_QPA_PLATFORM=offscreen "${APPIMAGE}" --smoke-test
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage-package
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release & Artifacts
+    needs:
+      - test
+      - package-deb
+      - package-rpm
+      - package-arch
+      - package-appimage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: vars
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ -z "${TAG}" || "${TAG}" == "main" ]]; then
+            TAG="${{ github.event.inputs.tag || 'v1.0.0' }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Download all package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Verify All Required Packages Are Present
+        run: |
+          echo "=== Verifying Release Packages in release-artifacts ==="
+          ls -la release-artifacts/
+          
+          MISSING=0
+          
+          # 1. Arch Linux package
+          if ! ls release-artifacts/*.pkg.tar.zst 1>/dev/null 2>&1; then
+            echo "::error::Missing required Arch Linux (.pkg.tar.zst) package!"
+            MISSING=1
+          else
+            echo "✓ Found Arch Linux package: $(ls release-artifacts/*.pkg.tar.zst)"
+          fi
+
+          # 2. Debian/Ubuntu package
+          if ! ls release-artifacts/*.deb 1>/dev/null 2>&1; then
+            echo "::error::Missing required Debian/Ubuntu (.deb) package!"
+            MISSING=1
+          else
+            echo "✓ Found Debian/Ubuntu package: $(ls release-artifacts/*.deb)"
+          fi
+
+          # 3. Fedora RPM package
+          if ! ls release-artifacts/*.rpm 1>/dev/null 2>&1; then
+            echo "::error::Missing required Fedora (.rpm) package!"
+            MISSING=1
+          else
+            echo "✓ Found Fedora package: $(ls release-artifacts/*.rpm)"
+          fi
+
+          # 4. Universal AppImage
+          if ! ls release-artifacts/*.AppImage 1>/dev/null 2>&1; then
+            echo "::error::Missing required Universal (.AppImage) package!"
+            MISSING=1
+          else
+            echo "✓ Found Universal AppImage: $(ls release-artifacts/*.AppImage)"
+          fi
+
+          if [ "${MISSING}" -ne 0 ]; then
+            echo "FATAL: One or more required packages are missing. Failing release pipeline." >&2
+            exit 1
+          fi
+
+      - name: Generate Checksums
+        run: |
+          cd release-artifacts
+          sha256sum *.pkg.tar.zst *.deb *.rpm *.AppImage > SHA256SUMS
+          echo "Generated SHA256SUMS:"
+          cat SHA256SUMS
+
+      - name: Generate Release Notes
+        id: notes
+        run: |
+          cat << 'EOF' > RELEASE_NOTES.md
+          ## Tsuki ${{ steps.vars.outputs.tag }}
+
+          Native Linux Game Launcher for Wine and Proton.
+
+          ### 📦 Available Packages
+
+          | Platform | Package Format | Installation |
+          |---|---|---|
+          | **Universal Linux** | `.AppImage` | `chmod +x Tsuki-*.AppImage && ./Tsuki-*.AppImage` |
+          | **Debian / Ubuntu** | `.deb` | `sudo apt install ./tsuki_*_amd64.deb` |
+          | **Fedora** | `.rpm` | `sudo dnf install ./tsuki-*.rpm` |
+          | **Arch Linux** | `.pkg.tar.zst` | `sudo pacman -U ./tsuki-*.pkg.tar.zst` |
+
+          ### 🎮 Controller Emulation & /dev/uinput
+
+          Tsuki includes built-in virtual Xbox 360 controller emulation using Linux `/dev/uinput`.
+          The distribution packages (`.deb`, `.rpm`, `.pkg.tar.zst`) automatically install the least-privilege udev rule (`70-tsuki-uinput.rules`) which grants permission to the currently active desktop user via systemd `uaccess` without requiring root or broad world-writable device permissions.
+
+          For **AppImage** or standalone tarball users, install the udev rule manually:
+          ```bash
+          sudo curl -sSL https://raw.githubusercontent.com/muzammilshafique/tsuki/main/packaging/udev/70-tsuki-uinput.rules -o /etc/udev/rules.d/70-tsuki-uinput.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput
+          ```
+
+          ### 🔒 Integrity Checksums (SHA-256)
+          ```
+          EOF
+          cat release-artifacts/SHA256SUMS >> RELEASE_NOTES.md
+          cat << 'EOF' >> RELEASE_NOTES.md
+          ```
+          EOF
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: Tsuki ${{ steps.vars.outputs.tag }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            release-artifacts/*.pkg.tar.zst
+            release-artifacts/*.deb
+            release-artifacts/*.rpm
+            release-artifacts/*.AppImage
+            release-artifacts/SHA256SUMS
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+

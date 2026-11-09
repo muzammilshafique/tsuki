@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.muzammilshafique.tsuki</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Tsuki</name>
+  <summary>Native Linux Game Launcher for Wine and Proton</summary>
+  <description>
+    <p>
+      Tsuki is a native Linux game launcher designed for Wine and Proton.
+      It provides seamless prefix management, Wine and Proton runner downloads,
+      Winetricks integration, SteamGridDB artwork fetching, and virtual Xbox
+      controller emulation.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Fast, responsive modern UI built with Qt 6 and QML</li>
+      <li>Automatic runner detection and in-app Proton-GE downloader</li>
+      <li>Isolated Wine prefix management with backup and restore</li>
+      <li>Virtual Xbox 360 controller emulation via Linux uinput</li>
+      <li>MangoHud and GameMode performance integration</li>
+      <li>Built-in launch diagnostics and troubleshooting</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.muzammilshafique.tsuki.desktop</launchable>
+  <developer id="io.github.muzammilshafique">
+    <name>Muzammil Shafique</name>
+  </developer>
+  <url type="homepage">https://github.com/muzammilshafique/tsuki</url>
+  <url type="bugtracker">https://github.com/muzammilshafique/tsuki/issues</url>
+  <provides>
+    <binary>tsuki</binary>
+  </provides>
+  <categories>
+    <category>Game</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.0.0" date="2026-11-10">
+      <description>
+        <p>First public release of Tsuki Game Launcher.</p>
+      </description>
+    </release>
+  </releases>
+</component>
+

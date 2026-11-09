@@ -1,0 +1,5 @@
+# Tsuki - Native Linux Game Launcher
+# Grants active console session user access to /dev/uinput for virtual Xbox controller emulation.
+# Uses systemd uaccess tag for least-privilege seat management; falls back to input group (0660).
+KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess", MODE="0660", GROUP="input"
+

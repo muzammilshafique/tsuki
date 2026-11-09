@@ -1,0 +1,49 @@
+# Maintainer: Muzammil Shafique <muzammil@example.com>
+pkgname=tsuki
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Native Linux Game Launcher (Wine & Proton)"
+arch=('x86_64')
+url="https://github.com/muzammilshafique/tsuki"
+license=('GPL-3.0-or-later')
+depends=(
+    'qt6-base'
+    'qt6-declarative'
+    'qt6-svg'
+    'sdl2'
+    'hicolor-icon-theme'
+    'tar'
+)
+optdepends=(
+    'wine: Wine runner support'
+    'winetricks: Windows prefix package manager'
+    'mangohud: In-game HUD performance overlay'
+    'gamemode: Game performance optimizations'
+    'p7zip: 7z archive support'
+    'vulkan-icd-loader: Vulkan graphics driver loader'
+)
+makedepends=(
+    'cmake'
+    'ninja'
+    'pkgconf'
+)
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cmake -B build -S "$srcdir/$pkgname-$pkgver" \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_INSTALL_LIBDIR=lib
+    cmake --build build
+}
+
+check() {
+    ctest --test-dir build --output-on-failure
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build
+}
+

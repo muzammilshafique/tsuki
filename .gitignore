@@ -13,4 +13,10 @@ compile_commands.json
 .qtc_clangd/
 .cache/
 *.user
+dist/
+_CPack_Packages/
+*.AppImage
+*.pkg.tar.zst
+*.deb
+*.rpm
 
