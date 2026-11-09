@@ -2,6 +2,7 @@
 #include "DatabaseManager.h"
 #include <QGuiApplication>
 #include <QStyleHints>
+#include <QPalette>
 
 namespace Tsuki {
 
@@ -40,6 +41,7 @@ AppSettings::AppSettings(QObject* parent)
         m_tagColorCachyos = QColor(QStringLiteral("#2dd4bf"));
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     if (QGuiApplication::styleHints()) {
         QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme) {
             if (m_themeMode == 2) {
@@ -47,6 +49,7 @@ AppSettings::AppSettings(QObject* parent)
             }
         });
     }
+#endif
     m_sidebarCollapsed = m_settings.value(QStringLiteral("appearance/sidebarCollapsed"), false).toBool();
     m_defaultFilter = m_settings.value(QStringLiteral("appearance/defaultFilter"), -1).toInt();
     m_cardRadius = m_settings.value(QStringLiteral("appearance/cardRadius"), 12).toInt();
@@ -191,9 +194,14 @@ bool AppSettings::isEffectiveDark() const {
     if (m_themeMode == 0) return true;
     if (m_themeMode == 1) return false;
     // 2: System
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     if (QGuiApplication::styleHints()) {
         return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
     }
+#else
+    const QPalette pal = QGuiApplication::palette();
+    return pal.color(QPalette::WindowText).lightness() > pal.color(QPalette::Window).lightness();
+#endif
     return true;
 }
 
