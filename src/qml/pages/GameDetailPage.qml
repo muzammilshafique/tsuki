@@ -136,33 +136,40 @@ Page {
             ? (xboxEmuToggle.checked ? 1 : 0)
             : (appSettings.xboxEmulationDefault ? 1 : 0)
 
-        let dxvkVal = (!root.isNative && typeof dxvkCombo !== "undefined" && dxvkCombo && dxvkCombo.selectedIndex >= 0)
-            ? (dxvkCombo.selectedIndex - 1)
+        let dxvkVal = (!root.isNative && typeof dxvkToggle !== "undefined" && dxvkToggle)
+            ? (dxvkToggle.checked ? 1 : 0)
             : (root.isNative ? -1 : (root.gameData.dxvkState !== undefined ? root.gameData.dxvkState : -1))
 
-        let vkd3dVal = (!root.isNative && typeof vkd3dCombo !== "undefined" && vkd3dCombo && vkd3dCombo.selectedIndex >= 0)
-            ? (vkd3dCombo.selectedIndex - 1)
+        let vkd3dVal = (!root.isNative && typeof vkd3dToggle !== "undefined" && vkd3dToggle)
+            ? (vkd3dToggle.checked ? 1 : 0)
             : (root.isNative ? -1 : (root.gameData.vkd3dState !== undefined ? root.gameData.vkd3dState : -1))
 
-        let esyncVal = (!root.isNative && typeof esyncCombo !== "undefined" && esyncCombo && esyncCombo.selectedIndex >= 0)
-            ? (esyncCombo.selectedIndex - 1)
+        let esyncVal = (!root.isNative && typeof esyncToggle !== "undefined" && esyncToggle)
+            ? (esyncToggle.checked ? 1 : 0)
             : (root.isNative ? -1 : (root.gameData.esyncState !== undefined ? root.gameData.esyncState : -1))
 
-        let fsyncVal = (!root.isNative && typeof fsyncCombo !== "undefined" && fsyncCombo && fsyncCombo.selectedIndex >= 0)
-            ? (fsyncCombo.selectedIndex - 1)
+        let fsyncVal = (!root.isNative && typeof fsyncToggle !== "undefined" && fsyncToggle)
+            ? (fsyncToggle.checked ? 1 : 0)
             : (root.isNative ? -1 : (root.gameData.fsyncState !== undefined ? root.gameData.fsyncState : -1))
 
-        let mangohudVal = (typeof mangohudCombo !== "undefined" && mangohudCombo && mangohudCombo.selectedIndex >= 0)
-            ? (mangohudCombo.selectedIndex - 1)
+        let mangohudVal = (typeof mangohudToggle !== "undefined" && mangohudToggle)
+            ? (mangohudToggle.checked ? 1 : 0)
             : (root.gameData.mangohudState !== undefined ? root.gameData.mangohudState : -1)
 
-        let gamemodeVal = (typeof gamemodeCombo !== "undefined" && gamemodeCombo && gamemodeCombo.selectedIndex >= 0)
-            ? (gamemodeCombo.selectedIndex - 1)
+        let gamemodeVal = (typeof gamemodeToggle !== "undefined" && gamemodeToggle)
+            ? (gamemodeToggle.checked ? 1 : 0)
             : (root.gameData.gamemodeState !== undefined ? root.gameData.gamemodeState : -1)
 
         let hudVal = ""
-        if (!root.isNative && typeof hudCombo !== "undefined" && hudCombo && hudCombo.selectedIndex >= 0) {
-            hudVal = hudCombo.selectedIndex === 0 ? "" : ["none", "fps", "devinfo,fps,frametimes", "full"][hudCombo.selectedIndex - 1]
+        if (!root.isNative && typeof hudToggle !== "undefined" && hudToggle && typeof hudCombo !== "undefined" && hudCombo) {
+            if (!hudToggle.checked) {
+                hudVal = ""
+            } else {
+                let opts = ["fps", "devinfo,fps,frametimes", "full"]
+                let idx = hudCombo.selectedIndex
+                if (idx < 0 || idx >= opts.length) idx = 0
+                hudVal = opts[idx]
+            }
         } else {
             hudVal = root.isNative ? "" : (root.gameData.dxvkHud || "")
         }
@@ -486,7 +493,7 @@ Page {
             }
 
             // ── Tab Content Area ─────────────────────────────────────────────
-            Rectangle {
+            Item {
                 id: tabContentCard
                 Layout.fillWidth: true
                 Layout.leftMargin: 36
@@ -505,513 +512,308 @@ Page {
                     }
                 }
 
-                implicitHeight: activeTabHeight + 48
-                radius: 20
-                color: appSettings.surfaceColor
-                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                implicitHeight: activeTabHeight + 24
 
                 StackLayout {
                     id: tabStack
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.top
-                    anchors.margins: 24
                     height: tabContentCard.activeTabHeight
                     currentIndex: root.activeTab
 
                     // TAB 0: General & Paths
                     ColumnLayout {
                         id: tab0General
-                        spacing: 10
+                        Layout.fillWidth: true
+                        width: tabStack.width
+                        spacing: 16
 
-                        // ── Section 1: Executable & Launch Settings ──
-                        Label {
-                            text: "EXECUTABLE & LAUNCH CONFIGURATION"
-                            color: appSettings.accentColor
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.8
-                            Layout.bottomMargin: 2
-                        }
-
-                        // Row 1: Game Title
-                        RowLayout {
+                        // Card 1: Executable & Launch Configuration
+                        Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
+                            implicitHeight: generalCol1.implicitHeight + 40
+                            radius: 16
+                            color: appSettings.surfaceColor
+                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
 
                             ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-                                Label { text: "Game Title"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Display name in library and system desktop shortcuts"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
+                                id: generalCol1
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                spacing: 14
 
-                            M3TextField {
-                                id: titleField
-                                Layout.preferredWidth: Math.min(420, root.width * 0.45)
-                                text: root.gameData.title || ""
-                                onCommit: root.saveAllChanges()
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // Row 2: Executable Path
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
                                 Label {
-                                    text: root.isNative ? "Executable / Script" : "Executable Path (.exe)"
-                                    color: appSettings.textColor
-                                    font.pixelSize: 14
-                                    font.weight: Font.Medium
+                                    text: "EXECUTABLE & LAUNCH CONFIGURATION"
+                                    color: appSettings.accentColor
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.8
                                 }
+
+                                // Row 1: 2 Columns for Title & Custom Launch Arguments
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 20
+
+                                    // Left Column: Game Title
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.preferredWidth: 1
+                                        spacing: 4
+
+                                        Label { text: "Game Title"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Display name in library and system desktop shortcuts"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                        Item { Layout.preferredHeight: 2 }
+                                        M3TextField {
+                                            id: titleField
+                                            Layout.fillWidth: true
+                                            text: root.gameData.title || ""
+                                            showClearButton: true
+                                            onCommit: root.saveAllChanges()
+                                        }
+                                    }
+
+                                    // Right Column: Custom Launch Arguments
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.preferredWidth: 1
+                                        spacing: 4
+
+                                        Label { text: "Custom Launch Arguments"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "CLI parameters passed to the executable upon start"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                        Item { Layout.preferredHeight: 2 }
+                                        M3TextField {
+                                            id: argsField
+                                            Layout.fillWidth: true
+                                            text: root.gameData.launchArguments || ""
+                                            placeholderText: "-window -novid %command%"
+                                            onCommit: root.saveAllChanges()
+                                        }
+                                    }
+                                }
+
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
+
+                                // Row 2: Executable Path (Full width with Browse button)
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    Label {
+                                        text: root.isNative ? "Executable / Script" : "Executable Path (.exe)"
+                                        color: appSettings.textColor
+                                        font.pixelSize: 14
+                                        font.weight: Font.Medium
+                                    }
+                                    Label {
+                                        text: root.isNative
+                                            ? "Target Linux binary or script to execute directly"
+                                            : "Target Windows binary to launch through Wine or Proton"
+                                        color: appSettings.textSecColor
+                                        font.pixelSize: 12
+                                    }
+                                    Item { Layout.preferredHeight: 2 }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 10
+                                        M3TextField {
+                                            id: exePathField
+                                            Layout.fillWidth: true
+                                            text: root.gameData.executablePath || ""
+                                            onCommit: root.saveAllChanges()
+                                        }
+                                        M3Button {
+                                            text: "Browse…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            buttonType: "tonal"
+                                            onClicked: {
+                                                let prompt = root.isNative ? "Select Linux Game Executable" : "Select Game Executable"
+                                                let filter = root.isNative
+                                                    ? "All Files (*);;Executables & Scripts (*.sh *.AppImage *.x86_64 *.x86 *.bin)"
+                                                    : "Executable Files (*.exe *.bat *.sh *.bin *.AppImage);;All Files (*)"
+                                                let p = uiController.selectFile(prompt, filter, exePathField.text)
+                                                if (p && p.length > 0) {
+                                                    exePathField.text = p
+                                                    root.saveAllChanges()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
+
+                                // Row 3: Working Directory (Full width with Browse button)
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    Label { text: "Working Directory"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                    Label { text: "Directory where the game process starts and locates game assets"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    Item { Layout.preferredHeight: 2 }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 10
+                                        M3TextField {
+                                            id: workDirField
+                                            Layout.fillWidth: true
+                                            text: root.gameData.workingDirectory || ""
+                                            onCommit: root.saveAllChanges()
+                                        }
+                                        M3Button {
+                                            text: "Browse…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            buttonType: "tonal"
+                                            onClicked: {
+                                                let p = uiController.selectFolder("Select Working Directory", workDirField.text)
+                                                if (p && p.length > 0) {
+                                                    workDirField.text = p
+                                                    root.saveAllChanges()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 2 (Windows): Runner & Prefix Environment
+                        Rectangle {
+                            visible: !root.isNative
+                            Layout.fillWidth: true
+                            implicitHeight: generalCol2.implicitHeight + 40
+                            radius: 16
+                            color: appSettings.surfaceColor
+                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+
+                            ColumnLayout {
+                                id: generalCol2
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                spacing: 14
+
                                 Label {
-                                    text: root.isNative
-                                        ? "Target Linux binary or script to execute directly"
-                                        : "Target Windows binary to launch through Wine or Proton"
+                                    text: "RUNNER & PREFIX ENVIRONMENT"
+                                    color: appSettings.accentColor
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.8
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 20
+
+                                    // Left Column: Runner
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.preferredWidth: 1
+                                        spacing: 4
+
+                                        Label { text: "Wine / Proton Runner Override"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Select a custom Wine or Proton build, or inherit global default runner"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                        Item { Layout.preferredHeight: 2 }
+                                        StyledCombo {
+                                            id: detailRunnerCombo
+                                            Layout.fillWidth: true
+                                            openUpward: true
+                                            readonly property var runners: uiController.runnerManager.installedRunners
+                                            comboModel: {
+                                                let defName = "System Wine"
+                                                for (let i = 0; i < runners.length; i++) {
+                                                    if (runners[i].id === appSettings.defaultRunnerId) {
+                                                        defName = runners[i].name
+                                                        break
+                                                    }
+                                                }
+                                                if (defName === "System Wine" && runners.length > 0) {
+                                                    defName = runners[0].name
+                                                }
+                                                let list = ["Global Default (" + defName + ")"]
+                                                for (let i = 0; i < runners.length; i++) {
+                                                    list.push(runners[i].name)
+                                                }
+                                                return list
+                                            }
+                                            selectedIndex: {
+                                                let curId = root.gameData.runnerId
+                                                for (let i = 0; i < runners.length; i++) {
+                                                    if (runners[i].id === curId) return i + 1
+                                                }
+                                                return 0
+                                            }
+                                            onSelected: root.saveAllChanges()
+                                        }
+                                    }
+
+                                    // Right Column: Prefix
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.preferredWidth: 1
+                                        spacing: 4
+
+                                        Label { text: "Wine Prefix Environment"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Virtual Windows filesystem (C: drive) and registry container"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                        Item { Layout.preferredHeight: 2 }
+                                        StyledCombo {
+                                            id: detailPrefixCombo
+                                            Layout.fillWidth: true
+                                            openUpward: true
+                                            readonly property var pfxs: uiController.prefixManager.prefixes
+                                            comboModel: {
+                                                let list = []
+                                                for (let i = 0; i < pfxs.length; i++) {
+                                                    list.push(pfxs[i].name)
+                                                }
+                                                return list.length > 0 ? list : ["Default Prefix"]
+                                            }
+                                            selectedIndex: {
+                                                let curId = root.gameData.prefixId
+                                                for (let i = 0; i < pfxs.length; i++) {
+                                                    if (pfxs[i].id === curId) return i
+                                                }
+                                                return 0
+                                            }
+                                            onSelected: root.saveAllChanges()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 2 (Native Linux): Environment Variables
+                        Rectangle {
+                            visible: root.isNative
+                            Layout.fillWidth: true
+                            implicitHeight: generalNativeEnvCol.implicitHeight + 40
+                            radius: 16
+                            color: appSettings.surfaceColor
+                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+
+                            ColumnLayout {
+                                id: generalNativeEnvCol
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                spacing: 10
+
+                                Label {
+                                    text: "ENVIRONMENT VARIABLES"
+                                    color: appSettings.tagColorLinux
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.8
+                                }
+
+                                Label {
+                                    text: "Custom Environment Variables (KEY=VALUE, one per line)"
                                     color: appSettings.textSecColor
                                     font.pixelSize: 12
                                 }
-                            }
 
-                            RowLayout {
-                                Layout.preferredWidth: Math.min(520, root.width * 0.50)
-                                spacing: 8
-                                M3TextField {
-                                    id: exePathField
-                                    Layout.fillWidth: true
-                                    text: root.gameData.executablePath || ""
-                                    onCommit: root.saveAllChanges()
-                                }
-                                M3Button {
-                                    text: "Browse…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
-                                    buttonType: "tonal"
-                                    onClicked: {
-                                        let prompt = root.isNative ? "Select Linux Game Executable" : "Select Game Executable"
-                                        let filter = root.isNative
-                                            ? "All Files (*);;Executables & Scripts (*.sh *.AppImage *.x86_64 *.x86 *.bin)"
-                                            : "Executable Files (*.exe *.bat *.sh *.bin *.AppImage);;All Files (*)"
-                                        let p = uiController.selectFile(prompt, filter, exePathField.text)
-                                        if (p && p.length > 0) {
-                                            exePathField.text = p
-                                            root.saveAllChanges()
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // Row 3: Working Directory
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-                                Label { text: "Working Directory"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Directory where the game process starts and locates game assets"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-
-                            RowLayout {
-                                Layout.preferredWidth: Math.min(520, root.width * 0.50)
-                                spacing: 8
-                                M3TextField {
-                                    id: workDirField
-                                    Layout.fillWidth: true
-                                    text: root.gameData.workingDirectory || ""
-                                    onCommit: root.saveAllChanges()
-                                }
-                                M3Button {
-                                    text: "Browse…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
-                                    buttonType: "tonal"
-                                    onClicked: {
-                                        let p = uiController.selectFolder("Select Working Directory", workDirField.text)
-                                        if (p && p.length > 0) {
-                                            workDirField.text = p
-                                            root.saveAllChanges()
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // Row 4: Custom Launch Arguments
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-                                Label { text: "Custom Launch Arguments"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "CLI parameters passed to the executable upon start"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-
-                            M3TextField {
-                                id: argsField
-                                Layout.preferredWidth: Math.min(420, root.width * 0.45)
-                                text: root.gameData.launchArguments || ""
-                                placeholderText: "e.g. -dx11 -novid -windowed"
-                                onCommit: root.saveAllChanges()
-                            }
-                        }
-
-                        Item { Layout.fillWidth: true; Layout.preferredHeight: 8 }
-
-                        // ── Section 2 (Windows): Runner & Prefix Environment ──
-                        ColumnLayout {
-                            visible: !root.isNative
-                            Layout.fillWidth: true
-                            spacing: 10
-
-                            Label {
-                                text: "RUNNER & PREFIX ENVIRONMENT"
-                                color: appSettings.accentColor
-                                font.pixelSize: 11
-                                font.weight: Font.DemiBold
-                                font.letterSpacing: 0.8
-                                Layout.bottomMargin: 2
-                            }
-
-                            // Row 5: Wine / Proton Runner Override
-                            RowLayout {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 52
-                                spacing: 16
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 2
-                                    Label { text: "Wine / Proton Runner Override"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                    Label { text: "Select a custom Wine or Proton build, or inherit global default runner"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                                }
-
-                                StyledCombo {
-                                    id: detailRunnerCombo
-                                    openUpward: true
-                                    Layout.preferredWidth: Math.min(340, root.width * 0.40)
-                                    readonly property var runners: uiController.runnerManager.installedRunners
-                                    comboModel: {
-                                        let defName = "System Wine"
-                                        for (let i = 0; i < runners.length; i++) {
-                                            if (runners[i].id === appSettings.defaultRunnerId) {
-                                                defName = runners[i].name
-                                                break
-                                            }
-                                        }
-                                        if (defName === "System Wine" && runners.length > 0) {
-                                            defName = runners[0].name
-                                        }
-                                        let list = ["Global Default (" + defName + ")"]
-                                        for (let i = 0; i < runners.length; i++) {
-                                            list.push(runners[i].name)
-                                        }
-                                        return list
-                                    }
-                                    selectedIndex: {
-                                        let curId = root.gameData.runnerId
-                                        for (let i = 0; i < runners.length; i++) {
-                                            if (runners[i].id === curId) return i + 1
-                                        }
-                                        return 0
-                                    }
-                                    onSelected: root.saveAllChanges()
-                                }
-                            }
-
-                            Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                            // Row 6: Wine Prefix Environment
-                            RowLayout {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 52
-                                spacing: 16
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 2
-                                    Label { text: "Wine Prefix Environment"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                    Label { text: "Virtual Windows filesystem (C: drive) and registry container"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                                }
-
-                                StyledCombo {
-                                    id: detailPrefixCombo
-                                    openUpward: true
-                                    Layout.preferredWidth: Math.min(340, root.width * 0.40)
-                                    readonly property var pfxs: uiController.prefixManager.prefixes
-                                    comboModel: {
-                                        let list = []
-                                        for (let i = 0; i < pfxs.length; i++) {
-                                            list.push(pfxs[i].name)
-                                        }
-                                        return list.length > 0 ? list : ["Default Prefix"]
-                                    }
-                                    selectedIndex: {
-                                        let curId = root.gameData.prefixId
-                                        for (let i = 0; i < pfxs.length; i++) {
-                                            if (pfxs[i].id === curId) return i
-                                        }
-                                        return 0
-                                    }
-                                    onSelected: root.saveAllChanges()
-                                }
-                            }
-                        }
-
-                        // ── Section 2 (Native): Environment Variables ──
-                        ColumnLayout {
-                            visible: root.isNative
-                            Layout.fillWidth: true
-                            spacing: 8
-
-                            Label {
-                                text: "ENVIRONMENT VARIABLES"
-                                color: appSettings.accentColor
-                                font.pixelSize: 11
-                                font.weight: Font.DemiBold
-                                font.letterSpacing: 0.8
-                                Layout.bottomMargin: 2
-                            }
-
-                            Label {
-                                text: "Custom Environment Variables (KEY=VALUE, one per line)"
-                                color: appSettings.textSecColor
-                                font.pixelSize: 12
-                            }
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 120
-                                radius: 12
-                                color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
-                                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
-
-                                ScrollView {
-                                    anchors.fill: parent
-                                    anchors.margins: 10
-                                    TextArea {
-                                        id: nativeEnvVarsArea
-                                        color: appSettings.textColor
-                                        font.family: "monospace"
-                                        font.pixelSize: 12
-                                        placeholderText: "SDL_VIDEODRIVER=wayland\n__GL_THREADED_OPTIMIZATIONS=1\nENABLE_VKBASALT=1"
-                                        placeholderTextColor: appSettings.textTerColor
-                                        text: {
-                                            let m = root.gameData.environmentVariables || {}
-                                            let out = []
-                                            for (let k in m) out.push(k + "=" + m[k])
-                                            return out.join("\n")
-                                        }
-                                        background: null
-                                        onActiveFocusChanged: if (!activeFocus) root.saveAllChanges()
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // TAB 1: Wine & DXVK
-                    ColumnLayout {
-                        id: tab1Wine
-                        visible: !root.isNative
-                        spacing: 10
-
-                        // ── Section 1: Direct3D Translators ──
-                        Label {
-                            text: "DIRECT3D TRANSLATORS"
-                            color: appSettings.accentColor
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.8
-                            Layout.bottomMargin: 2
-                        }
-
-                        // DXVK
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "DXVK (D3D9/10/11 → Vulkan)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Hardware-accelerated Vulkan translation for DirectX 9, 10, and 11 games"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            StyledCombo {
-                                id: dxvkCombo
-                                Layout.preferredWidth: 250
-                                comboModel: ["Global Default (" + (appSettings.dxvkDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
-                                selectedIndex: (root.gameData.dxvkState !== undefined ? root.gameData.dxvkState : -1) + 1
-                                onSelected: root.saveAllChanges()
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // VKD3D
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "VKD3D-Proton (D3D12 → Vulkan)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "DirectX 12 translation layer for modern Vulkan-capable drivers"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            StyledCombo {
-                                id: vkd3dCombo
-                                Layout.preferredWidth: 250
-                                comboModel: ["Global Default (" + (appSettings.vkd3dDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
-                                selectedIndex: (root.gameData.vkd3dState !== undefined ? root.gameData.vkd3dState : -1) + 1
-                                onSelected: root.saveAllChanges()
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // DXVK HUD
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "DXVK HUD Statistics"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "On-screen real-time statistics overlay (framerate, GPU load, frame times)"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            StyledCombo {
-                                id: hudCombo
-                                Layout.preferredWidth: 250
-                                comboModel: ["Global Default (" + (appSettings.defaultDxvkHud.length > 0 ? appSettings.defaultDxvkHud : "none") + ")", "none", "fps", "devinfo,fps,frametimes", "full"]
-                                selectedIndex: {
-                                    let h = root.gameData.dxvkHud || ""
-                                    let idx = ["none", "fps", "devinfo,fps,frametimes", "full"].indexOf(h)
-                                    return idx >= 0 ? idx + 1 : 0
-                                }
-                                onSelected: root.saveAllChanges()
-                            }
-                        }
-
-                        Item { Layout.fillWidth: true; Layout.preferredHeight: 8 }
-
-                        // ── Section 2: Kernel Synchronization & Display ──
-                        Label {
-                            text: "KERNEL SYNCHRONIZATION & DISPLAY"
-                            color: appSettings.accentColor
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.8
-                            Layout.bottomMargin: 2
-                        }
-
-                        // Esync
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Esync (Eventfd Synchronization)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Eliminates wineserver lock contention using Linux eventfd primitives"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            StyledCombo {
-                                id: esyncCombo
-                                Layout.preferredWidth: 250
-                                comboModel: ["Global Default (" + (appSettings.esyncDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
-                                selectedIndex: (root.gameData.esyncState !== undefined ? root.gameData.esyncState : -1) + 1
-                                onSelected: root.saveAllChanges()
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // Fsync
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Fsync (Futex Synchronization)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Direct kernel futex2 synchronization for Linux 5.16+ kernels"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            StyledCombo {
-                                id: fsyncCombo
-                                Layout.preferredWidth: 250
-                                comboModel: ["Global Default (" + (appSettings.fsyncDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
-                                selectedIndex: (root.gameData.fsyncState !== undefined ? root.gameData.fsyncState : -1) + 1
-                                onSelected: root.saveAllChanges()
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // Virtual Desktop
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Virtual Desktop Mode"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Launch game within an emulated X11 desktop window"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            RowLayout {
-                                spacing: 12
-                                Toggle {
-                                    id: vdesktopCheck
-                                    checked: root.gameData.virtualDesktop || false
-                                    onToggled: root.saveAllChanges()
-                                }
-                                M3TextField {
-                                    id: vdesktopResField
-                                    implicitWidth: 140
-                                    text: root.gameData.virtualDesktopResolution || "1920x1080"
-                                    placeholderText: "1920x1080"
-                                    enabled: vdesktopCheck.checked
-                                    onCommit: root.saveAllChanges()
-                                }
-                            }
-                        }
-
-                        Item { Layout.fillWidth: true; Layout.preferredHeight: 8 }
-
-                        // ── Section 3: Advanced Overrides & Environment ──
-                        Label {
-                            text: "OVERRIDES & ENVIRONMENT VARIABLES"
-                            color: appSettings.accentColor
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.8
-                            Layout.bottomMargin: 2
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 16
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 6
-                                Label { text: "DLL Overrides (one per line, e.g. dinput8=n,b)"; color: appSettings.textSecColor; font.pixelSize: 12 }
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: 110
+                                    Layout.preferredHeight: 120
                                     radius: 12
                                     color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
                                     border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
@@ -1020,45 +822,11 @@ Page {
                                         anchors.fill: parent
                                         anchors.margins: 10
                                         TextArea {
-                                            id: dllOverridesArea
+                                            id: nativeEnvVarsArea
                                             color: appSettings.textColor
                                             font.family: "monospace"
                                             font.pixelSize: 12
-                                            placeholderText: "dinput8=n,b\nwinmm=n,b"
-                                            placeholderTextColor: appSettings.textTerColor
-                                            text: {
-                                                let m = root.gameData.dllOverrides || {}
-                                                let out = []
-                                                for (let k in m) out.push(k + "=" + m[k])
-                                                return out.join("\n")
-                                            }
-                                            background: null
-                                            onActiveFocusChanged: if (!activeFocus) root.saveAllChanges()
-                                        }
-                                    }
-                                }
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 6
-                                Label { text: "Environment Variables (KEY=VALUE)"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 110
-                                    radius: 12
-                                    color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
-                                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
-
-                                    ScrollView {
-                                        anchors.fill: parent
-                                        anchors.margins: 10
-                                        TextArea {
-                                            id: envVarsArea
-                                            color: appSettings.textColor
-                                            font.family: "monospace"
-                                            font.pixelSize: 12
-                                            placeholderText: "DXVK_ASYNC=1\nPROTON_ENABLE_NVAPI=1"
+                                            placeholderText: "SDL_VIDEODRIVER=wayland\n__GL_THREADED_OPTIMIZATIONS=1\nENABLE_VKBASALT=1"
                                             placeholderTextColor: appSettings.textTerColor
                                             text: {
                                                 let m = root.gameData.environmentVariables || {}
@@ -1075,215 +843,553 @@ Page {
                         }
                     }
 
+                    // TAB 1: Wine & DXVK
+                    ColumnLayout {
+                        id: tab1Wine
+                        Layout.fillWidth: true
+                        width: tabStack.width
+                        visible: !root.isNative
+                        spacing: 16
+
+                        // Card 1: Direct3D Translators
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: d3dCol.implicitHeight + 40
+                            radius: 16
+                            color: appSettings.surfaceColor
+                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+
+                            ColumnLayout {
+                                id: d3dCol
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                spacing: 14
+
+                                Label {
+                                    text: "DIRECT3D TRANSLATORS"
+                                    color: appSettings.accentColor
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.8
+                                }
+
+                                // Row 1: DXVK (Toggle)
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "DXVK (D3D9/10/11 → Vulkan)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Hardware-accelerated Vulkan translation for DirectX 9, 10, and 11 games"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Toggle {
+                                        id: dxvkToggle
+                                        checked: (root.gameData.dxvkState === 1) ? true : ((root.gameData.dxvkState === 0) ? false : appSettings.dxvkDefault)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
+
+                                // Row 2: VKD3D-Proton (Toggle)
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "VKD3D-Proton (D3D12 → Vulkan)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "DirectX 12 translation layer for modern Vulkan-capable drivers"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Toggle {
+                                        id: vkd3dToggle
+                                        checked: (root.gameData.vkd3dState === 1) ? true : ((root.gameData.vkd3dState === 0) ? false : appSettings.vkd3dDefault)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
+
+                                // Row 3: DXVK HUD Statistics
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "DXVK HUD Statistics"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "On-screen real-time statistics overlay (framerate, GPU load, frame times)"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    RowLayout {
+                                        spacing: 12
+                                        StyledCombo {
+                                            id: hudCombo
+                                            Layout.preferredWidth: 220
+                                            openUpward: false
+                                            forceDownward: true
+                                            enabled: hudToggle.checked
+                                            opacity: hudToggle.checked ? 1.0 : 0.4
+                                            comboModel: ["fps", "devinfo,fps,frametimes", "full"]
+                                            selectedIndex: {
+                                                let h = root.gameData.dxvkHud || ""
+                                                let idx = ["fps", "devinfo,fps,frametimes", "full"].indexOf(h)
+                                                return idx >= 0 ? idx : 0
+                                            }
+                                            onSelected: root.saveAllChanges()
+                                        }
+                                        Toggle {
+                                            id: hudToggle
+                                            checked: Boolean(root.gameData.dxvkHud && root.gameData.dxvkHud !== "" && root.gameData.dxvkHud !== "none")
+                                            onToggled: root.saveAllChanges()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 2: Kernel Synchronization & Display
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: syncCol.implicitHeight + 40
+                            radius: 16
+                            color: appSettings.surfaceColor
+                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+
+                            ColumnLayout {
+                                id: syncCol
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                spacing: 14
+
+                                Label {
+                                    text: "KERNEL SYNCHRONIZATION & DISPLAY"
+                                    color: appSettings.accentColor
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.8
+                                }
+
+                                // Row 1: Esync (Toggle)
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "Esync (Eventfd Synchronization)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Eliminates wineserver lock contention using Linux eventfd primitives"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Toggle {
+                                        id: esyncToggle
+                                        checked: (root.gameData.esyncState === 1) ? true : ((root.gameData.esyncState === 0) ? false : appSettings.esyncDefault)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
+
+                                // Row 2: Fsync (Toggle)
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "Fsync (Futex Synchronization)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Direct kernel futex2 synchronization for Linux 5.16+ kernels"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Toggle {
+                                        id: fsyncToggle
+                                        checked: (root.gameData.fsyncState === 1) ? true : ((root.gameData.fsyncState === 0) ? false : appSettings.fsyncDefault)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
+
+                                // Row 3: Virtual Desktop
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "Virtual Desktop Mode"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Launch game within an emulated X11 desktop window"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    RowLayout {
+                                        spacing: 12
+                                        M3TextField {
+                                            id: vdesktopResField
+                                            implicitWidth: 140
+                                            text: root.gameData.virtualDesktopResolution || "1920x1080"
+                                            placeholderText: "1920x1080"
+                                            enabled: vdesktopCheck.checked
+                                            opacity: vdesktopCheck.checked ? 1.0 : 0.4
+                                            onCommit: root.saveAllChanges()
+                                        }
+                                        Toggle {
+                                            id: vdesktopCheck
+                                            checked: Boolean(root.gameData.virtualDesktop)
+                                            onToggled: root.saveAllChanges()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 3: Overrides & Environment Variables (2 Columns)
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: overridesCol.implicitHeight + 40
+                            radius: 16
+                            color: appSettings.surfaceColor
+                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+
+                            ColumnLayout {
+                                id: overridesCol
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                spacing: 14
+
+                                Label {
+                                    text: "OVERRIDES & ENVIRONMENT VARIABLES"
+                                    color: appSettings.accentColor
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.8
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 20
+
+                                    // Left Column: DLL Overrides
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.preferredWidth: 1
+                                        spacing: 6
+                                        Label { text: "DLL Overrides (one per line, e.g. dinput8=n,b)"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 110
+                                            radius: 12
+                                            color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
+                                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+
+                                            ScrollView {
+                                                anchors.fill: parent
+                                                anchors.margins: 10
+                                                TextArea {
+                                                    id: dllOverridesArea
+                                                    color: appSettings.textColor
+                                                    font.family: "monospace"
+                                                    font.pixelSize: 12
+                                                    placeholderText: "dinput8=n,b\nwinmm=n,b"
+                                                    placeholderTextColor: appSettings.textTerColor
+                                                    text: {
+                                                        let m = root.gameData.dllOverrides || {}
+                                                        let out = []
+                                                        for (let k in m) out.push(k + "=" + m[k])
+                                                        return out.join("\n")
+                                                    }
+                                                    background: null
+                                                    onActiveFocusChanged: if (!activeFocus) root.saveAllChanges()
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Right Column: Environment Variables
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        Layout.preferredWidth: 1
+                                        spacing: 6
+                                        Label { text: "Environment Variables (KEY=VALUE)"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 110
+                                            radius: 12
+                                            color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
+                                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+
+                                            ScrollView {
+                                                anchors.fill: parent
+                                                anchors.margins: 10
+                                                TextArea {
+                                                    id: envVarsArea
+                                                    color: appSettings.textColor
+                                                    font.family: "monospace"
+                                                    font.pixelSize: 12
+                                                    placeholderText: "DXVK_ASYNC=1\nPROTON_ENABLE_NVAPI=1"
+                                                    placeholderTextColor: appSettings.textTerColor
+                                                    text: {
+                                                        let m = root.gameData.environmentVariables || {}
+                                                        let out = []
+                                                        for (let k in m) out.push(k + "=" + m[k])
+                                                        return out.join("\n")
+                                                    }
+                                                    background: null
+                                                    onActiveFocusChanged: if (!activeFocus) root.saveAllChanges()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // TAB 2: Performance & Controller
                     ColumnLayout {
                         id: tab2Perf
-                        spacing: 10
+                        Layout.fillWidth: true
+                        width: tabStack.width
+                        spacing: 16
 
-                        // ── Section 1: Linux Performance Enhancements ──
-                        Label {
-                            text: "PERFORMANCE ENHANCEMENTS"
-                            color: appSettings.accentColor
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.8
-                            Layout.bottomMargin: 2
-                        }
-
-                        // MangoHud
-                        RowLayout {
+                        // Card 1: Performance Enhancements
+                        Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
+                            implicitHeight: perfCol1.implicitHeight + 40
+                            radius: 16
+                            color: appSettings.surfaceColor
+                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+
                             ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "MangoHud Overlay"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Real-time in-game overlay displaying FPS, frametimes, temperature, and CPU/GPU usage"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            StyledCombo {
-                                id: mangohudCombo
-                                Layout.preferredWidth: 250
-                                comboModel: ["Global Default (" + (appSettings.mangohudDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
-                                selectedIndex: (root.gameData.mangohudState !== undefined ? root.gameData.mangohudState : -1) + 1
-                                onSelected: root.saveAllChanges()
-                            }
-                        }
+                                id: perfCol1
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                spacing: 14
 
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
+                                Label {
+                                    text: "PERFORMANCE ENHANCEMENTS"
+                                    color: appSettings.accentColor
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.8
+                                }
 
-                        // GameMode
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Feral GameMode"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Applies performance governor, real-time scheduler priorities, and inhibits screensaver"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            StyledCombo {
-                                id: gamemodeCombo
-                                Layout.preferredWidth: 250
-                                comboModel: ["Global Default (" + (appSettings.gamemodeDefault ? "Enabled" : "Disabled") + ")", "Disabled", "Enabled"]
-                                selectedIndex: (root.gameData.gamemodeState !== undefined ? root.gameData.gamemodeState : -1) + 1
-                                onSelected: root.saveAllChanges()
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // CPU Affinity
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "CPU Core Affinity (taskset)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Pin the game process and threads to specific CPU cores (e.g. 0-7, or 0,2,4,6)"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            M3TextField {
-                                id: affinityField
-                                Layout.preferredWidth: 250
-                                text: root.gameData.cpuAffinity || ""
-                                placeholderText: "e.g. 0-7"
-                                onCommit: root.saveAllChanges()
-                            }
-                        }
-
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // Process Priority
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Process Priority (nice)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Linux scheduler niceness from -20 (highest priority) to 19 (lowest priority)"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            M3TextField {
-                                id: priorityField
-                                Layout.preferredWidth: 250
-                                text: String(root.gameData.processPriority || 0)
-                                placeholderText: "0"
-                                onCommit: root.saveAllChanges()
-                            }
-                        }
-
-                        Item { Layout.fillWidth: true; Layout.preferredHeight: 8 }
-
-                        // ── Section 2: Controller & Gamepad ──
-                        Label {
-                            text: "CONTROLLER & GAMEPAD"
-                            color: appSettings.accentColor
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.8
-                            Layout.bottomMargin: 2
-                        }
-
-                        // Xbox Controller Emulation Toggle
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Xbox Controller Emulation"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Emulates an authentic XInput gamepad via Linux /dev/uinput daemon"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            Toggle {
-                                id: xboxEmuToggle
-                                checked: appSettings.xboxEmulationDefault
-                                Connections {
-                                    target: appSettings
-                                    function onControllerDefaultsChanged() {
-                                        xboxEmuToggle.checked = appSettings.xboxEmulationDefault
+                                // Row 1: MangoHud (Toggle)
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "MangoHud Overlay"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Real-time in-game overlay displaying FPS, frametimes, temperature, and CPU/GPU usage"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Toggle {
+                                        id: mangohudToggle
+                                        checked: (root.gameData.mangohudState === 1) ? true : ((root.gameData.mangohudState === 0) ? false : appSettings.mangohudDefault)
+                                        onToggled: root.saveAllChanges()
                                     }
                                 }
-                                onToggled: (c) => {
-                                    appSettings.xboxEmulationDefault = c
-                                    uiController.gameManager.syncXboxEmulationToAllGames(c)
-                                    root.saveAllChanges()
-                                }
-                            }
-                        }
 
-                        Item { Layout.fillWidth: true; Layout.preferredHeight: 8 }
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
-                        // ── Section 3: Pre-Launch & Post-Exit Automation ──
-                        Label {
-                            text: "AUTOMATION SCRIPTS"
-                            color: appSettings.accentColor
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            font.letterSpacing: 0.8
-                            Layout.bottomMargin: 2
-                        }
-
-                        // Pre-launch
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Pre-Launch Script"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Shell script executed right before the game process is spawned"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            RowLayout {
-                                Layout.preferredWidth: Math.min(460, root.width * 0.45)
-                                spacing: 8
-                                M3TextField {
-                                    id: preScriptField
+                                // Row 2: Feral GameMode (Toggle)
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    text: root.gameData.preLaunchScript || ""
-                                    placeholderText: "/path/to/pre.sh"
-                                    onCommit: root.saveAllChanges()
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "Feral GameMode"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Applies performance governor, real-time scheduler priorities, and inhibits screensaver"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Toggle {
+                                        id: gamemodeToggle
+                                        checked: (root.gameData.gamemodeState === 1) ? true : ((root.gameData.gamemodeState === 0) ? false : appSettings.gamemodeDefault)
+                                        onToggled: root.saveAllChanges()
+                                    }
                                 }
-                                M3Button {
-                                    text: "Browse…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
-                                    buttonType: "tonal"
-                                    onClicked: {
-                                        let p = uiController.selectFile("Select Pre-Launch Script", "Shell Scripts (*.sh *.bash);;All Files (*)", preScriptField.text)
-                                        if (p && p.length > 0) { preScriptField.text = p; root.saveAllChanges() }
+
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
+
+                                // Row 3: CPU Core Affinity
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "CPU Core Affinity (taskset)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Pin the game process and threads to specific CPU cores (e.g. 0-7, or 0,2,4,6)"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    M3TextField {
+                                        id: affinityField
+                                        Layout.preferredWidth: 260
+                                        text: root.gameData.cpuAffinity || ""
+                                        placeholderText: "e.g. 0-7"
+                                        onCommit: root.saveAllChanges()
+                                    }
+                                }
+
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
+
+                                // Row 4: Process Priority
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "Process Priority (nice)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Linux scheduler niceness from -20 (highest priority) to 19 (lowest priority)"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    M3TextField {
+                                        id: priorityField
+                                        Layout.preferredWidth: 120
+                                        text: String(root.gameData.processPriority || 0)
+                                        placeholderText: "0"
+                                        onCommit: root.saveAllChanges()
                                     }
                                 }
                             }
                         }
 
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // Post-exit
-                        RowLayout {
+                        // Card 2: Controller & Gamepad
+                        Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 52
-                            spacing: 16
+                            implicitHeight: ctrlCol.implicitHeight + 40
+                            radius: 16
+                            color: appSettings.surfaceColor
+                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+
                             ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Post-Exit Script"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { text: "Shell script executed after the game process exits and cleans up"; color: appSettings.textSecColor; font.pixelSize: 12 }
-                            }
-                            RowLayout {
-                                Layout.preferredWidth: Math.min(460, root.width * 0.45)
-                                spacing: 8
-                                M3TextField {
-                                    id: postScriptField
-                                    Layout.fillWidth: true
-                                    text: root.gameData.postExitScript || ""
-                                    placeholderText: "/path/to/post.sh"
-                                    onCommit: root.saveAllChanges()
+                                id: ctrlCol
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                spacing: 14
+
+                                Label {
+                                    text: "CONTROLLER & GAMEPAD"
+                                    color: appSettings.accentColor
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.8
                                 }
-                                M3Button {
-                                    text: "Browse…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
-                                    buttonType: "tonal"
-                                    onClicked: {
-                                        let p = uiController.selectFile("Select Post-Exit Script", "Shell Scripts (*.sh *.bash);;All Files (*)", postScriptField.text)
-                                        if (p && p.length > 0) { postScriptField.text = p; root.saveAllChanges() }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "Xbox Controller Emulation"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Emulates an authentic XInput gamepad via Linux /dev/uinput daemon"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Toggle {
+                                        id: xboxEmuToggle
+                                        checked: appSettings.xboxEmulationDefault
+                                        Connections {
+                                            target: appSettings
+                                            function onControllerDefaultsChanged() {
+                                                xboxEmuToggle.checked = appSettings.xboxEmulationDefault
+                                            }
+                                        }
+                                        onToggled: (c) => {
+                                            appSettings.xboxEmulationDefault = c
+                                            uiController.gameManager.syncXboxEmulationToAllGames(c)
+                                            root.saveAllChanges()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 3: Automation Scripts
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: autoCol.implicitHeight + 40
+                            radius: 16
+                            color: appSettings.surfaceColor
+                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+
+                            ColumnLayout {
+                                id: autoCol
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                spacing: 14
+
+                                Label {
+                                    text: "AUTOMATION SCRIPTS"
+                                    color: appSettings.accentColor
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.8
+                                }
+
+                                // Pre-launch Script
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+                                    Label { text: "Pre-Launch Script"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                    Label { text: "Shell script executed right before the game process is spawned"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    Item { Layout.preferredHeight: 2 }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 10
+                                        M3TextField {
+                                            id: preScriptField
+                                            Layout.fillWidth: true
+                                            text: root.gameData.preLaunchScript || ""
+                                            placeholderText: "/path/to/pre.sh"
+                                            onCommit: root.saveAllChanges()
+                                        }
+                                        M3Button {
+                                            text: "Browse…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            buttonType: "tonal"
+                                            onClicked: {
+                                                let p = uiController.selectFile("Select Pre-Launch Script", "Shell Scripts (*.sh *.bash);;All Files (*)", preScriptField.text)
+                                                if (p && p.length > 0) { preScriptField.text = p; root.saveAllChanges() }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
+
+                                // Post-exit Script
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+                                    Label { text: "Post-Exit Script"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                    Label { text: "Shell script executed after the game process exits and cleans up"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    Item { Layout.preferredHeight: 2 }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 10
+                                        M3TextField {
+                                            id: postScriptField
+                                            Layout.fillWidth: true
+                                            text: root.gameData.postExitScript || ""
+                                            placeholderText: "/path/to/post.sh"
+                                            onCommit: root.saveAllChanges()
+                                        }
+                                        M3Button {
+                                            text: "Browse…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            buttonType: "tonal"
+                                            onClicked: {
+                                                let p = uiController.selectFile("Select Post-Exit Script", "Shell Scripts (*.sh *.bash);;All Files (*)", postScriptField.text)
+                                                if (p && p.length > 0) { postScriptField.text = p; root.saveAllChanges() }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1293,247 +1399,264 @@ Page {
                     // TAB 3: Artwork & Media
                     ColumnLayout {
                         id: tab3Art
-                        spacing: 10
+                        Layout.fillWidth: true
+                        width: tabStack.width
+                        spacing: 16
 
-                        RowLayout {
+                        Rectangle {
                             Layout.fillWidth: true
-                            Layout.bottomMargin: 2
-
-                            Label {
-                                text: "STEAMGRIDDB AUTOMATIC ARTWORK & MANUAL OVERRIDES"
-                                color: appSettings.accentColor
-                                font.pixelSize: 11
-                                font.weight: Font.DemiBold
-                                font.letterSpacing: 0.8
-                                Layout.fillWidth: true
-                            }
-
-                            M3Button {
-                                text: "Auto-Fetch Artwork"
-                                iconSource: "qrc:/tsuki_app/icons/actions/refresh.svg"
-                                buttonType: "filled"
-                                implicitHeight: 36
-                                onClicked: uiController.gameManager.refreshArtworkFromSteamGridDb(root.gameId)
-                            }
-                        }
-
-                        // Row 1: Poster Cover (600×900)
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 56
-                            spacing: 16
-
-                            Rectangle {
-                                Layout.preferredWidth: 38
-                                Layout.preferredHeight: 52
-                                radius: 6
-                                color: Qt.rgba(1, 1, 1, 0.05)
-                                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
-                                clip: true
-
-                                Image {
-                                    anchors.fill: parent
-                                    source: root.gameData.coverPath || ""
-                                    fillMode: Image.PreserveAspectCrop
-                                    asynchronous: true
-                                }
-                            }
+                            implicitHeight: artCol.implicitHeight + 40
+                            radius: 16
+                            color: appSettings.surfaceColor
+                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
 
                             ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Cover Poster (600×900)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { 
-                                    text: root.gameData.coverPath ? root.gameData.coverPath : "Default fallback cover generated"
-                                    color: appSettings.textSecColor
-                                    font.pixelSize: 12
-                                    elide: Text.ElideMiddle
-                                    Layout.fillWidth: true
-                                }
-                            }
+                                id: artCol
+                                anchors.fill: parent
+                                anchors.margins: 20
+                                spacing: 14
 
-                            RowLayout {
-                                spacing: 8
-                                M3Button {
-                                    text: "Link…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
-                                    buttonType: "tonal"
-                                    onClicked: artworkUrlDialog.openFor(root.gameId, "cover", "Cover Poster")
-                                }
-                                M3Button {
-                                    text: "Browse…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
-                                    buttonType: "tonal"
-                                    onClicked: {
-                                        let p = uiController.selectFile("Select Poster Image", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
-                                        if (p && p.length > 0) uiController.gameManager.setGameArtwork(root.gameId, p, "", "", "")
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.bottomMargin: 2
+
+                                    Label {
+                                        text: "STEAMGRIDDB AUTOMATIC ARTWORK & MANUAL OVERRIDES"
+                                        color: appSettings.accentColor
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: 0.8
+                                        Layout.fillWidth: true
+                                    }
+
+                                    M3Button {
+                                        text: "Auto-Fetch Artwork"
+                                        iconSource: "qrc:/tsuki_app/icons/actions/refresh.svg"
+                                        buttonType: "tonal"
+                                        implicitHeight: 36
+                                        onClicked: uiController.gameManager.refreshArtworkFromSteamGridDb(root.gameId)
                                     }
                                 }
-                            }
-                        }
 
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
-
-                        // Row 2: Hero Banner (1920×620)
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 56
-                            spacing: 16
-
-                            Rectangle {
-                                Layout.preferredWidth: 64
-                                Layout.preferredHeight: 36
-                                radius: 6
-                                color: Qt.rgba(1, 1, 1, 0.05)
-                                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
-                                clip: true
-
-                                Image {
-                                    anchors.fill: parent
-                                    source: root.gameData.bannerPath || ""
-                                    fillMode: Image.PreserveAspectCrop
-                                    asynchronous: true
-                                }
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Hero Banner (1920×620)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { 
-                                    text: root.gameData.bannerPath ? root.gameData.bannerPath : "Default fallback hero banner"
-                                    color: appSettings.textSecColor
-                                    font.pixelSize: 12
-                                    elide: Text.ElideMiddle
+                                // Row 1: Poster Cover (600×900)
+                                RowLayout {
                                     Layout.fillWidth: true
-                                }
-                            }
+                                    Layout.preferredHeight: 56
+                                    spacing: 16
 
-                            RowLayout {
-                                spacing: 8
-                                M3Button {
-                                    text: "Link…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
-                                    buttonType: "tonal"
-                                    onClicked: artworkUrlDialog.openFor(root.gameId, "banner", "Hero Banner")
-                                }
-                                M3Button {
-                                    text: "Browse…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
-                                    buttonType: "tonal"
-                                    onClicked: {
-                                        let p = uiController.selectFile("Select Hero Banner", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
-                                        if (p && p.length > 0) uiController.gameManager.setGameArtwork(root.gameId, "", p, "", "")
+                                    Rectangle {
+                                        Layout.preferredWidth: 44
+                                        Layout.preferredHeight: 64
+                                        radius: 8
+                                        color: Qt.rgba(1, 1, 1, 0.05)
+                                        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+                                        clip: true
+
+                                        Image {
+                                            anchors.fill: parent
+                                            source: root.gameData.coverPath || ""
+                                            fillMode: Image.PreserveAspectCrop
+                                            asynchronous: true
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true; spacing: 2
+                                        Label { text: "Cover Poster (600×900)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { 
+                                            text: root.gameData.coverPath ? root.gameData.coverPath : "Default fallback cover generated"
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            elide: Text.ElideMiddle
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        spacing: 8
+                                        M3Button {
+                                            text: "Link…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
+                                            buttonType: "tonal"
+                                            onClicked: artworkUrlDialog.openFor(root.gameId, "cover", "Cover Poster")
+                                        }
+                                        M3Button {
+                                            text: "Browse…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            buttonType: "tonal"
+                                            onClicked: {
+                                                let p = uiController.selectFile("Select Poster Image", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
+                                                if (p && p.length > 0) uiController.gameManager.setGameArtwork(root.gameId, p, "", "", "")
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                        }
 
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
-                        // Row 3: Transparent Logo
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 56
-                            spacing: 16
-
-                            Rectangle {
-                                Layout.preferredWidth: 64
-                                Layout.preferredHeight: 36
-                                radius: 6
-                                color: Qt.rgba(1, 1, 1, 0.05)
-                                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
-                                clip: true
-
-                                Image {
-                                    anchors.fill: parent
-                                    source: root.gameData.logoPath || ""
-                                    fillMode: Image.PreserveAspectFit
-                                    asynchronous: true
-                                }
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Transparent Logo (PNG/WebP)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { 
-                                    text: root.gameData.logoPath ? root.gameData.logoPath : "No custom transparent logo loaded"
-                                    color: appSettings.textSecColor
-                                    font.pixelSize: 12
-                                    elide: Text.ElideMiddle
+                                // Row 2: Hero Banner (1920×620)
+                                RowLayout {
                                     Layout.fillWidth: true
-                                }
-                            }
+                                    Layout.preferredHeight: 56
+                                    spacing: 16
 
-                            RowLayout {
-                                spacing: 8
-                                M3Button {
-                                    text: "Link…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
-                                    buttonType: "tonal"
-                                    onClicked: artworkUrlDialog.openFor(root.gameId, "logo", "Transparent Logo")
-                                }
-                                M3Button {
-                                    text: "Browse…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
-                                    buttonType: "tonal"
-                                    onClicked: {
-                                        let p = uiController.selectFile("Select Logo Image", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
-                                        if (p && p.length > 0) uiController.gameManager.setGameArtwork(root.gameId, "", "", p, "")
+                                    Rectangle {
+                                        Layout.preferredWidth: 84
+                                        Layout.preferredHeight: 38
+                                        radius: 8
+                                        color: Qt.rgba(1, 1, 1, 0.05)
+                                        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+                                        clip: true
+
+                                        Image {
+                                            anchors.fill: parent
+                                            source: root.gameData.bannerPath || ""
+                                            fillMode: Image.PreserveAspectCrop
+                                            asynchronous: true
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true; spacing: 2
+                                        Label { text: "Hero Banner (1920×620)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { 
+                                            text: root.gameData.bannerPath ? root.gameData.bannerPath : "Default fallback hero banner"
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            elide: Text.ElideMiddle
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        spacing: 8
+                                        M3Button {
+                                            text: "Link…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
+                                            buttonType: "tonal"
+                                            onClicked: artworkUrlDialog.openFor(root.gameId, "banner", "Hero Banner")
+                                        }
+                                        M3Button {
+                                            text: "Browse…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            buttonType: "tonal"
+                                            onClicked: {
+                                                let p = uiController.selectFile("Select Hero Banner", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
+                                                if (p && p.length > 0) uiController.gameManager.setGameArtwork(root.gameId, "", p, "", "")
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                        }
 
-                        Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05) }
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
-                        // Row 4: Shortcut Icon
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 56
-                            spacing: 16
-
-                            Rectangle {
-                                Layout.preferredWidth: 40
-                                Layout.preferredHeight: 40
-                                radius: 8
-                                color: Qt.rgba(1, 1, 1, 0.05)
-                                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
-                                clip: true
-
-                                Image {
-                                    anchors.fill: parent
-                                    source: root.gameData.iconPath || ""
-                                    fillMode: Image.PreserveAspectCrop
-                                    asynchronous: true
-                                }
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true; spacing: 2
-                                Label { text: "Desktop & Shortcut Icon"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                Label { 
-                                    text: root.gameData.iconPath ? root.gameData.iconPath : "No custom icon assigned"
-                                    color: appSettings.textSecColor
-                                    font.pixelSize: 12
-                                    elide: Text.ElideMiddle
+                                // Row 3: Transparent Logo
+                                RowLayout {
                                     Layout.fillWidth: true
-                                }
-                            }
+                                    Layout.preferredHeight: 56
+                                    spacing: 16
 
-                            RowLayout {
-                                spacing: 8
-                                M3Button {
-                                    text: "Link…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
-                                    buttonType: "tonal"
-                                    onClicked: artworkUrlDialog.openFor(root.gameId, "icon", "Shortcut Icon")
+                                    Rectangle {
+                                        Layout.preferredWidth: 70
+                                        Layout.preferredHeight: 38
+                                        radius: 8
+                                        color: Qt.rgba(1, 1, 1, 0.05)
+                                        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+                                        clip: true
+
+                                        Image {
+                                            anchors.fill: parent
+                                            source: root.gameData.logoPath || ""
+                                            fillMode: Image.PreserveAspectFit
+                                            asynchronous: true
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true; spacing: 2
+                                        Label { text: "Transparent Logo (PNG/WebP)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { 
+                                            text: root.gameData.logoPath ? root.gameData.logoPath : "No custom transparent logo loaded"
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            elide: Text.ElideMiddle
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        spacing: 8
+                                        M3Button {
+                                            text: "Link…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
+                                            buttonType: "tonal"
+                                            onClicked: artworkUrlDialog.openFor(root.gameId, "logo", "Transparent Logo")
+                                        }
+                                        M3Button {
+                                            text: "Browse…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            buttonType: "tonal"
+                                            onClicked: {
+                                                let p = uiController.selectFile("Select Logo Image", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
+                                                if (p && p.length > 0) uiController.gameManager.setGameArtwork(root.gameId, "", "", p, "")
+                                            }
+                                        }
+                                    }
                                 }
-                                M3Button {
-                                    text: "Browse…"
-                                    iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
-                                    buttonType: "tonal"
-                                    onClicked: {
-                                        let p = uiController.selectFile("Select Icon Image", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
-                                        if (p && p.length > 0) uiController.gameManager.setGameArtwork(root.gameId, "", "", "", p)
+
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
+
+                                // Row 4: Shortcut Icon
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 56
+                                    spacing: 16
+
+                                    Rectangle {
+                                        Layout.preferredWidth: 44
+                                        Layout.preferredHeight: 44
+                                        radius: 8
+                                        color: Qt.rgba(1, 1, 1, 0.05)
+                                        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+                                        clip: true
+
+                                        Image {
+                                            anchors.fill: parent
+                                            source: root.gameData.iconPath || ""
+                                            fillMode: Image.PreserveAspectCrop
+                                            asynchronous: true
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true; spacing: 2
+                                        Label { text: "Desktop & Shortcut Icon"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { 
+                                            text: root.gameData.iconPath ? root.gameData.iconPath : "No custom icon assigned"
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            elide: Text.ElideMiddle
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        spacing: 8
+                                        M3Button {
+                                            text: "Link…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
+                                            buttonType: "tonal"
+                                            onClicked: artworkUrlDialog.openFor(root.gameId, "icon", "Shortcut Icon")
+                                        }
+                                        M3Button {
+                                            text: "Browse…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            buttonType: "tonal"
+                                            onClicked: {
+                                                let p = uiController.selectFile("Select Icon Image", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
+                                                if (p && p.length > 0) uiController.gameManager.setGameArtwork(root.gameId, "", "", "", p)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1543,49 +1666,68 @@ Page {
                     // TAB 4: Execution Logs
                     ColumnLayout {
                         id: tab4Logs
-                        spacing: 12
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Label {
-                                text: "Execution Console Log (" + (root.gameData.title || "") + ")"
-                                color: appSettings.textColor
-                                font.pixelSize: 14; font.weight: Font.DemiBold
-                                Layout.fillWidth: true
-                            }
-                            M3Button {
-                                text: "Export Log"
-                                iconSource: "qrc:/tsuki_app/icons/actions/shortcut.svg"
-                                buttonType: "tonal"
-                                onClicked: uiController.diagnosticsManager.exportGameLog(root.gameId, "")
-                            }
-                            M3Button {
-                                text: "Clear"
-                                iconSource: "qrc:/tsuki_app/icons/actions/trash.svg"
-                                buttonType: "destructive"
-                                onClicked: uiController.diagnosticsManager.clearGameLog(root.gameId)
-                            }
-                        }
+                        Layout.fillWidth: true
+                        width: tabStack.width
+                        spacing: 16
 
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 280
-                            radius: 12
-                            color: "#08080b"
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
+                            implicitHeight: logCol.implicitHeight + 40
+                            radius: 16
+                            color: appSettings.surfaceColor
+                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
 
-                            ScrollView {
+                            ColumnLayout {
+                                id: logCol
                                 anchors.fill: parent
-                                anchors.margins: 12
-                                clip: true
-                                TextArea {
-                                    readOnly: true
-                                    text: uiController.diagnosticsManager.activeGameLog
-                                    color: "#e4e4e7"
-                                    font.family: "monospace"
-                                    font.pixelSize: 12
-                                    wrapMode: TextEdit.Wrap
-                                    background: null
+                                anchors.margins: 20
+                                spacing: 14
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Label {
+                                        text: "EXECUTION CONSOLE LOG (" + (root.gameData.title || "").toUpperCase() + ")"
+                                        color: appSettings.accentColor
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: 0.8
+                                        Layout.fillWidth: true
+                                    }
+                                    M3Button {
+                                        text: "Export Log"
+                                        iconSource: "qrc:/tsuki_app/icons/actions/shortcut.svg"
+                                        buttonType: "tonal"
+                                        onClicked: uiController.diagnosticsManager.exportGameLog(root.gameId, "")
+                                    }
+                                    M3Button {
+                                        text: "Clear"
+                                        iconSource: "qrc:/tsuki_app/icons/actions/trash.svg"
+                                        buttonType: "destructive"
+                                        onClicked: uiController.diagnosticsManager.clearGameLog(root.gameId)
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 320
+                                    radius: 12
+                                    color: "#08080b"
+                                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
+
+                                    ScrollView {
+                                        anchors.fill: parent
+                                        anchors.margins: 12
+                                        clip: true
+                                        TextArea {
+                                            readOnly: true
+                                            text: uiController.diagnosticsManager.activeGameLog
+                                            color: "#e4e4e7"
+                                            font.family: "monospace"
+                                            font.pixelSize: 12
+                                            wrapMode: TextEdit.Wrap
+                                            background: null
+                                        }
+                                    }
                                 }
                             }
                         }
