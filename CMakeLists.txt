@@ -40,6 +40,8 @@ set(TSUKI_CORE_SOURCES
     src/services/PrefixManager.cpp
     src/services/WinetricksManager.h
     src/services/WinetricksManager.cpp
+    src/services/UinputXboxDevice.h
+    src/services/UinputXboxDevice.cpp
     src/services/ControllerManager.h
     src/services/ControllerManager.cpp
     src/services/SteamGridDbService.h

@@ -3,6 +3,7 @@
 #include "../core/Models.h"
 #include "../core/DatabaseManager.h"
 #include "../core/AppSettings.h"
+#include "UinputXboxDevice.h"
 #include <QObject>
 #include <QTimer>
 #include <QVariantList>
@@ -47,9 +48,9 @@ public:
 
     QVariantList detectedControllers() const { return m_detectedControllers; }
     QVariantList profilesVariant() const;
-    bool isEmulationActive() const { return m_uinputFd >= 0; }
+    bool isEmulationActive() const { return m_virtualXbox.isActive(); }
     QString activeProfileId() const { return m_activeProfile.id; }
-    QString uinputStatus() const { return m_uinputStatus; }
+    QString uinputStatus() const { return m_virtualXbox.status(); }
     QVariantMap liveInputState() const { return m_liveInputState; }
 
     // Profile CRUD
@@ -66,7 +67,9 @@ public:
     // Generate SDL_GAMECONTROLLERCONFIG string for game launch environment
     QString buildSdlGameControllerConfig(const QString& profileId = QString()) const;
 
-    static quint16 linuxKeyCodeForName(const QString& name);
+    static quint16 linuxKeyCodeForName(const QString& name) {
+        return UinputXboxDevice::linuxKeyCodeForName(name);
+    }
 
 signals:
     void controllersChanged();
@@ -86,13 +89,11 @@ private:
     SDL_Joystick* m_primaryJoy = nullptr;
     int m_primaryInstanceId = -1;
 
-    int m_uinputFd = -1;
-    QString m_uinputStatus = QStringLiteral("Idle");
+    UinputXboxDevice m_virtualXbox;
     ControllerProfileRecord m_activeProfile;
     QVariantMap m_liveInputState;
 
     void pollSdlEvents();
-    void emitUinputEvent(quint16 type, quint16 code, qint32 value);
     void syncVirtualXboxPad();
     static qint16 applyDeadzone(qint16 val, int deadzone);
 };
