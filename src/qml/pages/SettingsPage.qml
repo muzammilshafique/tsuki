@@ -858,7 +858,6 @@ Page {
                         }
                         onToggled: (c) => {
                             appSettings.xboxEmulationDefault = c
-                            uiController.gameManager.syncXboxEmulationToAllGames(c)
                         }
                     }
                 }

@@ -1,7 +1,11 @@
 #include <QtTest>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QSqlDatabase>
 #include <QSqlQuery>
+#include <linux/input-event-codes.h>
+#include <linux/uinput.h>
+#include <cerrno>
 #include "../src/core/AppSettings.h"
 #include "../src/core/DatabaseManager.h"
 #include "../src/services/DownloadManager.h"
@@ -16,6 +20,73 @@
 
 using namespace Tsuki;
 
+namespace {
+
+class MockUinputBackend : public IUinputBackend {
+public:
+    bool failOpen = false;
+    bool failIoctl = false;
+    unsigned long failIoctlReq = 0;
+    bool failWrite = false;
+
+    int openCount = 0;
+    int closeCount = 0;
+    int ioctlCount = 0;
+    int writeCount = 0;
+
+    QList<struct input_event> recordedEvents;
+    QString probedStatusString = QStringLiteral("Ready (/dev/uinput writable)");
+
+    int openDevice(const char* path, int flags) override {
+        Q_UNUSED(path);
+        Q_UNUSED(flags);
+        openCount++;
+        if (failOpen) {
+            errno = EACCES;
+            return -1;
+        }
+        return 42; // fake fd
+    }
+
+    int ioctlCall(int fd, unsigned long request, void* arg) override {
+        Q_UNUSED(fd);
+        Q_UNUSED(arg);
+        ioctlCount++;
+        if (failIoctl && (failIoctlReq == 0 || failIoctlReq == request)) {
+            errno = EINVAL;
+            return -1;
+        }
+        return 0;
+    }
+
+    ssize_t writeBytes(int fd, const void* buf, size_t count) override {
+        Q_UNUSED(fd);
+        writeCount++;
+        if (failWrite) {
+            errno = EIO;
+            return -1;
+        }
+        const auto* evs = reinterpret_cast<const struct input_event*>(buf);
+        size_t n = count / sizeof(struct input_event);
+        for (size_t i = 0; i < n; ++i) {
+            recordedEvents.append(evs[i]);
+        }
+        return count;
+    }
+
+    int closeDevice(int fd) override {
+        Q_UNUSED(fd);
+        closeCount++;
+        return 0;
+    }
+
+    QString probeStatus() override {
+        return probedStatusString;
+    }
+};
+
+} // namespace
+
 class TestTsuki : public QObject {
     Q_OBJECT
 
@@ -27,32 +98,24 @@ private slots:
         QVERIFY(db.initialize());
         QVERIFY(db.isOpen());
 
-        // Default controller profile should be seeded automatically
-        auto defProf = db.getControllerProfile("default-xbox");
-        QVERIFY(defProf.has_value());
-        QCOMPARE(defProf->xboxEmulation, true);
-        QCOMPARE(defProf->buttonMappings.value("x").toString(), QString("BTN_NORTH"));
-        QCOMPARE(defProf->buttonMappings.value("y").toString(), QString("BTN_WEST"));
-
         // Verify key codes: in Linux evdev, BTN_NORTH is BTN_X (0x133) and BTN_WEST is BTN_Y (0x134)
         QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_NORTH"), static_cast<quint16>(0x133));
         QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_X"), static_cast<quint16>(0x133));
         QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_WEST"), static_cast<quint16>(0x134));
         QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_Y"), static_cast<quint16>(0x134));
 
-        // Test legacy profile migration/normalization
-        ControllerProfileRecord legacyProf;
-        legacyProf.id = "prof-legacy";
-        legacyProf.name = "Legacy Profile";
-        legacyProf.xboxEmulation = true;
-        legacyProf.deadzone = 4000;
-        legacyProf.buttonMappings["x"] = "BTN_WEST";
-        legacyProf.buttonMappings["y"] = "BTN_NORTH";
-        QVERIFY(db.saveControllerProfile(legacyProf));
-        auto loadedLegacy = db.getControllerProfile("prof-legacy");
-        QVERIFY(loadedLegacy.has_value());
-        QCOMPARE(loadedLegacy->buttonMappings.value("x").toString(), QString("BTN_NORTH"));
-        QCOMPARE(loadedLegacy->buttonMappings.value("y").toString(), QString("BTN_WEST"));
+        // Test bulk setting per-game emulation states
+        GameRecord gClr;
+        gClr.id = "g-clr-test";
+        gClr.title = "Sync Test";
+        gClr.executablePath = "/bin/true";
+        gClr.xboxEmulationState = 1;
+        QVERIFY(db.saveGame(gClr));
+        QCOMPARE(db.getGame("g-clr-test")->xboxEmulationState, 1);
+        QVERIFY(db.setAllGamesXboxEmulationState(false));
+        QCOMPARE(db.getGame("g-clr-test")->xboxEmulationState, 0);
+        QVERIFY(db.setAllGamesXboxEmulationState(true));
+        QCOMPARE(db.getGame("g-clr-test")->xboxEmulationState, 1);
 
         // Save and retrieve a prefix with custom name independent of game title
         PrefixRecord pfx;
@@ -203,29 +266,29 @@ private slots:
         QVERIFY(plan.environment.value("WINEDLLOVERRIDES").contains("d3d12=n,b"));
 
         // Test Xbox controller emulation resolution:
-        // 1. Settings default is false, but game has xboxEmulationState = 1 -> should enable
+        // 1. Settings default is false, game has xboxEmulationState = 1 -> enabled (per-game override works)
         settings.setXboxEmulationDefault(false);
         game.xboxEmulationState = 1;
-        const LaunchPlan planXboxOn = pipeline.buildLaunchPlan(game, protonRunner, prefix);
-        QVERIFY(planXboxOn.useXboxEmulation);
+        const LaunchPlan planXboxOnGlobalOff = pipeline.buildLaunchPlan(game, protonRunner, prefix);
+        QVERIFY(planXboxOnGlobalOff.useXboxEmulation);
 
-        // 2. Settings default is true, but game has xboxEmulationState = 0 -> should disable
+        // 2. Settings default is true, but game has xboxEmulationState = 0 -> disabled (per-game override works)
         settings.setXboxEmulationDefault(true);
         game.xboxEmulationState = 0;
         const LaunchPlan planXboxOff = pipeline.buildLaunchPlan(game, protonRunner, prefix);
         QVERIFY(!planXboxOff.useXboxEmulation);
 
-        // 3. Settings default is false, and game has xboxEmulationState = -1 -> should follow default (false)
-        settings.setXboxEmulationDefault(false);
-        game.xboxEmulationState = -1;
-        const LaunchPlan planXboxDefOff = pipeline.buildLaunchPlan(game, protonRunner, prefix);
-        QVERIFY(!planXboxDefOff.useXboxEmulation);
-
-        // 4. Settings default is true, and game has xboxEmulationState = -1 -> should follow default (true)
+        // 3. Settings default is true, and game has xboxEmulationState = 1 -> enabled
         settings.setXboxEmulationDefault(true);
-        game.xboxEmulationState = -1;
-        const LaunchPlan planXboxDefOn = pipeline.buildLaunchPlan(game, protonRunner, prefix);
-        QVERIFY(planXboxDefOn.useXboxEmulation);
+        game.xboxEmulationState = 1;
+        const LaunchPlan planXboxOn = pipeline.buildLaunchPlan(game, protonRunner, prefix);
+        QVERIFY(planXboxOn.useXboxEmulation);
+
+        // 4. Settings default is false, and game has xboxEmulationState = 0 -> disabled
+        settings.setXboxEmulationDefault(false);
+        game.xboxEmulationState = 0;
+        const LaunchPlan planXboxAllOff = pipeline.buildLaunchPlan(game, protonRunner, prefix);
+        QVERIFY(!planXboxAllOff.useXboxEmulation);
     }
 
     void testWinetricksAndDiagnosticsErrorAnalysis() {
@@ -293,29 +356,36 @@ private slots:
         QVERIFY(!pfxId.isEmpty());
         QVERIFY(prefixMgr.getPrefix(pfxId).has_value());
 
-        // Test syncXboxEmulationToAllGames
+        // Test per-game Xbox emulation setting independence and global synchronization
         QString g1 = gm.addGame("Game 1", "/games/g1.exe");
         QString g2 = gm.addGame("Game 2", "/games/g2.exe");
-        gm.syncXboxEmulationToAllGames(true);
-        QCOMPARE(db.getGame(g1)->xboxEmulationState, 1);
-        QCOMPARE(db.getGame(g2)->xboxEmulationState, 1);
-
-        gm.syncXboxEmulationToAllGames(false);
         QCOMPARE(db.getGame(g1)->xboxEmulationState, 0);
         QCOMPARE(db.getGame(g2)->xboxEmulationState, 0);
 
-        // Ensure settings starts at false before testing signal transition to true
-        settings.setXboxEmulationDefault(false);
-        gm.syncXboxEmulationToAllGames(false);
-
-        // Test sync triggered via AppSettings controllerDefaultsChanged
+        // Global ON -> All games ON
         settings.setXboxEmulationDefault(true);
         QCOMPARE(db.getGame(g1)->xboxEmulationState, 1);
         QCOMPARE(db.getGame(g2)->xboxEmulationState, 1);
 
+        // Modifying Game 1 setting must only affect Game 1
+        gm.updateGameDetails(g1, QVariantMap{{"xboxEmulationState", 0}});
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 0);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 1);
+
+        // Global OFF -> ALL games OFF
         settings.setXboxEmulationDefault(false);
         QCOMPARE(db.getGame(g1)->xboxEmulationState, 0);
         QCOMPARE(db.getGame(g2)->xboxEmulationState, 0);
+
+        // Manually enable Game 1 while global is OFF -> Game 1 ON, Game 2 OFF
+        gm.updateGameDetails(g1, QVariantMap{{"xboxEmulationState", 1}});
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 1);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 0);
+
+        // Global ON again -> ALL games ON
+        settings.setXboxEmulationDefault(true);
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 1);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 1);
     }
 
     void testNativeGameSupport() {
@@ -479,6 +549,483 @@ private slots:
         QVERIFY(legGame.has_value());
         QCOMPARE(legGame->platform, QString("windows"));
         QVERIFY(!legGame->isNative());
+    }
+
+    void testUnknownMappingValidation() {
+        QVERIFY(ControllerManager::isValidButtonName("BTN_SOUTH"));
+        QVERIFY(ControllerManager::isValidButtonName("BTN_A"));
+        QVERIFY(ControllerManager::isValidButtonName("BTN_NORTH"));
+        QVERIFY(ControllerManager::isValidButtonName("BTN_WEST"));
+        QVERIFY(!ControllerManager::isValidButtonName("BTN_INVALID"));
+        QVERIFY(!ControllerManager::isValidButtonName(""));
+
+        QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_INVALID"), static_cast<quint16>(0));
+        QCOMPARE(ControllerManager::linuxKeyCodeForName(""), static_cast<quint16>(0));
+        QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_SOUTH"), static_cast<quint16>(0x130));
+        QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_NORTH"), static_cast<quint16>(0x133));
+        QCOMPARE(ControllerManager::linuxKeyCodeForName("BTN_WEST"), static_cast<quint16>(0x134));
+
+        const auto defMap = ControllerManager::defaultXboxMappings();
+        QCOMPARE(defMap.value("a").toString(), QString("BTN_SOUTH"));
+        QCOMPARE(defMap.value("x").toString(), QString("BTN_NORTH"));
+        QCOMPARE(defMap.value("y").toString(), QString("BTN_WEST"));
+        QCOMPARE(defMap.value("b").toString(), QString("BTN_EAST"));
+    }
+
+    void testDuplicateMappingPressReleaseBehavior() {
+        auto mockBackend = std::make_unique<MockUinputBackend>();
+        MockUinputBackend* rawMock = mockBackend.get();
+        UinputXboxDevice dev(std::move(mockBackend));
+
+        QVERIFY(dev.start("Test Virtual Device"));
+        rawMock->recordedEvents.clear();
+
+        // Map physical A and B both to BTN_SOUTH
+        QVariantMap dupMap;
+        dupMap["a"] = "BTN_SOUTH";
+        dupMap["b"] = "BTN_SOUTH";
+
+        XboxPadState state;
+        // Step 1: Press A only -> BTN_SOUTH = 1
+        state.a = true;
+        state.b = false;
+        dev.syncState(state, dupMap);
+
+        bool foundSouthPress = false;
+        for (const auto& ev : rawMock->recordedEvents) {
+            if (ev.type == EV_KEY && ev.code == BTN_SOUTH && ev.value == 1) foundSouthPress = true;
+        }
+        QVERIFY(foundSouthPress);
+
+        // Step 2: Press B as well while A is held -> still held, no unneeded event
+        rawMock->recordedEvents.clear();
+        state.b = true;
+        dev.syncState(state, dupMap);
+        QVERIFY(rawMock->recordedEvents.isEmpty());
+
+        // Step 3: Release A while B is STILL held -> BTN_SOUTH must NOT be released!
+        rawMock->recordedEvents.clear();
+        state.a = false;
+        state.b = true;
+        dev.syncState(state, dupMap);
+        bool foundSouthRelease = false;
+        for (const auto& ev : rawMock->recordedEvents) {
+            if (ev.type == EV_KEY && ev.code == BTN_SOUTH && ev.value == 0) foundSouthRelease = true;
+        }
+        QVERIFY(!foundSouthRelease);
+
+        // Step 4: Release B as well -> now both released, BTN_SOUTH = 0
+        rawMock->recordedEvents.clear();
+        state.b = false;
+        dev.syncState(state, dupMap);
+        foundSouthRelease = false;
+        for (const auto& ev : rawMock->recordedEvents) {
+            if (ev.type == EV_KEY && ev.code == BTN_SOUTH && ev.value == 0) foundSouthRelease = true;
+        }
+        QVERIFY(foundSouthRelease);
+    }
+
+    void testDeadzoneValidationAndNormalization() {
+        // Deadzone threshold filtering: within 4000 deadzone is suppressed to 0
+        QCOMPARE(ControllerManager::applyDeadzone(3000, 4000), static_cast<qint16>(0));
+        QCOMPARE(ControllerManager::applyDeadzone(-3000, 4000), static_cast<qint16>(0));
+        QCOMPARE(ControllerManager::applyDeadzone(5000, 4000), static_cast<qint16>(5000));
+        QCOMPARE(ControllerManager::applyDeadzone(-5000, 4000), static_cast<qint16>(-5000));
+
+        // Default deadzone overload
+        QCOMPARE(ControllerManager::applyDeadzone(2500), static_cast<qint16>(0));
+        QCOMPARE(ControllerManager::applyDeadzone(4500), static_cast<qint16>(4500));
+
+        // Trigger axis scaling in UinputXboxDevice
+        auto mockBackend = std::make_unique<MockUinputBackend>();
+        MockUinputBackend* rawMock = mockBackend.get();
+        UinputXboxDevice dev(std::move(mockBackend));
+        dev.start("DZ Test");
+        rawMock->recordedEvents.clear();
+
+        XboxPadState st;
+        st.lt = 16384; // 16384 / 128 = 128
+        st.rt = 32767; // 32767 / 128 = 255
+        dev.syncState(st);
+
+        bool foundZ = false;
+        bool foundRZ = false;
+        for (const auto& ev : rawMock->recordedEvents) {
+            if (ev.type == EV_ABS && ev.code == ABS_Z && ev.value == 128) foundZ = true;
+            if (ev.type == EV_ABS && ev.code == ABS_RZ && ev.value == 255) foundRZ = true;
+        }
+        QVERIFY(foundZ);
+        QVERIFY(foundRZ);
+    }
+
+    void testGlobalDefaultVersusPerGameOverrideResolution() {
+        QTemporaryDir tmpDir;
+        DatabaseManager db(tmpDir.filePath("test_res.db"));
+        QVERIFY(db.initialize());
+        AppSettings settings;
+        DownloadManager dl;
+        RunnerManager runnerMgr(&db, &settings, &dl);
+        PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+        ControllerManager ctrlMgr(&db, &settings);
+        DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+        LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+
+        GameRecord g;
+        g.id = "g-res";
+        g.title = "Resolution Test";
+        g.executablePath = "/bin/true";
+        g.platform = "linux";
+
+        // 1. Global = false, Game = 0 -> false
+        settings.setXboxEmulationDefault(false);
+        g.xboxEmulationState = 0;
+        QCOMPARE(pipeline.buildNativeLaunchPlan(g).useXboxEmulation, false);
+
+        // 2. Global = false, Game = 1 -> true (Per-game override ON works even when global default is OFF)
+        settings.setXboxEmulationDefault(false);
+        g.xboxEmulationState = 1;
+        QCOMPARE(pipeline.buildNativeLaunchPlan(g).useXboxEmulation, true);
+
+        // 3. Global = true, Game = 0 -> false (Per-game override OFF works even when global default is ON)
+        settings.setXboxEmulationDefault(true);
+        g.xboxEmulationState = 0;
+        QCOMPARE(pipeline.buildNativeLaunchPlan(g).useXboxEmulation, false);
+
+        // 4. Global = true, Game = 1 -> true
+        settings.setXboxEmulationDefault(true);
+        g.xboxEmulationState = 1;
+        QCOMPARE(pipeline.buildNativeLaunchPlan(g).useXboxEmulation, true);
+    }
+
+    void testGlobalSynchronizationAndIndependentOverrides() {
+        QTemporaryDir tmpDir;
+        DatabaseManager db(tmpDir.filePath("test_sync_override.db"));
+        QVERIFY(db.initialize());
+        AppSettings settings;
+        settings.setDatabaseManager(&db);
+        DownloadManager dl;
+        RunnerManager runnerMgr(&db, &settings, &dl);
+        PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+        ControllerManager ctrlMgr(&db, &settings, std::make_unique<MockUinputBackend>());
+        DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+        LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+        SteamGridDbService sgdb(&settings, &dl);
+        GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+
+        QString scriptPath = tmpDir.filePath("sleeper_rt.sh");
+        QFile f(scriptPath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("#!/bin/sh\nsleep 10\n");
+        f.close();
+        f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+
+        // Add Game A and Game B
+        QString gA = gm.addNativeGame("Game A", scriptPath);
+        QString gB = gm.addNativeGame("Game B", scriptPath);
+
+        // 1. Global ON -> All games ON in DB
+        settings.setXboxEmulationDefault(true);
+        QCOMPARE(db.getGame(gA)->xboxEmulationState, 1);
+        QCOMPARE(db.getGame(gB)->xboxEmulationState, 1);
+
+        // 2. Manually disable Game A -> Game A OFF, Game B remains ON
+        gm.updateGameDetails(gA, QVariantMap{{"xboxEmulationState", 0}});
+        QCOMPARE(db.getGame(gA)->xboxEmulationState, 0);
+        QCOMPARE(db.getGame(gB)->xboxEmulationState, 1);
+
+        // 3. Global OFF -> ALL games OFF in DB
+        settings.setXboxEmulationDefault(false);
+        QCOMPARE(db.getGame(gA)->xboxEmulationState, 0);
+        QCOMPARE(db.getGame(gB)->xboxEmulationState, 0);
+
+        // 4. Manually enable Game A while global is OFF -> Game A ON, Game B remains OFF
+        gm.updateGameDetails(gA, QVariantMap{{"xboxEmulationState", 1}});
+        QCOMPARE(db.getGame(gA)->xboxEmulationState, 1);
+        QCOMPARE(db.getGame(gB)->xboxEmulationState, 0);
+
+        // 5. Launch Game A while global is OFF: MUST start virtual controller emulation!
+        QVERIFY(pipeline.launchGame(gA));
+        QVERIFY(pipeline.isGameRunning(gA));
+        QVERIFY(ctrlMgr.isEmulationActive());
+
+        pipeline.stopGame(gA);
+        QTRY_VERIFY_WITH_TIMEOUT(!pipeline.isGameRunning(gA), 2000);
+        QVERIFY(!ctrlMgr.isEmulationActive());
+    }
+
+    void testSubsequentGlobalSynchronizationOverwritesIndividualOverrides() {
+        QTemporaryDir tmpDir;
+        DatabaseManager db(tmpDir.filePath("test_subsequent_sync.db"));
+        QVERIFY(db.initialize());
+        AppSettings settings;
+        settings.setDatabaseManager(&db);
+        DownloadManager dl;
+        RunnerManager runnerMgr(&db, &settings, &dl);
+        PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+        ControllerManager ctrlMgr(&db, &settings);
+        DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+        LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+        SteamGridDbService sgdb(&settings, &dl);
+        GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+
+        QString g1 = gm.addGame("Sync 1", "/bin/true");
+        QString g2 = gm.addGame("Sync 2", "/bin/true");
+
+        // Global OFF initial
+        settings.setXboxEmulationDefault(false);
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 0);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 0);
+
+        // Manually enable Game 1
+        gm.updateGameDetails(g1, QVariantMap{{"xboxEmulationState", 1}});
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 1);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 0);
+
+        // Subsequent Global ON -> ALL games overwritten to ON
+        settings.setXboxEmulationDefault(true);
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 1);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 1);
+
+        // Manually disable Game 2
+        gm.updateGameDetails(g2, QVariantMap{{"xboxEmulationState", 0}});
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 1);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 0);
+
+        // Subsequent Global OFF -> ALL games overwritten to OFF
+        settings.setXboxEmulationDefault(false);
+        QCOMPARE(db.getGame(g1)->xboxEmulationState, 0);
+        QCOMPARE(db.getGame(g2)->xboxEmulationState, 0);
+    }
+
+    void testFailedProcessLaunchCleanup() {
+        QTemporaryDir tmpDir;
+        DatabaseManager db(tmpDir.filePath("test_fail.db"));
+        QVERIFY(db.initialize());
+        AppSettings settings;
+        DownloadManager dl;
+        RunnerManager runnerMgr(&db, &settings, &dl);
+        PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+        ControllerManager ctrlMgr(&db, &settings, std::make_unique<MockUinputBackend>());
+        DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+        LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+
+        // Create a non-executable file as executablePath
+        QString notExec = tmpDir.filePath("not_executable.bin");
+        QFile f(notExec);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("test");
+        f.close();
+        f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner); // NO execute perm
+
+        GameRecord game;
+        game.id = "game-fail";
+        game.title = "Failed Game";
+        game.executablePath = notExec;
+        game.platform = "linux";
+        game.xboxEmulationState = 1;
+        db.saveGame(game);
+
+        settings.setXboxEmulationDefault(true);
+        QSignalSpy failedSpy(&pipeline, &LaunchPipeline::gameLaunchFailed);
+
+        pipeline.launchGame("game-fail");
+
+        // Wait for FailedToStart to be emitted and handled
+        QTRY_COMPARE_WITH_TIMEOUT(failedSpy.count(), 1, 1000);
+
+        // Verify session was cleanly removed and state is not stuck running
+        QVERIFY(!pipeline.isGameRunning("game-fail"));
+        QVERIFY(pipeline.runningGameIds().isEmpty());
+        QCOMPARE(pipeline.runningCount(), 0);
+
+        // Controller emulation must not remain running
+        QVERIFY(!ctrlMgr.isEmulationActive());
+    }
+
+    void testMultipleRunningGamesEmulationLifecycle() {
+        QTemporaryDir tmpDir;
+        DatabaseManager db(tmpDir.filePath("test_multi.db"));
+        QVERIFY(db.initialize());
+        AppSettings settings;
+        DownloadManager dl;
+        RunnerManager runnerMgr(&db, &settings, &dl);
+        PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+        ControllerManager ctrlMgr(&db, &settings, std::make_unique<MockUinputBackend>());
+        DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+        LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+
+        QString scriptPath = tmpDir.filePath("sleeper.sh");
+        QFile f(scriptPath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("#!/bin/sh\nsleep 10\n");
+        f.close();
+        f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+
+        GameRecord g1;
+        g1.id = "g-emu-on";
+        g1.title = "Game With Emulation";
+        g1.executablePath = scriptPath;
+        g1.platform = "linux";
+        g1.xboxEmulationState = 1;
+        db.saveGame(g1);
+
+        GameRecord g2;
+        g2.id = "g-emu-off";
+        g2.title = "Game Without Emulation";
+        g2.executablePath = scriptPath;
+        g2.platform = "linux";
+        g2.xboxEmulationState = 0;
+        db.saveGame(g2);
+
+        settings.setXboxEmulationDefault(true);
+
+        // Launch Game 1 (needs emulation)
+        QVERIFY(pipeline.launchGame("g-emu-on"));
+        QVERIFY(pipeline.isGameRunning("g-emu-on"));
+        QVERIFY(ctrlMgr.isEmulationActive());
+
+        // Launch Game 2 (no emulation)
+        QVERIFY(pipeline.launchGame("g-emu-off"));
+        QVERIFY(pipeline.isGameRunning("g-emu-off"));
+        QVERIFY(ctrlMgr.isEmulationActive()); // Kept active for Game 1
+
+        // Stop Game 1 (which needed emulation)
+        pipeline.stopGame("g-emu-on");
+        QTRY_VERIFY_WITH_TIMEOUT(!pipeline.isGameRunning("g-emu-on"), 2000);
+
+        // Game 2 is still running, but does NOT require emulation -> emulation must stop!
+        QVERIFY(pipeline.isGameRunning("g-emu-off"));
+        QVERIFY(!ctrlMgr.isEmulationActive());
+
+        // Stop Game 2
+        pipeline.stopGame("g-emu-off");
+        QTRY_VERIFY_WITH_TIMEOUT(!pipeline.isGameRunning("g-emu-off"), 2000);
+        QVERIFY(!ctrlMgr.isEmulationActive());
+    }
+
+    void testControllerDisconnectNeutralization() {
+        auto mockBackend = std::make_unique<MockUinputBackend>();
+        MockUinputBackend* rawMock = mockBackend.get();
+        UinputXboxDevice dev(std::move(mockBackend));
+
+        QVERIFY(dev.start("Neutral Test"));
+        rawMock->recordedEvents.clear();
+
+        // Simulate held buttons and moved stick
+        XboxPadState held;
+        held.a = true;
+        held.lb = true;
+        held.lx = 20000;
+        held.lt = 10000;
+        dev.syncState(held, {});
+
+        bool sawPress = false;
+        for (const auto& ev : rawMock->recordedEvents) {
+            if (ev.type == EV_KEY && ev.code == BTN_SOUTH && ev.value == 1) sawPress = true;
+        }
+        QVERIFY(sawPress);
+
+        // Reset to neutral
+        rawMock->recordedEvents.clear();
+        dev.resetToNeutral();
+
+        bool sawReleaseA = false;
+        bool sawReleaseLB = false;
+        bool sawCenterLX = false;
+        bool sawZeroLT = false;
+        bool sawSyn = false;
+
+        for (const auto& ev : rawMock->recordedEvents) {
+            if (ev.type == EV_KEY && ev.code == BTN_SOUTH && ev.value == 0) sawReleaseA = true;
+            if (ev.type == EV_KEY && ev.code == BTN_TL && ev.value == 0) sawReleaseLB = true;
+            if (ev.type == EV_ABS && ev.code == ABS_X && ev.value == 0) sawCenterLX = true;
+            if (ev.type == EV_ABS && ev.code == ABS_Z && ev.value == 0) sawZeroLT = true;
+            if (ev.type == EV_SYN && ev.code == SYN_REPORT) sawSyn = true;
+        }
+
+        QVERIFY(sawReleaseA);
+        QVERIFY(sawReleaseLB);
+        QVERIFY(sawCenterLX);
+        QVERIFY(sawZeroLT);
+        QVERIFY(sawSyn);
+    }
+
+    void testRepeatedStartStopLifecycleBehavior() {
+        auto mockBackend = std::make_unique<MockUinputBackend>();
+        MockUinputBackend* rawMock = mockBackend.get();
+        UinputXboxDevice dev(std::move(mockBackend));
+
+        QVERIFY(dev.start("Session 1"));
+        QVERIFY(dev.isActive());
+        QCOMPARE(rawMock->openCount, 1);
+
+        // Repeated start is safe and idempotent
+        QVERIFY(dev.start("Session 2"));
+        QVERIFY(dev.isActive());
+        QCOMPARE(rawMock->openCount, 2);
+        QCOMPARE(rawMock->closeCount, 1);
+
+        // Stop
+        dev.stop();
+        QVERIFY(!dev.isActive());
+        QCOMPARE(rawMock->closeCount, 2);
+
+        // Repeated stop is a safe no-op
+        dev.stop();
+        QVERIFY(!dev.isActive());
+        QCOMPARE(rawMock->closeCount, 2);
+    }
+
+    void testFailedVirtualDeviceInitializationAndCleanup() {
+        // Case 1: Open fails (e.g. permission denied)
+        {
+            auto mockBackend = std::make_unique<MockUinputBackend>();
+            mockBackend->failOpen = true;
+            UinputXboxDevice dev(std::move(mockBackend));
+            QVERIFY(!dev.start("FailOpen"));
+            QVERIFY(!dev.isActive());
+            QVERIFY(dev.status().contains("Failed to open /dev/uinput"));
+        }
+
+        // Case 2: ioctl UI_DEV_CREATE fails
+        {
+            auto mockBackend = std::make_unique<MockUinputBackend>();
+            MockUinputBackend* rawMock = mockBackend.get();
+            mockBackend->failIoctl = true;
+            mockBackend->failIoctlReq = UI_DEV_CREATE;
+            UinputXboxDevice dev(std::move(mockBackend));
+            QVERIFY(!dev.start("FailCreate"));
+            QVERIFY(!dev.isActive());
+            QVERIFY(dev.status().contains("UI_DEV_CREATE"));
+            // File descriptor was closed cleanly
+            QCOMPARE(rawMock->closeCount, 1);
+        }
+
+        // Case 3: write failure does not advance delta tracking; retries when error clears
+        {
+            auto mockBackend = std::make_unique<MockUinputBackend>();
+            MockUinputBackend* rawMock = mockBackend.get();
+            UinputXboxDevice dev(std::move(mockBackend));
+            QVERIFY(dev.start("WriteRetryTest"));
+            rawMock->recordedEvents.clear();
+
+            // Simulate write failure
+            rawMock->failWrite = true;
+            XboxPadState st;
+            st.a = true;
+            dev.syncState(st, {});
+            QVERIFY(rawMock->writeCount > 0);
+            QVERIFY(rawMock->recordedEvents.isEmpty());
+
+            // Clear write error: on next syncState, it must re-attempt to send the pending state change
+            rawMock->failWrite = false;
+            dev.syncState(st, {});
+            bool sawA = false;
+            for (const auto& ev : rawMock->recordedEvents) {
+                if (ev.type == EV_KEY && ev.code == BTN_SOUTH && ev.value == 1) sawA = true;
+            }
+            QVERIFY(sawA);
+        }
     }
 };
 

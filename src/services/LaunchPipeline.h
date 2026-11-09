@@ -22,7 +22,6 @@ struct LaunchPlan {
     QString prefixPath;
     QString runnerName;
     bool useXboxEmulation = false;
-    QString controllerProfileId;
 };
 
 class LaunchPipeline : public QObject {
@@ -70,6 +69,9 @@ private:
         qint64 startTimeEpoch = 0;
         QProcess* process = nullptr;
         bool isNative = false;
+        bool usesXboxEmulation = false;
+        QString workingDirectory;
+        QProcessEnvironment environment;
     };
 
     DatabaseManager* m_db;
@@ -82,6 +84,8 @@ private:
     QMap<QString, RunningSession*> m_running;
 
     void executeScript(const QString& scriptPathOrCmd, const QString& workingDir, const QProcessEnvironment& env, const QString& gameId);
+    void handleSessionTermination(const QString& gameId, int exitCode, bool isFailedToStart, const QString& errorString);
+    void updateEmulationLifecycle();
 };
 
 } // namespace Tsuki

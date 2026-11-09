@@ -8,6 +8,8 @@
 
 namespace Tsuki {
 
+class DatabaseManager;
+
 class AppSettings : public QObject {
     Q_OBJECT
 
@@ -57,7 +59,6 @@ class AppSettings : public QObject {
     Q_PROPERTY(bool fsyncDefault READ fsyncDefault WRITE setFsyncDefault NOTIFY performanceDefaultsChanged)
     Q_PROPERTY(QString defaultDxvkHud READ defaultDxvkHud WRITE setDefaultDxvkHud NOTIFY performanceDefaultsChanged)
     Q_PROPERTY(bool xboxEmulationDefault READ xboxEmulationDefault WRITE setXboxEmulationDefault NOTIFY controllerDefaultsChanged)
-    Q_PROPERTY(QString defaultControllerProfileId READ defaultControllerProfileId WRITE setDefaultControllerProfileId NOTIFY controllerDefaultsChanged)
     Q_PROPERTY(QString steamGridDbApiKey READ steamGridDbApiKey WRITE setSteamGridDbApiKey NOTIFY apiSettingsChanged)
     Q_PROPERTY(QString logLevel READ logLevel WRITE setLogLevel NOTIFY loggingSettingsChanged)
     Q_PROPERTY(bool enableWineDebugLogs READ enableWineDebugLogs WRITE setEnableWineDebugLogs NOTIFY loggingSettingsChanged)
@@ -153,8 +154,7 @@ public:
 
     bool xboxEmulationDefault() const { return m_xboxEmulationDefault; }
     void setXboxEmulationDefault(bool v);
-    QString defaultControllerProfileId() const { return m_defaultControllerProfileId; }
-    void setDefaultControllerProfileId(const QString& id);
+    void setDatabaseManager(DatabaseManager* db) { m_db = db; }
 
     QString steamGridDbApiKey() const { return m_steamGridDbApiKey; }
     void setSteamGridDbApiKey(const QString& key);
@@ -205,11 +205,11 @@ private:
     QString m_defaultDxvkHud = QStringLiteral("none");
 
     bool m_xboxEmulationDefault = false;
-    QString m_defaultControllerProfileId = QStringLiteral("default-xbox");
 
     QString m_steamGridDbApiKey;
     QString m_logLevel = QStringLiteral("info");
     bool m_enableWineDebugLogs = false;
+    DatabaseManager* m_db = nullptr;
 };
 
 } // namespace Tsuki

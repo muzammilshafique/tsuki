@@ -26,7 +26,6 @@
         <file alias="qml/pages/GameDetailPage.qml">../src/qml/pages/GameDetailPage.qml</file>
         <file alias="qml/pages/RunnersView.qml">../src/qml/pages/RunnersView.qml</file>
         <file alias="qml/pages/PrefixesView.qml">../src/qml/pages/PrefixesView.qml</file>
-        <file alias="qml/pages/ControllersView.qml">../src/qml/pages/ControllersView.qml</file>
         <file alias="qml/pages/DiagnosticsView.qml">../src/qml/pages/DiagnosticsView.qml</file>
         <file alias="qml/pages/SettingsPage.qml">../src/qml/pages/SettingsPage.qml</file>
 

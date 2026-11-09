@@ -38,11 +38,8 @@ public:
     std::optional<RunnerRecord> getRunner(const QString& runnerId) const;
     QList<RunnerRecord> getAllRunners() const;
 
-    // Controller Profiles CRUD
-    bool saveControllerProfile(const ControllerProfileRecord& profile);
-    bool removeControllerProfile(const QString& profileId);
-    std::optional<ControllerProfileRecord> getControllerProfile(const QString& profileId) const;
-    QList<ControllerProfileRecord> getAllControllerProfiles() const;
+    // Controller Emulation State Management
+    bool setAllGamesXboxEmulationState(bool enabled);
 
 private:
     QString m_dbPath;
@@ -53,7 +50,6 @@ private:
     static GameRecord recordFromQuery(class QSqlQuery& q);
     static PrefixRecord prefixFromQuery(class QSqlQuery& q);
     static RunnerRecord runnerFromQuery(class QSqlQuery& q);
-    static ControllerProfileRecord controllerProfileFromQuery(class QSqlQuery& q);
 };
 
 } // namespace Tsuki

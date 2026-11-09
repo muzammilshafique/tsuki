@@ -139,7 +139,6 @@ public:
     Q_INVOKABLE QVariantMap getGameMap(const QString& gameId) const;
     Q_INVOKABLE bool createDesktopShortcut(const QString& gameId, bool alsoOnDesktop = true);
     Q_INVOKABLE void openGameDirectory(const QString& gameId);
-
     Q_INVOKABLE void syncXboxEmulationToAllGames(bool enabled);
 
     // Helper to infer game title from .exe path

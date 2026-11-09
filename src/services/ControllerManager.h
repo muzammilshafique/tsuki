@@ -8,11 +8,10 @@
 #include <QTimer>
 #include <QVariantList>
 #include <QVariantMap>
+#include <memory>
 
 struct _SDL_GameController;
 typedef struct _SDL_GameController SDL_GameController;
-struct _SDL_Joystick;
-typedef struct _SDL_Joystick SDL_Joystick;
 
 namespace Tsuki {
 
@@ -29,14 +28,14 @@ class ControllerManager : public QObject {
 
     // Tsuki Controller Management Properties
     Q_PROPERTY(QVariantList detectedControllers READ detectedControllers NOTIFY controllersChanged)
-    Q_PROPERTY(QVariantList profiles READ profilesVariant NOTIFY profilesChanged)
     Q_PROPERTY(bool isEmulationActive READ isEmulationActive NOTIFY emulationStateChanged)
-    Q_PROPERTY(QString activeProfileId READ activeProfileId NOTIFY emulationStateChanged)
     Q_PROPERTY(QString uinputStatus READ uinputStatus NOTIFY emulationStateChanged)
-    Q_PROPERTY(QVariantMap liveInputState READ liveInputState NOTIFY liveInputChanged)
 
 public:
-    explicit ControllerManager(DatabaseManager* db, AppSettings* settings, QObject* parent = nullptr);
+    explicit ControllerManager(DatabaseManager* db,
+                               AppSettings* settings,
+                               std::unique_ptr<IUinputBackend> backend = nullptr,
+                               QObject* parent = nullptr);
     ~ControllerManager() override;
 
     bool isConnected() const { return !m_detectedControllers.isEmpty(); }
@@ -47,35 +46,37 @@ public:
     QString optionsIconSource() const { return QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-left.svg"); }
 
     QVariantList detectedControllers() const { return m_detectedControllers; }
-    QVariantList profilesVariant() const;
     bool isEmulationActive() const { return m_virtualXbox.isActive(); }
-    QString activeProfileId() const { return m_activeProfile.id; }
     QString uinputStatus() const { return m_virtualXbox.status(); }
-    QVariantMap liveInputState() const { return m_liveInputState; }
 
-    // Profile CRUD
-    Q_INVOKABLE QString createProfile(const QString& name, bool xboxEmulation = true, int deadzone = 4000);
-    Q_INVOKABLE bool saveProfile(const QString& profileId, const QString& name, bool xboxEmulation, int deadzone, const QVariantMap& mappings);
-    Q_INVOKABLE bool deleteProfile(const QString& profileId);
-    Q_INVOKABLE QVariantMap getProfileMap(const QString& profileId) const;
-
-    // Emulation Lifecycle (Automatic on game launch/exit + manual toggle for testing)
-    Q_INVOKABLE bool startXboxEmulation(const QString& profileId = QString());
+    // Emulation Lifecycle
+    Q_INVOKABLE bool startXboxEmulation();
     Q_INVOKABLE void stopXboxEmulation();
     Q_INVOKABLE void refreshControllers();
 
     // Generate SDL_GAMECONTROLLERCONFIG string for game launch environment
-    QString buildSdlGameControllerConfig(const QString& profileId = QString()) const;
+    QString buildSdlGameControllerConfig() const;
 
     static quint16 linuxKeyCodeForName(const QString& name) {
         return UinputXboxDevice::linuxKeyCodeForName(name);
     }
 
+    static bool isValidButtonName(const QString& name) {
+        return UinputXboxDevice::isValidButtonName(name);
+    }
+
+    static QVariantMap defaultXboxMappings() {
+        return UinputXboxDevice::defaultXboxMappings();
+    }
+
+    UinputXboxDevice* virtualXboxDevice() { return &m_virtualXbox; }
+
+    static constexpr int kStandardDeadzone = 4000;
+    static qint16 applyDeadzone(qint16 val, int deadzone = kStandardDeadzone);
+
 signals:
     void controllersChanged();
-    void profilesChanged();
     void emulationStateChanged();
-    void liveInputChanged();
     void uiKeySimulated(int qtKey);
 
 private:
@@ -86,17 +87,11 @@ private:
 
     QVariantList m_detectedControllers;
     SDL_GameController* m_primaryPad = nullptr;
-    SDL_Joystick* m_primaryJoy = nullptr;
-    int m_primaryInstanceId = -1;
 
     UinputXboxDevice m_virtualXbox;
-    ControllerProfileRecord m_activeProfile;
-    QVariantMap m_liveInputState;
 
     void pollSdlEvents();
     void syncVirtualXboxPad();
-    static qint16 applyDeadzone(qint16 val, int deadzone);
 };
 
 } // namespace Tsuki
-

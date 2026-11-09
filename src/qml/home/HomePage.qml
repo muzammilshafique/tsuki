@@ -114,11 +114,6 @@ Page {
                     onWinetricksRequested: (prefixId, name) => winetricksModal.openForPrefix(prefixId, name)
                 }
 
-                ControllersView {
-                    visible: page.activeSection === "controllers"
-                    anchors.fill: parent
-                }
-
                 DiagnosticsView {
                     visible: page.activeSection === "diagnostics"
                     anchors.fill: parent

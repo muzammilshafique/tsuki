@@ -1,4 +1,5 @@
 #include "AppSettings.h"
+#include "DatabaseManager.h"
 #include <QGuiApplication>
 #include <QStyleHints>
 
@@ -64,7 +65,6 @@ AppSettings::AppSettings(QObject* parent)
     m_defaultDxvkHud = m_settings.value(QStringLiteral("performance/dxvkHud"), QStringLiteral("none")).toString();
 
     m_xboxEmulationDefault = m_settings.value(QStringLiteral("controller/xboxEmulation"), false).toBool();
-    m_defaultControllerProfileId = m_settings.value(QStringLiteral("controller/defaultProfileId"), QStringLiteral("default-xbox")).toString();
 
     m_steamGridDbApiKey = m_settings.value(QStringLiteral("integrations/steamGridDbApiKey"), QString()).toString();
     m_logLevel = m_settings.value(QStringLiteral("logging/logLevel"), QStringLiteral("info")).toString();
@@ -364,13 +364,9 @@ void AppSettings::setXboxEmulationDefault(bool v) {
     if (m_xboxEmulationDefault == v) return;
     m_xboxEmulationDefault = v;
     m_settings.setValue(QStringLiteral("controller/xboxEmulation"), v);
-    emit controllerDefaultsChanged();
-}
-
-void AppSettings::setDefaultControllerProfileId(const QString& id) {
-    if (m_defaultControllerProfileId == id) return;
-    m_defaultControllerProfileId = id;
-    m_settings.setValue(QStringLiteral("controller/defaultProfileId"), id);
+    if (m_db) {
+        m_db->setAllGamesXboxEmulationState(v);
+    }
     emit controllerDefaultsChanged();
 }
 

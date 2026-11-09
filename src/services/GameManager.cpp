@@ -430,6 +430,7 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         rec.workingDirectory = cleanWorkDir;
         rec.launchArguments = launchArguments.trimmed();
         rec.runnerId = runnerId;
+        rec.xboxEmulationState = m_settings ? (m_settings->xboxEmulationDefault() ? 1 : 0) : 0;
         rec.addedTimestamp = QDateTime::currentSecsSinceEpoch();
 
         // Prefix resolution: either create a dedicated prefix or bind to an
@@ -509,6 +510,7 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         rec.launchArguments = launchArguments.trimmed();
         rec.runnerId.clear();
         rec.prefixId.clear();
+        rec.xboxEmulationState = m_settings ? (m_settings->xboxEmulationDefault() ? 1 : 0) : 0;
         rec.addedTimestamp = QDateTime::currentSecsSinceEpoch();
 
         rec.coverPath =
@@ -593,9 +595,6 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         if (updates.contains(QStringLiteral("gamemodeState")))
           g.gamemodeState =
               updates.value(QStringLiteral("gamemodeState")).toInt();
-        if (updates.contains(QStringLiteral("controllerProfileId")))
-          g.controllerProfileId =
-              updates.value(QStringLiteral("controllerProfileId")).toString();
         if (updates.contains(QStringLiteral("xboxEmulationState")))
           g.xboxEmulationState =
               updates.value(QStringLiteral("xboxEmulationState")).toInt();
@@ -626,7 +625,6 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
             g.processPriority == orig.processPriority &&
             g.mangohudState == orig.mangohudState &&
             g.gamemodeState == orig.gamemodeState &&
-            g.controllerProfileId == orig.controllerProfileId &&
             g.xboxEmulationState == orig.xboxEmulationState &&
             g.environmentVariables == orig.environmentVariables &&
             g.dllOverrides == orig.dllOverrides) {
@@ -855,6 +853,16 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         emit gamesChanged();
       }
 
+      void GameManager::syncXboxEmulationToAllGames(bool enabled) {
+        if (m_db) {
+          m_db->setAllGamesXboxEmulationState(enabled);
+        }
+        if (m_model) {
+          m_model->reload();
+        }
+        emit gamesChanged();
+      }
+
       QVariantMap GameManager::getGameMap(const QString &gameId) const {
         auto opt = m_db->getGame(gameId);
         if (!opt.has_value())
@@ -954,23 +962,6 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
                                 ? QFileInfo(opt->executablePath).absolutePath()
                                 : opt->workingDirectory;
         QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
-      }
-
-      void GameManager::syncXboxEmulationToAllGames(bool enabled) {
-        const int targetState = enabled ? 1 : 0;
-        const auto games = m_db->getAllGames();
-        bool anyUpdated = false;
-        for (auto g : games) {
-          if (g.xboxEmulationState != targetState) {
-            g.xboxEmulationState = targetState;
-            m_db->saveGame(g);
-            anyUpdated = true;
-          }
-        }
-        if (anyUpdated) {
-          m_model->reload();
-          emit gamesChanged();
-        }
       }
 
     } // namespace Tsuki

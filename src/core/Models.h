@@ -56,8 +56,7 @@ struct GameRecord {
     int processPriority = 0;  // nice level (-20 to 19, 0 = normal)
     int mangohudState = -1;   // -1: Default, 0: Off, 1: On
     int gamemodeState = -1;   // -1: Default, 0: Off, 1: On
-    QString controllerProfileId;
-    int xboxEmulationState = -1; // -1: Default, 0: Off, 1: On
+    int xboxEmulationState = 0;  // 0: Off, 1: On
 
     QString launchConfigToJson() const {
         QJsonObject obj;
@@ -76,7 +75,6 @@ struct GameRecord {
         obj["processPriority"] = processPriority;
         obj["mangohudState"] = mangohudState;
         obj["gamemodeState"] = gamemodeState;
-        obj["controllerProfileId"] = controllerProfileId;
         obj["xboxEmulationState"] = xboxEmulationState;
         return QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
     }
@@ -101,8 +99,7 @@ struct GameRecord {
         processPriority = obj["processPriority"].toInt(0);
         mangohudState = obj["mangohudState"].toInt(-1);
         gamemodeState = obj["gamemodeState"].toInt(-1);
-        controllerProfileId = obj["controllerProfileId"].toString();
-        xboxEmulationState = obj["xboxEmulationState"].toInt(-1);
+        xboxEmulationState = obj["xboxEmulationState"].toInt(0);
     }
 
     static QString toFileUrlOrOriginal(const QString& path) {
@@ -194,7 +191,6 @@ struct GameRecord {
         map["processPriority"] = processPriority;
         map["mangohudState"] = mangohudState;
         map["gamemodeState"] = gamemodeState;
-        map["controllerProfileId"] = controllerProfileId;
         map["xboxEmulationState"] = xboxEmulationState;
         return map;
     }
@@ -259,50 +255,6 @@ struct RunnerRecord {
         m["isProton"] = isProton();
         m["settings"] = settings;
         m["existsOnDisk"] = QFileInfo::exists(binaryPath);
-        return m;
-    }
-};
-
-struct ControllerProfileRecord {
-    QString id;
-    QString name;
-    bool xboxEmulation = true;
-    int deadzone = 4000;
-    QVariantMap buttonMappings;
-
-    static QVariantMap defaultXboxMappings() {
-        QVariantMap m;
-        m["a"] = QStringLiteral("BTN_SOUTH");
-        m["b"] = QStringLiteral("BTN_EAST");
-        m["x"] = QStringLiteral("BTN_NORTH");
-        m["y"] = QStringLiteral("BTN_WEST");
-        m["lb"] = QStringLiteral("BTN_TL");
-        m["rb"] = QStringLiteral("BTN_TR");
-        m["back"] = QStringLiteral("BTN_SELECT");
-        m["start"] = QStringLiteral("BTN_START");
-        m["guide"] = QStringLiteral("BTN_MODE");
-        m["lstick"] = QStringLiteral("BTN_THUMBL");
-        m["rstick"] = QStringLiteral("BTN_THUMBR");
-        m["dpad_up"] = QStringLiteral("DPAD_UP");
-        m["dpad_down"] = QStringLiteral("DPAD_DOWN");
-        m["dpad_left"] = QStringLiteral("DPAD_LEFT");
-        m["dpad_right"] = QStringLiteral("DPAD_RIGHT");
-        m["left_x"] = QStringLiteral("ABS_X");
-        m["left_y"] = QStringLiteral("ABS_Y");
-        m["right_x"] = QStringLiteral("ABS_RX");
-        m["right_y"] = QStringLiteral("ABS_RY");
-        m["lt"] = QStringLiteral("ABS_Z");
-        m["rt"] = QStringLiteral("ABS_RZ");
-        return m;
-    }
-
-    QVariantMap toVariantMap() const {
-        QVariantMap m;
-        m["id"] = id;
-        m["name"] = name;
-        m["xboxEmulation"] = xboxEmulation;
-        m["deadzone"] = deadzone;
-        m["buttonMappings"] = buttonMappings.isEmpty() ? defaultXboxMappings() : buttonMappings;
         return m;
     }
 };

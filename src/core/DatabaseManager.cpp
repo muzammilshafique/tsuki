@@ -102,15 +102,6 @@ bool DatabaseManager::initialize() {
                 is_system INTEGER DEFAULT 0,
                 settings_json TEXT
             )
-        )"),
-        QStringLiteral(R"(
-            CREATE TABLE IF NOT EXISTS controller_profiles (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                xbox_emulation INTEGER DEFAULT 1,
-                deadzone INTEGER DEFAULT 4000,
-                button_mappings_json TEXT
-            )
         )")
     };
 
@@ -120,6 +111,9 @@ bool DatabaseManager::initialize() {
             return false;
         }
     }
+
+    // Ensure legacy controller_profiles table is removed cleanly
+    q.exec(QStringLiteral("DROP TABLE IF EXISTS controller_profiles"));
 
     // Ensure 'platform' column exists in 'games' table (migration for existing databases)
     bool hasPlatform = false;
@@ -134,46 +128,6 @@ bool DatabaseManager::initialize() {
     if (!hasPlatform) {
         if (!q.exec(QStringLiteral("ALTER TABLE games ADD COLUMN platform TEXT DEFAULT 'windows'"))) {
             qWarning() << "Failed to migrate games table for platform column:" << q.lastError().text();
-        }
-    }
-
-    // Ensure default controller profile exists
-    q.prepare(QStringLiteral("SELECT COUNT(*) FROM controller_profiles WHERE id = 'default-xbox'"));
-    if (q.exec() && q.next() && q.value(0).toInt() == 0) {
-        ControllerProfileRecord defProfile;
-        defProfile.id = QStringLiteral("default-xbox");
-        defProfile.name = QStringLiteral("Xbox 360 Standard (XInput)");
-        defProfile.xboxEmulation = true;
-        defProfile.deadzone = 4000;
-        defProfile.buttonMappings = ControllerProfileRecord::defaultXboxMappings();
-        locker.unlock();
-        saveControllerProfile(defProfile);
-        locker.relock();
-    }
-
-    // Migrate any legacy swapped X/Y button mappings in controller profiles
-    q.prepare(QStringLiteral("SELECT id, button_mappings_json FROM controller_profiles"));
-    if (q.exec()) {
-        struct MigItem { QString id; QString json; };
-        QList<MigItem> toMigrate;
-        while (q.next()) {
-            const QString pid = q.value(0).toString();
-            const QString jsonStr = q.value(1).toString();
-            if (jsonStr.contains(QStringLiteral("\"x\":\"BTN_WEST\"")) &&
-                jsonStr.contains(QStringLiteral("\"y\":\"BTN_NORTH\""))) {
-                QJsonDocument doc = QJsonDocument::fromJson(jsonStr.toUtf8());
-                QJsonObject obj = doc.object();
-                obj[QStringLiteral("x")] = QStringLiteral("BTN_NORTH");
-                obj[QStringLiteral("y")] = QStringLiteral("BTN_WEST");
-                toMigrate.append({pid, QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact))});
-            }
-        }
-        for (const auto& item : toMigrate) {
-            QSqlQuery updateQ(db());
-            updateQ.prepare(QStringLiteral("UPDATE controller_profiles SET button_mappings_json = :json WHERE id = :id"));
-            updateQ.bindValue(QStringLiteral(":json"), item.json);
-            updateQ.bindValue(QStringLiteral(":id"), item.id);
-            updateQ.exec();
         }
     }
 
@@ -505,81 +459,55 @@ QList<RunnerRecord> DatabaseManager::getAllRunners() const {
     return list;
 }
 
-bool DatabaseManager::saveControllerProfile(const ControllerProfileRecord& profile) {
+bool DatabaseManager::setAllGamesXboxEmulationState(bool enabled) {
     QMutexLocker locker(&m_mutex);
-    QSqlQuery q(db());
-    q.prepare(QStringLiteral(R"(
-        INSERT OR REPLACE INTO controller_profiles (
-            id, name, xbox_emulation, deadzone, button_mappings_json
-        ) VALUES (
-            :id, :name, :xbox_emulation, :deadzone, :button_mappings_json
-        )
-    )"));
-    q.bindValue(QStringLiteral(":id"), profile.id);
-    q.bindValue(QStringLiteral(":name"), profile.name);
-    q.bindValue(QStringLiteral(":xbox_emulation"), profile.xboxEmulation ? 1 : 0);
-    q.bindValue(QStringLiteral(":deadzone"), profile.deadzone);
-    q.bindValue(QStringLiteral(":button_mappings_json"),
-                QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(profile.buttonMappings)).toJson(QJsonDocument::Compact)));
-    return q.exec();
-}
+    auto database = db();
+    if (!database.isOpen()) return false;
 
-bool DatabaseManager::removeControllerProfile(const QString& profileId) {
-    if (profileId == QStringLiteral("default-xbox")) return false;
-    QMutexLocker locker(&m_mutex);
-    QSqlQuery q(db());
-    q.prepare(QStringLiteral("DELETE FROM controller_profiles WHERE id = :id"));
-    q.bindValue(QStringLiteral(":id"), profileId);
-    return q.exec();
-}
-
-ControllerProfileRecord DatabaseManager::controllerProfileFromQuery(QSqlQuery& q) {
-    ControllerProfileRecord c;
-    c.id = q.value(0).toString();
-    c.name = q.value(1).toString();
-    c.xboxEmulation = q.value(2).toInt() != 0;
-    c.deadzone = q.value(3).toInt();
-    const QByteArray mBytes = q.value(4).toString().toUtf8();
-    if (!mBytes.isEmpty()) {
-        c.buttonMappings = QJsonDocument::fromJson(mBytes).object().toVariantMap();
+    QSqlQuery q(database);
+    if (!q.exec(QStringLiteral("SELECT id, launch_config_json FROM games"))) {
+        return false;
     }
-    if (c.buttonMappings.isEmpty()) {
-        c.buttonMappings = ControllerProfileRecord::defaultXboxMappings();
-    } else if (c.buttonMappings.value(QStringLiteral("x")).toString() == QStringLiteral("BTN_WEST") &&
-               c.buttonMappings.value(QStringLiteral("y")).toString() == QStringLiteral("BTN_NORTH")) {
-        c.buttonMappings[QStringLiteral("x")] = QStringLiteral("BTN_NORTH");
-        c.buttonMappings[QStringLiteral("y")] = QStringLiteral("BTN_WEST");
-    }
-    return c;
-}
 
-std::optional<ControllerProfileRecord> DatabaseManager::getControllerProfile(const QString& profileId) const {
-    QMutexLocker locker(&m_mutex);
-    QSqlQuery q(db());
-    q.prepare(QStringLiteral(R"(
-        SELECT id, name, xbox_emulation, deadzone, button_mappings_json
-        FROM controller_profiles WHERE id = :id
-    )"));
-    q.bindValue(QStringLiteral(":id"), profileId);
-    if (q.exec() && q.next()) {
-        return controllerProfileFromQuery(q);
-    }
-    return std::nullopt;
-}
+    struct UpdateItem {
+        QString id;
+        QString json;
+    };
+    QList<UpdateItem> updates;
+    const int targetVal = enabled ? 1 : 0;
 
-QList<ControllerProfileRecord> DatabaseManager::getAllControllerProfiles() const {
-    QMutexLocker locker(&m_mutex);
-    QList<ControllerProfileRecord> list;
-    QSqlQuery q(db());
-    if (q.exec(QStringLiteral(R"(
-        SELECT id, name, xbox_emulation, deadzone, button_mappings_json
-        FROM controller_profiles ORDER BY name ASC
-    )"))) {
-        while (q.next()) {
-            list.append(controllerProfileFromQuery(q));
+    while (q.next()) {
+        const QString id = q.value(0).toString();
+        const QString jsonStr = q.value(1).toString();
+        QJsonObject obj;
+        if (!jsonStr.isEmpty()) {
+            QJsonDocument doc = QJsonDocument::fromJson(jsonStr.toUtf8());
+            if (doc.isObject()) {
+                obj = doc.object();
+            }
+        }
+        bool changed = false;
+        if (!obj.contains(QStringLiteral("xboxEmulationState")) || obj.value(QStringLiteral("xboxEmulationState")).toInt(-1) != targetVal) {
+            obj[QStringLiteral("xboxEmulationState")] = targetVal;
+            changed = true;
+        }
+        if (obj.contains(QStringLiteral("controllerProfileId"))) {
+            obj.remove(QStringLiteral("controllerProfileId"));
+            changed = true;
+        }
+        if (changed) {
+            updates.append({id, QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact))});
         }
     }
-    return list;
+
+    for (const auto& item : updates) {
+        QSqlQuery updateQ(database);
+        updateQ.prepare(QStringLiteral("UPDATE games SET launch_config_json = :json WHERE id = :id"));
+        updateQ.bindValue(QStringLiteral(":json"), item.json);
+        updateQ.bindValue(QStringLiteral(":id"), item.id);
+        updateQ.exec();
+    }
+    return true;
 }
 
 } // namespace Tsuki

@@ -48,6 +48,7 @@ int main(int argc, char* argv[]) {
     Tsuki::AppSettings appSettings;
     Tsuki::DatabaseManager dbManager;
     dbManager.initialize();
+    appSettings.setDatabaseManager(&dbManager);
 
     Tsuki::DownloadManager downloadManager;
     Tsuki::RunnerManager runnerManager(&dbManager, &appSettings, &downloadManager);

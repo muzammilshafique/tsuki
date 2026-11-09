@@ -51,6 +51,9 @@ Page {
         if (gameId.length > 0) {
             gameData = uiController.gameManager.getGameMap(gameId)
             uiController.diagnosticsManager.selectedLogGameId = gameId
+            if (typeof detailXboxToggle !== "undefined" && detailXboxToggle) {
+                detailXboxToggle.checked = (root.gameData.xboxEmulationState === 1)
+            }
         }
     }
 
@@ -130,11 +133,9 @@ Page {
             pfxIdVal = pfxs[detailPrefixCombo.selectedIndex].id
         }
 
-        let ctrlProfVal = root.gameData.controllerProfileId || ""
-
-        let xboxEmuVal = (typeof xboxEmuToggle !== "undefined" && xboxEmuToggle)
-            ? (xboxEmuToggle.checked ? 1 : 0)
-            : (appSettings.xboxEmulationDefault ? 1 : 0)
+        let xboxEmuVal = (typeof detailXboxToggle !== "undefined" && detailXboxToggle)
+            ? (detailXboxToggle.checked ? 1 : 0)
+            : ((root.gameData.xboxEmulationState === 1) ? 1 : 0)
 
         let dxvkVal = (!root.isNative && typeof dxvkToggle !== "undefined" && dxvkToggle)
             ? (dxvkToggle.checked ? 1 : 0)
@@ -193,7 +194,6 @@ Page {
             cpuAffinity: (typeof affinityField !== "undefined" && affinityField) ? affinityField.text.trim() : (root.gameData.cpuAffinity || ""),
             processPriority: (typeof priorityField !== "undefined" && priorityField) ? (Number(priorityField.text) || 0) : (root.gameData.processPriority || 0),
             xboxEmulationState: xboxEmuVal,
-            controllerProfileId: ctrlProfVal,
             preLaunchScript: (typeof preScriptField !== "undefined" && preScriptField) ? preScriptField.text.trim() : (root.gameData.preLaunchScript || ""),
             postExitScript: (typeof postScriptField !== "undefined" && postScriptField) ? postScriptField.text.trim() : (root.gameData.postExitScript || ""),
             environmentVariables: envMap,
@@ -1282,28 +1282,30 @@ Page {
                                     font.letterSpacing: 0.8
                                 }
 
+                                // Xbox Controller Emulation ON/OFF Toggle
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 46
                                     spacing: 16
                                     ColumnLayout {
                                         spacing: 2
-                                        Label { text: "Xbox Controller Emulation"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                                        Label { text: "Emulates an authentic XInput gamepad via Linux /dev/uinput daemon"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                        Label {
+                                            text: "Xbox Controller Emulation"
+                                            color: appSettings.textColor
+                                            font.pixelSize: 14
+                                            font.weight: Font.Medium
+                                        }
+                                        Label {
+                                            text: "Emulates an authentic XInput gamepad via Linux /dev/uinput daemon"
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                        }
                                     }
                                     Item { Layout.fillWidth: true }
                                     Toggle {
-                                        id: xboxEmuToggle
-                                        checked: appSettings.xboxEmulationDefault
-                                        Connections {
-                                            target: appSettings
-                                            function onControllerDefaultsChanged() {
-                                                xboxEmuToggle.checked = appSettings.xboxEmulationDefault
-                                            }
-                                        }
+                                        id: detailXboxToggle
+                                        checked: (root.gameData.xboxEmulationState === 1)
                                         onToggled: (c) => {
-                                            appSettings.xboxEmulationDefault = c
-                                            uiController.gameManager.syncXboxEmulationToAllGames(c)
                                             root.saveAllChanges()
                                         }
                                     }

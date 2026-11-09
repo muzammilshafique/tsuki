@@ -80,8 +80,7 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
     const bool useFsync = (game.fsyncState == -1) ? m_settings->fsyncDefault() : (game.fsyncState == 1);
     const bool useMangohud = (game.mangohudState == -1) ? m_settings->mangohudDefault() : (game.mangohudState == 1);
     const bool useGamemode = (game.gamemodeState == -1) ? m_settings->gamemodeDefault() : (game.gamemodeState == 1);
-    plan.useXboxEmulation = (game.xboxEmulationState == -1) ? m_settings->xboxEmulationDefault() : (game.xboxEmulationState == 1);
-    plan.controllerProfileId = game.controllerProfileId.isEmpty() ? m_settings->defaultControllerProfileId() : game.controllerProfileId;
+    plan.useXboxEmulation = (game.xboxEmulationState == 1);
 
     // Esync & Fsync
     env.insert(QStringLiteral("WINEESYNC"), useEsync ? QStringLiteral("1") : QStringLiteral("0"));
@@ -136,7 +135,7 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
 
     // Controller SDL config injection
     if (plan.useXboxEmulation) {
-        const QString sdlCfg = m_controllerMgr->buildSdlGameControllerConfig(plan.controllerProfileId);
+        const QString sdlCfg = m_controllerMgr->buildSdlGameControllerConfig();
         if (!sdlCfg.isEmpty()) {
             env.insert(QStringLiteral("SDL_GAMECONTROLLERCONFIG"), sdlCfg);
         }
@@ -202,11 +201,10 @@ LaunchPlan LaunchPipeline::buildNativeLaunchPlan(const GameRecord& game) const {
 
     const bool useMangohud = (game.mangohudState == -1) ? m_settings->mangohudDefault() : (game.mangohudState == 1);
     const bool useGamemode = (game.gamemodeState == -1) ? m_settings->gamemodeDefault() : (game.gamemodeState == 1);
-    plan.useXboxEmulation = (game.xboxEmulationState == -1) ? m_settings->xboxEmulationDefault() : (game.xboxEmulationState == 1);
-    plan.controllerProfileId = game.controllerProfileId.isEmpty() ? m_settings->defaultControllerProfileId() : game.controllerProfileId;
+    plan.useXboxEmulation = (game.xboxEmulationState == 1);
 
     if (plan.useXboxEmulation) {
-        const QString sdlCfg = m_controllerMgr->buildSdlGameControllerConfig(plan.controllerProfileId);
+        const QString sdlCfg = m_controllerMgr->buildSdlGameControllerConfig();
         if (!sdlCfg.isEmpty()) {
             env.insert(QStringLiteral("SDL_GAMECONTROLLERCONFIG"), sdlCfg);
         }
@@ -377,9 +375,13 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
 
     m_diagMgr->startNewGameLog(gameId, header);
 
-    // Start Xbox/XInput controller emulation if enabled
+    // Start or share Xbox controller emulation
     if (plan.useXboxEmulation) {
-        m_controllerMgr->startXboxEmulation(plan.controllerProfileId);
+        if (!m_controllerMgr->isEmulationActive()) {
+            if (!m_controllerMgr->startXboxEmulation()) {
+                m_diagMgr->appendGameLog(gameId, QStringLiteral("[Tsuki] Warning: Failed to start Xbox emulation: %1\n").arg(m_controllerMgr->uinputStatus()));
+            }
+        }
     }
 
     // Run Pre-Launch Script if configured
@@ -405,6 +407,9 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
     session->startTimeEpoch = QDateTime::currentSecsSinceEpoch();
     session->process = proc;
     session->isNative = isNative;
+    session->usesXboxEmulation = plan.useXboxEmulation;
+    session->workingDirectory = plan.workingDirectory;
+    session->environment = plan.environment;
 
     m_running.insert(gameId, session);
     emit runningGamesChanged();
@@ -417,20 +422,37 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
         m_diagMgr->appendGameLog(gameId, QString::fromUtf8(proc->readAllStandardError()));
     });
 
-    connect(proc, &QProcess::errorOccurred, this, [this, gameId](QProcess::ProcessError err) {
-        m_diagMgr->appendGameLog(gameId, QStringLiteral("\n[Tsuki] Process error occurred (code %1)\n").arg(static_cast<int>(err)));
+    connect(proc, &QProcess::errorOccurred, this, [this, gameId, proc](QProcess::ProcessError err) {
+        m_diagMgr->appendGameLog(gameId, QStringLiteral("\n[Tsuki] Process error occurred (code %1): %2\n")
+            .arg(static_cast<int>(err)).arg(proc->errorString()));
+        if (err == QProcess::FailedToStart) {
+            handleSessionTermination(gameId, -1, true, proc->errorString());
+        }
     });
 
-    connect(proc, &QProcess::finished, this, [this, gameId, plan](int exitCode, QProcess::ExitStatus) {
-        if (!m_running.contains(gameId)) return;
-        RunningSession* sess = m_running.take(gameId);
-        const qint64 now = QDateTime::currentSecsSinceEpoch();
-        const qint64 elapsed = qMax<qint64>(1, now - sess->startTimeEpoch);
+    connect(proc, &QProcess::finished, this, [this, gameId](int exitCode, QProcess::ExitStatus) {
+        handleSessionTermination(gameId, exitCode, false, QString());
+    });
 
+    proc->start(plan.program, plan.arguments);
+    return true;
+}
+
+void LaunchPipeline::handleSessionTermination(const QString& gameId, int exitCode, bool isFailedToStart, const QString& errorString) {
+    if (!m_running.contains(gameId)) return;
+    RunningSession* sess = m_running.take(gameId);
+
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+    const qint64 elapsed = qMax<qint64>(1, now - sess->startTimeEpoch);
+
+    if (isFailedToStart) {
+        m_diagMgr->appendGameLog(gameId, QStringLiteral("\n=== Process failed to start: %1 ===\n").arg(errorString));
+        emit gameLaunchFailed(gameId, errorString.isEmpty() ? QStringLiteral("Failed to start process.") : errorString);
+    } else {
         m_db->updatePlaytime(gameId, elapsed, now);
 
         if (!sess->postExitScript.trimmed().isEmpty()) {
-            executeScript(sess->postExitScript, plan.workingDirectory, plan.environment, gameId);
+            executeScript(sess->postExitScript, sess->workingDirectory, sess->environment, gameId);
         }
 
         m_diagMgr->appendGameLog(gameId,
@@ -439,22 +461,29 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
         if (exitCode != 0) {
             m_diagMgr->analyzeGameLogForErrors(gameId, exitCode);
         }
-
-        if (sess->process) {
-            sess->process->deleteLater();
-        }
-        delete sess;
-
-        if (m_running.isEmpty()) {
-            m_controllerMgr->stopXboxEmulation();
-        }
-
-        emit runningGamesChanged();
         emit gameStopped(gameId, exitCode, elapsed);
-    });
+    }
 
-    proc->start(plan.program, plan.arguments);
-    return true;
+    if (sess->process) {
+        sess->process->deleteLater();
+    }
+    delete sess;
+
+    updateEmulationLifecycle();
+    emit runningGamesChanged();
+}
+
+void LaunchPipeline::updateEmulationLifecycle() {
+    bool anyNeedsEmulation = false;
+    for (const RunningSession* s : m_running) {
+        if (s->usesXboxEmulation) {
+            anyNeedsEmulation = true;
+            break;
+        }
+    }
+    if (!anyNeedsEmulation && m_controllerMgr->isEmulationActive()) {
+        m_controllerMgr->stopXboxEmulation();
+    }
 }
 
 void LaunchPipeline::stopGame(const QString& gameId) {
