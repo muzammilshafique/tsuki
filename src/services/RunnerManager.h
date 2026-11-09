@@ -34,15 +34,16 @@ public:
 
     Q_INVOKABLE void detectInstalledRunners();
     Q_INVOKABLE void fetchAvailableReleases(const QString& category = QStringLiteral("proton-ge"));
+    Q_INVOKABLE void downloadRelease(const QString& category,
+                                     const QString& tagName,
+                                     const QString& downloadUrl,
+                                     const QString& fileName = QString());
     Q_INVOKABLE void downloadAndInstallRunner(const QString& tagName,
                                               const QString& category,
                                               const QString& downloadUrl,
                                               const QString& fileName);
-    Q_INVOKABLE bool addCustomRunner(const QString& name,
-                                     const QString& type,
-                                     const QString& version,
-                                     const QString& binaryOrFolderPath);
     Q_INVOKABLE bool removeRunner(const QString& runnerId, bool deleteFiles = false);
+    Q_INVOKABLE bool uninstallRunner(const QString& runnerId);
     Q_INVOKABLE bool updateRunnerSettings(const QString& runnerId, const QVariantMap& settings);
     Q_INVOKABLE QVariantMap getRunnerMap(const QString& runnerId) const;
 
@@ -60,8 +61,10 @@ private:
     QVariantList m_availableReleases;
     bool m_isFetchingReleases = false;
 
-    void inspectAndRegisterRunnerDir(const QString& dirPath, bool isSystemDir = false);
+    void inspectAndRegisterRunnerDir(const QString& dirPath, bool isSystemDir = false, const QString& sourceLabel = QString());
+    void scanSteamRunners();
     void populateFallbackReleases(const QString& category);
+    bool isReleaseInstalled(const QString& tagName, const QString& name) const;
 };
 
 } // namespace Tsuki

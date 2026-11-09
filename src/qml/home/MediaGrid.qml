@@ -41,17 +41,26 @@ Item {
         if (runnerTag && runnerTag.length > 0) {
             let upper = runnerTag.toUpperCase()
             if (upper === "LINUX" || upper === "NATIVE") return "LINUX"
-            if (upper === "PROTON-GE" || upper === "PROTON") return "PROTON"
+            if (upper === "CACHYOS" || upper === "PROTON-CACHYOS") return "CACHYOS"
+            if (upper === "PROTON-GE") return "PROTON-GE"
+            if (upper === "PROTON") return "PROTON"
             return runnerTag
         }
-        return t === 3 ? "LINUX" : (t === 0 ? "PROTON" : (t === 1 ? "WINE" : "CUSTOM"))
+        return t === 3 ? "LINUX" : (t === 0 ? "PROTON" : (t === 1 ? "PROTON-GE" : "CACHYOS"))
     }
 
-    function tagColor(t) {
+    function tagColor(t, runnerTag) {
         if (t === 3) return appSettings.tagColorLinux
-        return t === 0 ? appSettings.tagColorSeries
-                       : (t === 1 ? appSettings.tagColorMovie
-                                  : appSettings.tagColorAnime)
+        if (runnerTag && runnerTag.length > 0) {
+            let u = runnerTag.toUpperCase()
+            if (u === "LINUX" || u === "NATIVE") return appSettings.tagColorLinux
+            if (u === "CACHYOS" || u === "PROTON-CACHYOS") return appSettings.tagColorCachyos
+            if (u === "PROTON-GE") return appSettings.tagColorProtonGe
+            if (u === "PROTON" || u === "STEAM PROTON") return appSettings.tagColorSteamProton
+        }
+        return t === 0 ? appSettings.tagColorSteamProton
+                       : (t === 1 ? appSettings.tagColorProtonGe
+                                  : appSettings.tagColorCachyos)
     }
 
     // ── GridView ─────────────────────────────────────────────────────────────
@@ -444,7 +453,7 @@ Item {
 
                                 Rectangle {
                                     width: typeLabelTop.implicitWidth + 8; height: 18; radius: 4
-                                    property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type)
+                                    property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type, cell.runnerTag)
                                     color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.18)
                                     Label {
                                         id: typeLabelTop; anchors.centerIn: parent
@@ -490,7 +499,7 @@ Item {
 
                                 Rectangle {
                                     width: typeLabelBottom.implicitWidth + 8; height: 18; radius: 4
-                                    property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type)
+                                    property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type, cell.runnerTag)
                                     color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.18)
                                     Label {
                                         id: typeLabelBottom; anchors.centerIn: parent
@@ -596,7 +605,7 @@ Item {
                     height: 22
                     radius: 4
                     width: onPosterTagLabel.implicitWidth + 10
-                    property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type)
+                    property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type, cell.runnerTag)
                     color: cell.isHoveredOrFocused ? (cell.isRunning ? "#22c55e" : appSettings.accentColor) : Qt.rgba(0, 0, 0, 0.75)
                     border.color: cell.isHoveredOrFocused ? (cell.isRunning ? "#22c55e" : appSettings.accentColor) : Qt.rgba(tagC.r, tagC.g, tagC.b, 0.4)
                     border.width: 1
@@ -641,7 +650,7 @@ Item {
                                 height: 20
                                 radius: 4
                                 width: hTagLblAbove.implicitWidth + 12
-                                property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type)
+                                property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type, cell.runnerTag)
                                 color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.25)
                                 border.color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.6)
                                 border.width: 1
@@ -693,7 +702,7 @@ Item {
                                 height: 20
                                 radius: 4
                                 width: hTagLblBelow.implicitWidth + 12
-                                property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type)
+                                property color tagC: cell.isRunning ? "#22c55e" : root.tagColor(cell.type, cell.runnerTag)
                                 color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.25)
                                 border.color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.6)
                                 border.width: 1

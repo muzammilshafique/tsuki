@@ -22,7 +22,6 @@
         <file alias="qml/home/Sidebar.qml">../src/qml/home/Sidebar.qml</file>
         <file alias="qml/home/TopBar.qml">../src/qml/home/TopBar.qml</file>
         <file alias="qml/home/MediaGrid.qml">../src/qml/home/MediaGrid.qml</file>
-        <file alias="qml/home/DownloadsDropdown.qml">../src/qml/home/DownloadsDropdown.qml</file>
         <file alias="qml/pages/GameDetailPage.qml">../src/qml/pages/GameDetailPage.qml</file>
         <file alias="qml/pages/RunnersView.qml">../src/qml/pages/RunnersView.qml</file>
         <file alias="qml/pages/PrefixesView.qml">../src/qml/pages/PrefixesView.qml</file>

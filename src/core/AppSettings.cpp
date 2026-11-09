@@ -27,6 +27,18 @@ AppSettings::AppSettings(QObject* parent)
     if (!m_tagColorLinux.isValid()) {
         m_tagColorLinux = QColor(QStringLiteral("#f59e0b"));
     }
+    m_tagColorSteamProton = QColor(m_settings.value(QStringLiteral("appearance/tagColorSteamProton"), QStringLiteral("#38bdf8")).toString());
+    if (!m_tagColorSteamProton.isValid()) {
+        m_tagColorSteamProton = QColor(QStringLiteral("#38bdf8"));
+    }
+    m_tagColorProtonGe = QColor(m_settings.value(QStringLiteral("appearance/tagColorProtonGe"), QStringLiteral("#a855f7")).toString());
+    if (!m_tagColorProtonGe.isValid()) {
+        m_tagColorProtonGe = QColor(QStringLiteral("#a855f7"));
+    }
+    m_tagColorCachyos = QColor(m_settings.value(QStringLiteral("appearance/tagColorCachyos"), QStringLiteral("#2dd4bf")).toString());
+    if (!m_tagColorCachyos.isValid()) {
+        m_tagColorCachyos = QColor(QStringLiteral("#2dd4bf"));
+    }
 
     if (QGuiApplication::styleHints()) {
         QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme) {
@@ -144,6 +156,27 @@ void AppSettings::setAccentColor(const QColor& c) {
     if (!c.isValid() || m_accentColor == c) return;
     m_accentColor = c;
     m_settings.setValue(QStringLiteral("appearance/accentColor"), c.name());
+    emit themeChanged();
+}
+
+void AppSettings::setTagColorSteamProton(const QColor& c) {
+    if (!c.isValid() || m_tagColorSteamProton == c) return;
+    m_tagColorSteamProton = c;
+    m_settings.setValue(QStringLiteral("appearance/tagColorSteamProton"), c.name());
+    emit themeChanged();
+}
+
+void AppSettings::setTagColorProtonGe(const QColor& c) {
+    if (!c.isValid() || m_tagColorProtonGe == c) return;
+    m_tagColorProtonGe = c;
+    m_settings.setValue(QStringLiteral("appearance/tagColorProtonGe"), c.name());
+    emit themeChanged();
+}
+
+void AppSettings::setTagColorCachyos(const QColor& c) {
+    if (!c.isValid() || m_tagColorCachyos == c) return;
+    m_tagColorCachyos = c;
+    m_settings.setValue(QStringLiteral("appearance/tagColorCachyos"), c.name());
     emit themeChanged();
 }
 

@@ -240,6 +240,7 @@ struct RunnerRecord {
     bool isProton() const {
         return type == QStringLiteral("proton") ||
                type == QStringLiteral("proton-ge") ||
+               type == QStringLiteral("proton-cachyos") ||
                binaryPath.endsWith(QStringLiteral("/proton"));
     }
 

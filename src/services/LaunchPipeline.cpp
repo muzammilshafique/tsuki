@@ -127,7 +127,14 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
     // Standalone Proton environment variables (no Steam client required)
     if (runner.isProton()) {
         env.insert(QStringLiteral("STEAM_COMPAT_DATA_PATH"), prefix.path);
-        env.insert(QStringLiteral("STEAM_COMPAT_CLIENT_INSTALL_PATH"), AppSettings::dataDir());
+        QString steamClientPath = QDir::homePath() + QStringLiteral("/.local/share/Steam");
+        if (!QDir(steamClientPath).exists()) {
+            steamClientPath = QDir::homePath() + QStringLiteral("/.steam/steam");
+        }
+        if (!QDir(steamClientPath).exists()) {
+            steamClientPath = AppSettings::dataDir();
+        }
+        env.insert(QStringLiteral("STEAM_COMPAT_CLIENT_INSTALL_PATH"), steamClientPath);
         env.insert(QStringLiteral("SteamAppId"), QStringLiteral("0"));
         env.insert(QStringLiteral("SteamGameId"), QStringLiteral("0"));
         env.insert(QStringLiteral("ULWGL_ID"), QStringLiteral("tsuki-") + game.id);

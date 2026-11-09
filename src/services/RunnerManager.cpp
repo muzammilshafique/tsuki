@@ -11,6 +11,8 @@
 #include <QJsonObject>
 #include <QUuid>
 #include <QFile>
+#include <QSet>
+#include <QRegularExpression>
 
 namespace Tsuki {
 
@@ -74,7 +76,9 @@ std::optional<RunnerRecord> RunnerManager::resolveRunner(const QString& preferre
 QString RunnerManager::runnerTagForId(const QString& runnerId) const {
     auto r = resolveRunner(runnerId);
     if (!r.has_value()) return QStringLiteral("WINE");
-    if (r->type == QStringLiteral("proton-ge") || r->type == QStringLiteral("proton")) return QStringLiteral("PROTON");
+    if (r->type == QStringLiteral("proton-cachyos")) return QStringLiteral("CACHYOS");
+    if (r->type == QStringLiteral("proton-ge")) return QStringLiteral("PROTON-GE");
+    if (r->type == QStringLiteral("proton")) return QStringLiteral("PROTON");
     if (r->type == QStringLiteral("wine-staging")) return QStringLiteral("STAGING");
     if (r->type == QStringLiteral("custom")) return QStringLiteral("CUSTOM");
     return QStringLiteral("WINE");
@@ -171,6 +175,78 @@ QStringList RunnerManager::findVkd3dDirectories() const {
     return dirs;
 }
 
+bool RunnerManager::isReleaseInstalled(const QString& tagName, const QString& name) const {
+    const auto all = m_db->getAllRunners();
+    for (const auto& r : all) {
+        if (!tagName.isEmpty() && (r.version.contains(tagName, Qt::CaseInsensitive) ||
+                                   r.name.contains(tagName, Qt::CaseInsensitive) ||
+                                   r.path.contains(tagName, Qt::CaseInsensitive))) {
+            return true;
+        }
+        if (!name.isEmpty() && (r.name.contains(name, Qt::CaseInsensitive) ||
+                                r.version.contains(name, Qt::CaseInsensitive) ||
+                                r.path.contains(name, Qt::CaseInsensitive))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void RunnerManager::scanSteamRunners() {
+    QSet<QString> steamLibraries;
+
+    const QStringList steamRoots = {
+        QDir::homePath() + QStringLiteral("/.local/share/Steam"),
+        QDir::homePath() + QStringLiteral("/.steam/steam"),
+        QDir::homePath() + QStringLiteral("/.steam/root"),
+        QDir::homePath() + QStringLiteral("/.var/app/com.valvesoftware.Steam/data/Steam"),
+        QDir::homePath() + QStringLiteral("/snap/steam/common/.local/share/Steam")
+    };
+
+    for (const QString& sRoot : steamRoots) {
+        if (!QDir(sRoot).exists()) continue;
+        steamLibraries.insert(QDir::cleanPath(sRoot));
+
+        const QStringList vdfCandidates = {
+            sRoot + QStringLiteral("/config/libraryfolders.vdf"),
+            sRoot + QStringLiteral("/steamapps/libraryfolders.vdf")
+        };
+        for (const QString& vdfPath : vdfCandidates) {
+            QFile vdfFile(vdfPath);
+            if (!vdfFile.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+            const QString content = QString::fromUtf8(vdfFile.readAll());
+            vdfFile.close();
+
+            static const QRegularExpression pathRegex(QStringLiteral(R"rx("path"\s+"([^"]+)")rx"));
+            auto it = pathRegex.globalMatch(content);
+            while (it.hasNext()) {
+                const auto match = it.next();
+                const QString libPath = QDir::cleanPath(match.captured(1).trimmed());
+                if (!libPath.isEmpty() && QDir(libPath).exists()) {
+                    steamLibraries.insert(libPath);
+                }
+            }
+        }
+    }
+
+    for (const QString& libRoot : steamLibraries) {
+        const QString commonDir = libRoot + QStringLiteral("/steamapps/common");
+        QDir d(commonDir);
+        if (!d.exists()) continue;
+
+        const QFileInfoList subDirs = d.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QFileInfo& fi : subDirs) {
+            const QString name = fi.fileName();
+            if (name.contains(QStringLiteral("proton"), Qt::CaseInsensitive)) {
+                const QString protonBin = fi.absoluteFilePath() + QStringLiteral("/proton");
+                if (QFileInfo::exists(protonBin)) {
+                    inspectAndRegisterRunnerDir(fi.absoluteFilePath(), true, QStringLiteral("Steam"));
+                }
+            }
+        }
+    }
+}
+
 void RunnerManager::detectInstalledRunners() {
     // 1. Prune non-existent runners from DB
     for (const RunnerRecord& existing : m_db->getAllRunners()) {
@@ -207,13 +283,19 @@ void RunnerManager::detectInstalledRunners() {
         m_db->saveRunner(sysRec);
     }
 
-    // 3. Scan Tsuki runner dir and common Linux compatibility tool locations
+    // 3. Scan Steam Proton installations (steamapps/common/Proton*)
+    scanSteamRunners();
+
+    // 4. Scan Tsuki runner dir and common Linux compatibility tool locations
     const QStringList scanRoots = {
         m_settings->defaultRunnerLocation(),
         QDir::homePath() + QStringLiteral("/.config/heroic/tools/proton"),
         QDir::homePath() + QStringLiteral("/.config/heroic/tools/wine"),
         QDir::homePath() + QStringLiteral("/.local/share/Steam/compatibilitytools.d"),
         QDir::homePath() + QStringLiteral("/.steam/root/compatibilitytools.d"),
+        QDir::homePath() + QStringLiteral("/.steam/steam/compatibilitytools.d"),
+        QDir::homePath() + QStringLiteral("/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d"),
+        QDir::homePath() + QStringLiteral("/snap/steam/common/.local/share/Steam/compatibilitytools.d"),
         QDir::homePath() + QStringLiteral("/.local/share/lutris/runners/wine"),
         QStringLiteral("/usr/share/steam/compatibilitytools.d")
     };
@@ -232,10 +314,10 @@ void RunnerManager::detectInstalledRunners() {
     if (m_settings->defaultRunnerId().isEmpty()) {
         const QList<RunnerRecord> all = m_db->getAllRunners();
         if (!all.isEmpty()) {
-            // Prefer Proton-GE if present, else System Wine
+            // Prefer Proton-GE or Proton-CachyOS if present, else any Proton, else first
             QString chosen = all.first().id;
             for (const RunnerRecord& r : all) {
-                if (r.type == QStringLiteral("proton-ge")) {
+                if (r.type == QStringLiteral("proton-ge") || r.type == QStringLiteral("proton-cachyos") || r.type == QStringLiteral("proton")) {
                     chosen = r.id;
                     break;
                 }
@@ -247,7 +329,7 @@ void RunnerManager::detectInstalledRunners() {
     emit runnersChanged();
 }
 
-void RunnerManager::inspectAndRegisterRunnerDir(const QString& dirPath, bool isSystemDir) {
+void RunnerManager::inspectAndRegisterRunnerDir(const QString& dirPath, bool isSystemDir, const QString& sourceLabel) {
     QDir dir(dirPath);
     if (!dir.exists()) return;
 
@@ -260,8 +342,9 @@ void RunnerManager::inspectAndRegisterRunnerDir(const QString& dirPath, bool isS
     if (QFileInfo::exists(protonBin)) {
         rec.binaryPath = protonBin;
         rec.path = dirPath;
-        if (folderName.contains(QStringLiteral("GE"), Qt::CaseInsensitive) ||
-            folderName.contains(QStringLiteral("CachyOS"), Qt::CaseInsensitive)) {
+        if (folderName.contains(QStringLiteral("CachyOS"), Qt::CaseInsensitive)) {
+            rec.type = QStringLiteral("proton-cachyos");
+        } else if (folderName.contains(QStringLiteral("GE"), Qt::CaseInsensitive)) {
             rec.type = QStringLiteral("proton-ge");
         } else {
             rec.type = QStringLiteral("proton");
@@ -273,7 +356,13 @@ void RunnerManager::inspectAndRegisterRunnerDir(const QString& dirPath, bool isS
             const QStringList parts = line.split(QLatin1Char(' '), Qt::SkipEmptyParts);
             if (parts.size() >= 2) rec.version = parts.last();
         }
-        rec.name = folderName;
+        if (!sourceLabel.isEmpty() && sourceLabel == QStringLiteral("Steam")) {
+            rec.name = folderName.startsWith(QStringLiteral("Steam"), Qt::CaseInsensitive)
+                           ? folderName
+                           : QStringLiteral("Steam %1").arg(folderName);
+        } else {
+            rec.name = folderName;
+        }
     } else if (QFileInfo::exists(wineBin) || QFileInfo::exists(filesWineBin)) {
         rec.binaryPath = QFileInfo::exists(wineBin) ? wineBin : filesWineBin;
         rec.path = dirPath;
@@ -286,7 +375,14 @@ void RunnerManager::inspectAndRegisterRunnerDir(const QString& dirPath, bool isS
         return;
     }
 
-    rec.id = QStringLiteral("runner-") + QString(folderName).replace(QLatin1Char(' '), QLatin1Char('_')).toLower();
+    QString cleanId = folderName.toLower();
+    cleanId.replace(QRegularExpression(QStringLiteral("[^a-z0-9_.-]+")), QStringLiteral("_"));
+    if (!sourceLabel.isEmpty()) {
+        rec.id = sourceLabel.toLower() + QStringLiteral("-") + cleanId;
+    } else {
+        rec.id = QStringLiteral("runner-") + cleanId;
+    }
+
     rec.isSystem = isSystemDir;
     if (auto existing = m_db->getRunner(rec.id); existing.has_value()) {
         rec.settings = existing->settings;
@@ -312,6 +408,25 @@ void RunnerManager::populateFallbackReleases(const QString& category) {
             m["fileName"] = pair.first + QStringLiteral(".tar.gz");
             m["sizeFormatted"] = QStringLiteral("~460 MB");
             m["publishedAt"] = QStringLiteral("Official Release");
+            m["isInstalled"] = isReleaseInstalled(pair.first, pair.first);
+            m_availableReleases.append(m);
+        }
+    } else if (category == QStringLiteral("proton-cachyos")) {
+        const QList<QPair<QString, QString>> items = {
+            {QStringLiteral("cachyos-11.0-20261015-slr"), QStringLiteral("https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-11.0-20261015-slr/proton-cachyos-11.0-20261015-slr-x86_64.tar.xz")},
+            {QStringLiteral("cachyos-11.0-20261014-slr"), QStringLiteral("https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-11.0-20261014-slr/proton-cachyos-11.0-20261014-slr-x86_64.tar.xz")},
+            {QStringLiteral("cachyos-11.0-20261005-slr"), QStringLiteral("https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-11.0-20261005-slr/proton-cachyos-11.0-20261005-slr-x86_64.tar.xz")}
+        };
+        for (const auto& pair : items) {
+            QVariantMap m;
+            m["tagName"] = pair.first;
+            m["name"] = QStringLiteral("proton-%1").arg(pair.first);
+            m["category"] = QStringLiteral("proton-cachyos");
+            m["downloadUrl"] = pair.second;
+            m["fileName"] = QStringLiteral("proton-%1-x86_64.tar.xz").arg(pair.first);
+            m["sizeFormatted"] = QStringLiteral("~800 MB");
+            m["publishedAt"] = QStringLiteral("CachyOS Proton Release");
+            m["isInstalled"] = isReleaseInstalled(pair.first, m["name"].toString());
             m_availableReleases.append(m);
         }
     } else if (category == QStringLiteral("wine") || category == QStringLiteral("wine-staging")) {
@@ -329,6 +444,7 @@ void RunnerManager::populateFallbackReleases(const QString& category) {
             m["fileName"] = pair.first + QStringLiteral(".tar.xz");
             m["sizeFormatted"] = QStringLiteral("~65 MB");
             m["publishedAt"] = QStringLiteral("Kron4ek Wine Builds");
+            m["isInstalled"] = isReleaseInstalled(pair.first, pair.first);
             m_availableReleases.append(m);
         }
     } else if (category == QStringLiteral("dxvk")) {
@@ -340,6 +456,7 @@ void RunnerManager::populateFallbackReleases(const QString& category) {
         m["fileName"] = QStringLiteral("dxvk-2.5.3.tar.gz");
         m["sizeFormatted"] = QStringLiteral("~9 MB");
         m["publishedAt"] = QStringLiteral("Vulkan D3D9/10/11");
+        m["isInstalled"] = false;
         m_availableReleases.append(m);
     } else if (category == QStringLiteral("vkd3d")) {
         QVariantMap m;
@@ -350,6 +467,7 @@ void RunnerManager::populateFallbackReleases(const QString& category) {
         m["fileName"] = QStringLiteral("vkd3d-proton-2.14.1.tar.zst");
         m["sizeFormatted"] = QStringLiteral("~4 MB");
         m["publishedAt"] = QStringLiteral("Vulkan D3D12");
+        m["isInstalled"] = false;
         m_availableReleases.append(m);
     }
     emit availableReleasesChanged();
@@ -361,6 +479,8 @@ void RunnerManager::fetchAvailableReleases(const QString& category) {
     QString apiUrl;
     if (category == QStringLiteral("proton-ge")) {
         apiUrl = QStringLiteral("https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=15");
+    } else if (category == QStringLiteral("proton-cachyos")) {
+        apiUrl = QStringLiteral("https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=15");
     } else if (category == QStringLiteral("wine") || category == QStringLiteral("wine-staging")) {
         apiUrl = QStringLiteral("https://api.github.com/repos/Kron4ek/Wine-Builds/releases?per_page=12");
     } else if (category == QStringLiteral("dxvk")) {
@@ -409,6 +529,11 @@ void RunnerManager::fetchAvailableReleases(const QString& category) {
                 if (fileName.contains(QStringLiteral("wow64")) || fileName.contains(QStringLiteral("x86.tar"))) {
                     continue;
                 }
+                if (category == QStringLiteral("proton-cachyos")) {
+                    if (fileName.contains(QStringLiteral("arm64"), Qt::CaseInsensitive)) continue;
+                    if (!fileName.contains(QStringLiteral("x86_64"), Qt::CaseInsensitive)) continue;
+                    if (fileName.contains(QStringLiteral("x86_64_v3"), Qt::CaseInsensitive)) continue;
+                }
                 if (category == QStringLiteral("wine-staging") && !fileName.contains(QStringLiteral("staging"))) {
                     continue;
                 }
@@ -424,6 +549,7 @@ void RunnerManager::fetchAvailableReleases(const QString& category) {
                 item["fileName"] = fileName;
                 item["sizeFormatted"] = DownloadManager::formatBytes(asset["size"].toVariant().toLongLong());
                 item["publishedAt"] = pub;
+                item["isInstalled"] = isReleaseInstalled(tag, item["name"].toString());
                 fetched.append(item);
                 break;
             }
@@ -434,6 +560,21 @@ void RunnerManager::fetchAvailableReleases(const QString& category) {
             emit availableReleasesChanged();
         }
     });
+}
+
+void RunnerManager::downloadRelease(const QString& category,
+                                     const QString& tagName,
+                                     const QString& downloadUrl,
+                                     const QString& fileName)
+{
+    QString actualFileName = fileName;
+    if (actualFileName.isEmpty()) {
+        actualFileName = QUrl(downloadUrl).fileName();
+        if (actualFileName.isEmpty()) {
+            actualFileName = tagName + (category == QStringLiteral("proton-cachyos") ? QStringLiteral(".tar.xz") : QStringLiteral(".tar.gz"));
+        }
+    }
+    downloadAndInstallRunner(tagName, category, downloadUrl, actualFileName);
 }
 
 void RunnerManager::downloadAndInstallRunner(const QString& tagName,
@@ -451,14 +592,27 @@ void RunnerManager::downloadAndInstallRunner(const QString& tagName,
     const QString destArchive = AppSettings::cacheDir() + QStringLiteral("/") + fileName;
     const QString taskId = QStringLiteral("runner-dl-") + tagName;
 
+    emit runnerOperationStatus(QStringLiteral("Starting download of %1…").arg(tagName), false);
+
     m_dl->enqueueDownload(taskId,
                           QStringLiteral("Runner: %1").arg(tagName),
                           QUrl(downloadUrl),
                           destArchive,
                           extractDir,
-                          [this, tagName](bool ok, const QString& msg) {
+                          [this, tagName, extractDir](bool ok, const QString& msg) {
                               if (ok) {
+                                  // Enforce executable permissions on extracted binaries
+                                  QDirIterator it(extractDir, {QStringLiteral("proton"), QStringLiteral("wine"), QStringLiteral("wineserver")},
+                                                  QDir::Files, QDirIterator::Subdirectories);
+                                  while (it.hasNext()) {
+                                      it.next();
+                                      QFile::setPermissions(it.filePath(),
+                                                            QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner |
+                                                            QFileDevice::ReadGroup | QFileDevice::ExeGroup |
+                                                            QFileDevice::ReadOther | QFileDevice::ExeOther);
+                                  }
                                   detectInstalledRunners();
+                                  fetchAvailableReleases(QStringLiteral("proton-ge"));
                                   emit runnerOperationStatus(QStringLiteral("Installed %1 successfully.").arg(tagName), false);
                               } else {
                                   emit runnerOperationStatus(QStringLiteral("Failed to install %1: %2").arg(tagName, msg), true);
@@ -466,63 +620,23 @@ void RunnerManager::downloadAndInstallRunner(const QString& tagName,
                           });
 }
 
-bool RunnerManager::addCustomRunner(const QString& name,
-                                    const QString& type,
-                                    const QString& version,
-                                    const QString& binaryOrFolderPath)
-{
-    QString cleanPath = binaryOrFolderPath;
-    if (cleanPath.startsWith(QStringLiteral("file://"))) {
-        cleanPath = QUrl(cleanPath).toLocalFile();
-    }
-
-    QFileInfo fi(cleanPath);
-    if (!fi.exists()) {
-        emit runnerOperationStatus(QStringLiteral("Path does not exist: %1").arg(cleanPath), true);
-        return false;
-    }
-
-    RunnerRecord rec;
-    rec.id = QStringLiteral("custom-") + QUuid::createUuid().toString(QUuid::Id128).left(8);
-    rec.name = name.trimmed().isEmpty() ? fi.fileName() : name.trimmed();
-    rec.type = type.isEmpty() ? QStringLiteral("custom") : type;
-    rec.version = version.trimmed().isEmpty() ? QStringLiteral("Custom") : version.trimmed();
-
-    if (fi.isDir()) {
-        rec.path = fi.absoluteFilePath();
-        if (QFileInfo::exists(rec.path + QStringLiteral("/proton"))) {
-            rec.binaryPath = rec.path + QStringLiteral("/proton");
-        } else if (QFileInfo::exists(rec.path + QStringLiteral("/bin/wine"))) {
-            rec.binaryPath = rec.path + QStringLiteral("/bin/wine");
-        } else if (QFileInfo::exists(rec.path + QStringLiteral("/files/bin/wine"))) {
-            rec.binaryPath = rec.path + QStringLiteral("/files/bin/wine");
-        } else {
-            emit runnerOperationStatus(QStringLiteral("No wine or proton binary found inside %1").arg(cleanPath), true);
-            return false;
-        }
-    } else {
-        rec.binaryPath = fi.absoluteFilePath();
-        rec.path = fi.absolutePath();
-    }
-
-    rec.isSystem = false;
-    const bool ok = m_db->saveRunner(rec);
-    if (ok) {
-        emit runnersChanged();
-        emit runnerOperationStatus(QStringLiteral("Added runner '%1'.").arg(rec.name), false);
-    }
-    return ok;
+bool RunnerManager::uninstallRunner(const QString& runnerId) {
+    return removeRunner(runnerId, true);
 }
 
 bool RunnerManager::removeRunner(const QString& runnerId, bool deleteFiles) {
     auto rec = m_db->getRunner(runnerId);
     if (!rec.has_value()) return false;
     if (rec->isSystem && deleteFiles) {
-        deleteFiles = false; // Never delete system binaries
+        deleteFiles = false; // Never delete system or Steam binaries
     }
 
-    if (deleteFiles && !rec->path.isEmpty() && rec->path.startsWith(m_settings->defaultRunnerLocation())) {
-        QDir(rec->path).removeRecursively();
+    if (deleteFiles && !rec->path.isEmpty()) {
+        const QString runnerBase = QDir::cleanPath(m_settings->defaultRunnerLocation());
+        const QString targetPath = QDir::cleanPath(rec->path);
+        if (targetPath.startsWith(runnerBase) && targetPath != runnerBase) {
+            QDir(targetPath).removeRecursively();
+        }
     }
 
     const bool ok = m_db->removeRunner(runnerId);
@@ -532,6 +646,7 @@ bool RunnerManager::removeRunner(const QString& runnerId, bool deleteFiles) {
             m_settings->setDefaultRunnerId(remaining.isEmpty() ? QString() : remaining.first().id);
         }
         emit runnersChanged();
+        emit runnerOperationStatus(QStringLiteral("Runner removed."), false);
     }
     return ok;
 }

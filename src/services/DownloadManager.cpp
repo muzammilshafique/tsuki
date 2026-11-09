@@ -8,15 +8,66 @@
 namespace Tsuki {
 
 DownloadManager::DownloadManager(QObject* parent)
-    : QObject(parent)
+    : QAbstractListModel(parent)
 {
 }
 
 DownloadManager::~DownloadManager() {
-    const QList<QString> keys = m_tasks.keys();
+    const QStringList keys = m_tasks.keys();
     for (const QString& k : keys) {
         cancelDownload(k);
     }
+}
+
+int DownloadManager::rowCount(const QModelIndex& parent) const {
+    if (parent.isValid()) return 0;
+    return m_taskList.size();
+}
+
+QVariant DownloadManager::data(const QModelIndex& index, int role) const {
+    if (!index.isValid() || index.row() < 0 || index.row() >= m_taskList.size()) {
+        return QVariant();
+    }
+    const DownloadTask* t = m_taskList.at(index.row());
+    switch (role) {
+    case IdRole:
+        return t->id;
+    case TitleRole:
+    case DisplayNameRole:
+    case Qt::DisplayRole:
+        return t->title;
+    case TypeRole:
+        return 1;
+    case ProgressRole:
+        return t->progress;
+    case DownloadedSizeStrRole:
+        return formatBytes(t->bytesDownloaded);
+    case TotalSizeStrRole:
+        return t->totalBytes > 0 ? formatBytes(t->totalBytes) : QString();
+    case EtaRole:
+        return t->isExtracting ? QStringLiteral("Extracting…") : t->eta;
+    case IsPausedRole:
+        return t->isPaused;
+    case IsExtractingRole:
+        return t->isExtracting;
+    default:
+        return QVariant();
+    }
+}
+
+QHash<int, QByteArray> DownloadManager::roleNames() const {
+    QHash<int, QByteArray> roles;
+    roles[IdRole] = "id";
+    roles[TitleRole] = "title";
+    roles[DisplayNameRole] = "displayName";
+    roles[TypeRole] = "type";
+    roles[ProgressRole] = "progress";
+    roles[DownloadedSizeStrRole] = "downloadedSizeStr";
+    roles[TotalSizeStrRole] = "totalSizeStr";
+    roles[EtaRole] = "eta";
+    roles[IsPausedRole] = "isPaused";
+    roles[IsExtractingRole] = "isExtracting";
+    return roles;
 }
 
 QString DownloadManager::formatBytes(qint64 bytes) {
@@ -33,18 +84,18 @@ QString DownloadManager::formatBytes(qint64 bytes) {
 
 QVariantList DownloadManager::activeDownloads() const {
     QVariantList list;
-    for (auto it = m_tasks.constBegin(); it != m_tasks.constEnd(); ++it) {
-        const DownloadTask* t = it.value();
+    for (const DownloadTask* t : m_taskList) {
         QVariantMap m;
         m["id"] = t->id;
         m["title"] = t->title;
         m["displayName"] = t->title;
-        m["type"] = 1; // Hide season/episode subtitle in DownloadsDropdown
+        m["type"] = 1;
         m["progress"] = t->progress;
         m["downloadedSizeStr"] = formatBytes(t->bytesDownloaded);
         m["totalSizeStr"] = t->totalBytes > 0 ? formatBytes(t->totalBytes) : QString();
         m["eta"] = t->isExtracting ? QStringLiteral("Extracting…") : t->eta;
         m["isPaused"] = t->isPaused;
+        m["isExtracting"] = t->isExtracting;
         list.append(m);
     }
     return list;
@@ -87,13 +138,21 @@ QString DownloadManager::enqueueDownload(const QString& id,
         return taskId;
     }
 
+    const int newRow = m_taskList.size();
+    beginInsertRows(QModelIndex(), newRow, newRow);
+    m_taskList.append(task);
     m_tasks.insert(taskId, task);
+    endInsertRows();
+
     emit activeDownloadsChanged();
-    startRequest(task);
+    startRequest(taskId);
     return taskId;
 }
 
-void DownloadManager::startRequest(DownloadTask* task) {
+void DownloadManager::startRequest(const QString& taskId) {
+    if (!m_tasks.contains(taskId)) return;
+    DownloadTask* task = m_tasks.value(taskId);
+
     QNetworkRequest req(task->url);
     req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("TsukiLauncher/1.0 (Linux; Qt6)"));
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
@@ -102,28 +161,44 @@ void DownloadManager::startRequest(DownloadTask* task) {
     }
 
     task->timer.start();
-    task->reply = m_nam.get(req);
+    QNetworkReply* reply = m_nam.get(req);
+    task->reply = reply;
 
-    connect(task->reply, &QNetworkReply::readyRead, this, [this, task]() {
-        if (!task->file || !task->reply) return;
-        const QByteArray chunk = task->reply->readAll();
-        task->file->write(chunk);
+    connect(reply, &QNetworkReply::readyRead, this, [this, taskId, reply]() {
+        if (!m_tasks.contains(taskId)) return;
+        DownloadTask* t = m_tasks.value(taskId);
+        if (t->reply != reply || !t->file) return;
+
+        const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (statusCode == 200 && t->resumeOffset > 0) {
+            t->resumeOffset = 0;
+            t->file->resize(0);
+            t->file->seek(0);
+        }
+
+        const QByteArray chunk = reply->readAll();
+        t->file->write(chunk);
     });
 
-    connect(task->reply, &QNetworkReply::downloadProgress, this, [this, task](qint64 bytesReceived, qint64 bytesTotal) {
-        if (task->isPaused) return;
-        const qint64 totalDl = task->resumeOffset + bytesReceived;
-        const qint64 totalSize = bytesTotal > 0 ? (task->resumeOffset + bytesTotal) : 0;
-        task->bytesDownloaded = totalDl;
-        task->totalBytes = totalSize;
+    connect(reply, &QNetworkReply::downloadProgress, this, [this, taskId, reply](qint64 bytesReceived, qint64 bytesTotal) {
+        if (!m_tasks.contains(taskId)) return;
+        DownloadTask* t = m_tasks.value(taskId);
+        if (t->reply != reply || t->isPaused) return;
+
+        const int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const qint64 offset = (statusCode == 200) ? 0 : t->resumeOffset;
+        const qint64 totalDl = offset + bytesReceived;
+        const qint64 totalSize = bytesTotal > 0 ? (offset + bytesTotal) : 0;
+        t->bytesDownloaded = totalDl;
+        t->totalBytes = totalSize;
 
         double pct = 0.0;
         if (totalSize > 0) {
-            pct = (static_cast<double>(totalDl) / static_cast<double>(totalSize)) * (task->extractToDir.isEmpty() ? 100.0 : 90.0);
+            pct = (static_cast<double>(totalDl) / static_cast<double>(totalSize)) * (t->extractToDir.isEmpty() ? 100.0 : 90.0);
         }
-        task->progress = pct;
+        t->progress = pct;
 
-        const qint64 elapsedMs = qMax<qint64>(1, task->timer.elapsed());
+        const qint64 elapsedMs = qMax<qint64>(1, t->timer.elapsed());
         const double speedBps = (static_cast<double>(bytesReceived) * 1000.0) / static_cast<double>(elapsedMs);
         QString etaStr;
         if (speedBps > 100.0 && totalSize > totalDl) {
@@ -133,18 +208,31 @@ void DownloadManager::startRequest(DownloadTask* task) {
         } else {
             etaStr = QStringLiteral("%1/s").arg(formatBytes(static_cast<qint64>(speedBps)));
         }
-        task->eta = etaStr;
+        t->eta = etaStr;
 
-        emit downloadProgress(task->id, task->progress);
-        emit downloadProgressDetailed(task->id, task->progress, totalDl, totalSize, speedBps, etaStr);
+        emit downloadProgress(taskId, t->progress);
+        emit downloadProgressDetailed(taskId, t->progress, totalDl, totalSize, speedBps, etaStr);
+
+        const int row = m_taskList.indexOf(t);
+        if (row >= 0) {
+            emit dataChanged(createIndex(row, 0), createIndex(row, 0),
+                             {ProgressRole, DownloadedSizeStrRole, TotalSizeStrRole, EtaRole});
+        }
     });
 
-    connect(task->reply, &QNetworkReply::finished, this, [this, task]() {
-        if (!task->reply) return;
-        QNetworkReply* reply = task->reply;
-        task->reply = nullptr;
+    connect(reply, &QNetworkReply::finished, this, [this, taskId, reply]() {
+        if (!m_tasks.contains(taskId)) {
+            reply->deleteLater();
+            return;
+        }
+        DownloadTask* t = m_tasks.value(taskId);
+        if (t->reply != reply) {
+            reply->deleteLater();
+            return;
+        }
+        t->reply = nullptr;
 
-        if (task->isPaused) {
+        if (t->isPaused) {
             reply->deleteLater();
             return;
         }
@@ -152,76 +240,85 @@ void DownloadManager::startRequest(DownloadTask* task) {
         if (reply->error() != QNetworkReply::NoError) {
             const QString err = reply->errorString();
             reply->deleteLater();
-            const QString id = task->id;
-            auto cb = task->callback;
-            cleanupTask(id);
+            auto cb = t->callback;
+            cleanupTask(taskId);
             if (cb) cb(false, err);
-            emit downloadFailed(id, err);
+            emit downloadFailed(taskId, err);
             return;
         }
 
-        if (task->file) {
+        if (t->file) {
             const QByteArray remaining = reply->readAll();
-            if (!remaining.isEmpty()) task->file->write(remaining);
-            task->file->flush();
-            task->file->close();
+            if (!remaining.isEmpty()) t->file->write(remaining);
+            t->file->flush();
+            t->file->close();
         }
         reply->deleteLater();
 
-        QFile::remove(task->destinationFile);
-        QFile::rename(task->destinationFile + QStringLiteral(".part"), task->destinationFile);
+        QFile::remove(t->destinationFile);
+        QFile::rename(t->destinationFile + QStringLiteral(".part"), t->destinationFile);
 
-        if (!task->extractToDir.isEmpty()) {
-            extractArchiveAsync(task);
+        if (!t->extractToDir.isEmpty()) {
+            extractArchiveAsync(taskId);
         } else {
-            task->progress = 100.0;
-            emit downloadProgress(task->id, 100.0);
-            const QString id = task->id;
-            const QString dest = task->destinationFile;
-            auto cb = task->callback;
-            cleanupTask(id);
+            t->progress = 100.0;
+            emit downloadProgress(taskId, 100.0);
+            const QString dest = t->destinationFile;
+            auto cb = t->callback;
+            cleanupTask(taskId);
             if (cb) cb(true, dest);
-            emit downloadFinished(id, dest);
+            emit downloadFinished(taskId, dest);
         }
     });
 }
 
-void DownloadManager::extractArchiveAsync(DownloadTask* task) {
+void DownloadManager::extractArchiveAsync(const QString& taskId) {
+    if (!m_tasks.contains(taskId)) return;
+    DownloadTask* task = m_tasks.value(taskId);
     task->isExtracting = true;
     task->progress = 92.0;
     task->eta = QStringLiteral("Extracting…");
-    emit activeDownloadsChanged();
-    emit downloadProgressDetailed(task->id, 92.0, task->bytesDownloaded, task->totalBytes, 0, task->eta);
+
+    const int row = m_taskList.indexOf(task);
+    if (row >= 0) {
+        emit dataChanged(createIndex(row, 0), createIndex(row, 0), {ProgressRole, EtaRole, IsExtractingRole});
+    }
+    emit downloadProgressDetailed(taskId, 92.0, task->bytesDownloaded, task->totalBytes, 0, task->eta);
 
     QDir().mkpath(task->extractToDir);
     auto* proc = new QProcess(this);
+    task->process = proc;
+
     QString program = QStringLiteral("tar");
-    QStringList args = {QStringLiteral("-xf"), task->destinationFile, QStringLiteral("-C"), task->extractToDir};
+    QStringList args = {QStringLiteral("-xf"), task->destinationFile, QStringLiteral("-C"), task->extractToDir, QStringLiteral("--no-same-owner"), QStringLiteral("--delay-directory-restore")};
 
     if (task->destinationFile.endsWith(QStringLiteral(".zip"), Qt::CaseInsensitive)) {
         program = QStringLiteral("7z");
         args = {QStringLiteral("x"), task->destinationFile, QStringLiteral("-o") + task->extractToDir, QStringLiteral("-y")};
     }
 
-    connect(proc, &QProcess::finished, this, [this, task, proc](int exitCode, QProcess::ExitStatus status) {
+    connect(proc, &QProcess::finished, this, [this, taskId, proc](int exitCode, QProcess::ExitStatus status) {
         const QString errOut = QString::fromUtf8(proc->readAllStandardError());
         proc->deleteLater();
 
-        const QString id = task->id;
-        const QString extractDir = task->extractToDir;
-        const QString archiveFile = task->destinationFile;
-        auto cb = task->callback;
+        if (!m_tasks.contains(taskId)) return;
+        DownloadTask* t = m_tasks.value(taskId);
+        t->process = nullptr;
+
+        const QString extractDir = t->extractToDir;
+        const QString archiveFile = t->destinationFile;
+        auto cb = t->callback;
 
         QFile::remove(archiveFile);
-        cleanupTask(id);
+        cleanupTask(taskId);
 
         if (status == QProcess::NormalExit && exitCode == 0) {
             if (cb) cb(true, extractDir);
-            emit downloadFinished(id, extractDir);
+            emit downloadFinished(taskId, extractDir);
         } else {
             const QString errMsg = errOut.isEmpty() ? QStringLiteral("Archive extraction failed (exit code %1)").arg(exitCode) : errOut;
             if (cb) cb(false, errMsg);
-            emit downloadFailed(id, errMsg);
+            emit downloadFailed(taskId, errMsg);
         }
     });
 
@@ -233,53 +330,93 @@ void DownloadManager::togglePauseDownload(const QString& id) {
     DownloadTask* task = m_tasks.value(id);
     if (task->isExtracting) return;
 
+    const int row = m_taskList.indexOf(task);
+
     if (!task->isPaused) {
         task->isPaused = true;
         if (task->reply) {
+            task->reply->disconnect(this);
             task->reply->abort();
+            task->reply->deleteLater();
+            task->reply = nullptr;
         }
         if (task->file) {
             task->file->flush();
             task->resumeOffset = task->file->size();
+            task->file->close();
         }
         task->eta = QStringLiteral("Paused");
+        if (row >= 0) {
+            emit dataChanged(createIndex(row, 0), createIndex(row, 0), {IsPausedRole, EtaRole});
+        }
         emit downloadPaused(id);
-        emit activeDownloadsChanged();
     } else {
         task->isPaused = false;
-        if (task->file && !task->file->isOpen()) {
-            task->file->open(QIODevice::WriteOnly | QIODevice::Append);
+        task->eta = QStringLiteral("Resuming…");
+        if (task->file) {
+            if (!task->file->open(QIODevice::WriteOnly | QIODevice::Append)) {
+                task->file->open(QIODevice::WriteOnly | QIODevice::Truncate);
+                task->resumeOffset = 0;
+            }
         }
-        startRequest(task);
+        if (row >= 0) {
+            emit dataChanged(createIndex(row, 0), createIndex(row, 0), {IsPausedRole, EtaRole});
+        }
+        startRequest(id);
         emit downloadResumed(id);
-        emit activeDownloadsChanged();
     }
 }
 
 void DownloadManager::cancelDownload(const QString& id) {
     if (!m_tasks.contains(id)) return;
     DownloadTask* task = m_tasks.value(id);
-    task->isPaused = true;
-    if (task->reply) {
-        task->reply->abort();
-        task->reply->deleteLater();
-        task->reply = nullptr;
-    }
     const QString partFile = task->destinationFile + QStringLiteral(".part");
+    const QString archiveFile = task->destinationFile;
+    auto cb = task->callback;
+
     cleanupTask(id);
+
     QFile::remove(partFile);
+    QFile::remove(archiveFile);
+
+    if (cb) cb(false, QStringLiteral("Download cancelled"));
+    emit downloadFailed(id, QStringLiteral("Cancelled"));
 }
 
 void DownloadManager::cleanupTask(const QString& id) {
     if (!m_tasks.contains(id)) return;
-    DownloadTask* task = m_tasks.take(id);
+    DownloadTask* task = m_tasks.value(id);
+
+    const int row = m_taskList.indexOf(task);
+    if (row >= 0) {
+        beginRemoveRows(QModelIndex(), row, row);
+        m_taskList.removeAt(row);
+        m_tasks.remove(id);
+        endRemoveRows();
+    } else {
+        m_tasks.remove(id);
+    }
+
+    if (task->reply) {
+        task->reply->disconnect(this);
+        task->reply->abort();
+        task->reply->deleteLater();
+        task->reply = nullptr;
+    }
+    if (task->process) {
+        task->process->disconnect(this);
+        task->process->kill();
+        task->process->deleteLater();
+        task->process = nullptr;
+    }
     if (task->file) {
         if (task->file->isOpen()) task->file->close();
         delete task->file;
+        task->file = nullptr;
     }
     delete task;
+
     emit activeDownloadsChanged();
 }
 
 } // namespace Tsuki
-

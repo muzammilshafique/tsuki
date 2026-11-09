@@ -1,25 +1,46 @@
 #pragma once
 
-#include <QObject>
+#include <QAbstractListModel>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QFile>
+#include <QProcess>
 #include <QElapsedTimer>
 #include <QVariantList>
 #include <QVariantMap>
 #include <QMap>
+#include <QList>
 #include <functional>
 
 namespace Tsuki {
 
-class DownloadManager : public QObject {
+class DownloadManager : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(int activeDownloadCount READ activeDownloadCount NOTIFY activeDownloadsChanged)
     Q_PROPERTY(QVariantList activeDownloads READ activeDownloads NOTIFY activeDownloadsChanged)
 
 public:
+    enum DownloadRoles {
+        IdRole = Qt::UserRole + 1,
+        TitleRole,
+        DisplayNameRole,
+        TypeRole,
+        ProgressRole,
+        DownloadedSizeStrRole,
+        TotalSizeStrRole,
+        EtaRole,
+        IsPausedRole,
+        IsExtractingRole
+    };
+    Q_ENUM(DownloadRoles)
+
     explicit DownloadManager(QObject* parent = nullptr);
     ~DownloadManager() override;
+
+    // QAbstractListModel overrides
+    int rowCount(const QModelIndex& parent = QModelIndex()) const override;
+    QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+    QHash<int, QByteArray> roleNames() const override;
 
     int activeDownloadCount() const { return m_tasks.size(); }
     QVariantList activeDownloads() const;
@@ -55,6 +76,7 @@ private:
         QString extractToDir;
         QFile* file = nullptr;
         QNetworkReply* reply = nullptr;
+        QProcess* process = nullptr;
         qint64 resumeOffset = 0;
         qint64 bytesDownloaded = 0;
         qint64 totalBytes = 0;
@@ -67,12 +89,12 @@ private:
     };
 
     QNetworkAccessManager m_nam;
+    QList<DownloadTask*> m_taskList;
     QMap<QString, DownloadTask*> m_tasks;
 
-    void startRequest(DownloadTask* task);
-    void extractArchiveAsync(DownloadTask* task);
+    void startRequest(const QString& taskId);
+    void extractArchiveAsync(const QString& taskId);
     void cleanupTask(const QString& id);
 };
 
 } // namespace Tsuki
-

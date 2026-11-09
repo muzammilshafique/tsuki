@@ -98,7 +98,14 @@ QProcessEnvironment PrefixManager::buildPrefixEnvironment(const PrefixRecord& pf
     env.insert(QStringLiteral("WINEDLLOVERRIDES"), QStringLiteral("mscoree,mshtml="));
     if (runner.isProton()) {
         env.insert(QStringLiteral("STEAM_COMPAT_DATA_PATH"), pfx.path);
-        env.insert(QStringLiteral("STEAM_COMPAT_CLIENT_INSTALL_PATH"), AppSettings::dataDir());
+        QString steamClientPath = QDir::homePath() + QStringLiteral("/.local/share/Steam");
+        if (!QDir(steamClientPath).exists()) {
+            steamClientPath = QDir::homePath() + QStringLiteral("/.steam/steam");
+        }
+        if (!QDir(steamClientPath).exists()) {
+            steamClientPath = AppSettings::dataDir();
+        }
+        env.insert(QStringLiteral("STEAM_COMPAT_CLIENT_INSTALL_PATH"), steamClientPath);
     }
     return env;
 }

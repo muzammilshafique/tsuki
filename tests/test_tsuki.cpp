@@ -1027,6 +1027,151 @@ private slots:
             QVERIFY(sawA);
         }
     }
+
+    void testRunnerManagerSteamDetectionAndProtonCachyOS() {
+        // 1. Verify RunnerRecord::isProton() with proton-cachyos
+        RunnerRecord cachyRec;
+        cachyRec.id = QStringLiteral("cachy-test");
+        cachyRec.name = QStringLiteral("Proton CachyOS");
+        cachyRec.type = QStringLiteral("proton-cachyos");
+        cachyRec.binaryPath = QStringLiteral("/tmp/fake/proton");
+        QVERIFY(cachyRec.isProton());
+
+        // 2. Test fallback releases for proton-cachyos
+        QTemporaryDir tmpDir;
+        QVERIFY(tmpDir.isValid());
+        DatabaseManager db(tmpDir.filePath("test_runners.db"));
+        QVERIFY(db.initialize());
+        AppSettings settings;
+        settings.setDatabaseManager(&db);
+        DownloadManager dl;
+        RunnerManager rm(&db, &settings, &dl);
+
+        rm.fetchAvailableReleases(QStringLiteral("proton-cachyos"));
+        const QVariantList rels = rm.availableReleases();
+        QVERIFY(!rels.isEmpty());
+        const QVariantMap firstRel = rels.first().toMap();
+        QCOMPARE(firstRel.value(QStringLiteral("category")).toString(), QStringLiteral("proton-cachyos"));
+        QVERIFY(firstRel.value(QStringLiteral("downloadUrl")).toString().contains(QStringLiteral("proton-cachyos")));
+        QVERIFY(firstRel.value(QStringLiteral("fileName")).toString().endsWith(QStringLiteral(".tar.xz")));
+
+        // 3. Test tag generation
+        RunnerRecord rGe;
+        rGe.id = QStringLiteral("r-ge");
+        rGe.name = QStringLiteral("GE-Proton");
+        rGe.type = QStringLiteral("proton-ge");
+        rGe.path = QStringLiteral("/bin");
+        rGe.binaryPath = QStringLiteral("/bin/true");
+        QVERIFY(db.saveRunner(rGe));
+        QCOMPARE(rm.runnerTagForId(rGe.id), QStringLiteral("PROTON-GE"));
+
+        RunnerRecord rCachy;
+        rCachy.id = QStringLiteral("r-cachy");
+        rCachy.name = QStringLiteral("Proton-CachyOS");
+        rCachy.type = QStringLiteral("proton-cachyos");
+        rCachy.path = QStringLiteral("/bin");
+        rCachy.binaryPath = QStringLiteral("/bin/true");
+        QVERIFY(db.saveRunner(rCachy));
+        QCOMPARE(rm.runnerTagForId(rCachy.id), QStringLiteral("CACHYOS"));
+
+        // 4. Test custom runner resolution
+        RunnerRecord rCustom;
+        rCustom.id = QStringLiteral("custom-1");
+        rCustom.name = QStringLiteral("Test Custom Runner");
+        rCustom.type = QStringLiteral("custom");
+        rCustom.path = QStringLiteral("/tmp");
+        rCustom.binaryPath = QStringLiteral("/bin/true");
+        QVERIFY(db.saveRunner(rCustom));
+        QCOMPARE(rm.runnerTagForId(rCustom.id), QStringLiteral("CUSTOM"));
+    }
+
+    void testRunnerManagerSecurityAndUninstall() {
+        QTemporaryDir tmpDir;
+        QVERIFY(tmpDir.isValid());
+        DatabaseManager db(tmpDir.filePath("test_security.db"));
+        QVERIFY(db.initialize());
+        AppSettings settings;
+        settings.setDatabaseManager(&db);
+        DownloadManager dl;
+        RunnerManager rm(&db, &settings, &dl);
+
+        // Security: system runners must NEVER delete files
+        const QString fakeSystemPath = tmpDir.filePath("system_proton");
+        QDir().mkpath(fakeSystemPath);
+        QFile sysFile(fakeSystemPath + QStringLiteral("/proton"));
+        QVERIFY(sysFile.open(QIODevice::WriteOnly));
+        sysFile.close();
+
+        RunnerRecord sysRec;
+        sysRec.id = QStringLiteral("sys-proton");
+        sysRec.name = QStringLiteral("System Proton");
+        sysRec.type = QStringLiteral("proton");
+        sysRec.path = fakeSystemPath;
+        sysRec.binaryPath = sysFile.fileName();
+        sysRec.isSystem = true;
+        db.saveRunner(sysRec);
+
+        // Call uninstallRunner: should remove from DB, but KEEP files on disk
+        QVERIFY(rm.uninstallRunner(sysRec.id));
+        QVERIFY(!db.getRunner(sysRec.id).has_value());
+        QVERIFY(QFileInfo::exists(fakeSystemPath + QStringLiteral("/proton")));
+
+        // Security: user runner inside defaultRunnerLocation CAN delete files
+        const QString runnerBase = settings.defaultRunnerLocation();
+        const QString customInstall = runnerBase + QStringLiteral("/test_installed_proton");
+        QDir().mkpath(customInstall);
+        QFile userFile(customInstall + QStringLiteral("/proton"));
+        QVERIFY(userFile.open(QIODevice::WriteOnly));
+        userFile.close();
+
+        RunnerRecord userRec;
+        userRec.id = QStringLiteral("user-proton");
+        userRec.name = QStringLiteral("User Proton");
+        userRec.type = QStringLiteral("proton-ge");
+        userRec.path = customInstall;
+        userRec.binaryPath = userFile.fileName();
+        userRec.isSystem = false;
+        db.saveRunner(userRec);
+
+        QVERIFY(rm.uninstallRunner(userRec.id));
+        QVERIFY(!db.getRunner(userRec.id).has_value());
+        QVERIFY(!QDir(customInstall).exists());
+    }
+
+    void testDownloadManagerListModelAndCancellation() {
+        QTemporaryDir tmpDir;
+        QVERIFY(tmpDir.isValid());
+        DownloadManager dl;
+
+        QCOMPARE(dl.rowCount(), 0);
+        QCOMPARE(dl.activeDownloadCount(), 0);
+
+        const QString dest = tmpDir.filePath("test_dl.tar.gz");
+        const QString taskId = dl.enqueueDownload(
+            QStringLiteral("test-task-1"),
+            QStringLiteral("Test Runner DL"),
+            QUrl(QStringLiteral("https://127.0.0.1:9999/nonexistent.tar.gz")),
+            dest
+        );
+        QCOMPARE(taskId, QStringLiteral("test-task-1"));
+        QCOMPARE(dl.rowCount(), 1);
+        QCOMPARE(dl.activeDownloadCount(), 1);
+        QVERIFY(dl.isMediaDownloading(taskId));
+
+        // Test QAbstractListModel data roles
+        QModelIndex idx = dl.index(0, 0);
+        QVERIFY(idx.isValid());
+        QCOMPARE(dl.data(idx, DownloadManager::IdRole).toString(), QStringLiteral("test-task-1"));
+        QCOMPARE(dl.data(idx, DownloadManager::TitleRole).toString(), QStringLiteral("Test Runner DL"));
+        QCOMPARE(dl.data(idx, DownloadManager::IsPausedRole).toBool(), false);
+
+        // Test cancel: should not crash, removes row, deletes part file
+        dl.cancelDownload(taskId);
+        QCOMPARE(dl.rowCount(), 0);
+        QCOMPARE(dl.activeDownloadCount(), 0);
+        QVERIFY(!dl.isMediaDownloading(taskId));
+        QVERIFY(!QFile::exists(dest + QStringLiteral(".part")));
+    }
 };
 
 QTEST_MAIN(TestTsuki)

@@ -30,11 +30,16 @@ class AppSettings : public QObject {
     Q_PROPERTY(QColor textSecColor READ textSecColor NOTIFY themeChanged)
     Q_PROPERTY(QColor textTerColor READ textTerColor NOTIFY themeChanged)
 
-    // Tag Colors (0: Proton/GE, 1: Wine, 2: Custom/Staging, 3: Linux)
-    Q_PROPERTY(QColor tagColorSeries READ tagColorSeries NOTIFY themeChanged)
-    Q_PROPERTY(QColor tagColorMovie READ tagColorMovie NOTIFY themeChanged)
-    Q_PROPERTY(QColor tagColorAnime READ tagColorAnime NOTIFY themeChanged)
+    // Tag Colors
+    Q_PROPERTY(QColor tagColorSteamProton READ tagColorSteamProton WRITE setTagColorSteamProton NOTIFY themeChanged)
+    Q_PROPERTY(QColor tagColorProtonGe READ tagColorProtonGe WRITE setTagColorProtonGe NOTIFY themeChanged)
+    Q_PROPERTY(QColor tagColorCachyos READ tagColorCachyos WRITE setTagColorCachyos NOTIFY themeChanged)
     Q_PROPERTY(QColor tagColorLinux READ tagColorLinux WRITE setTagColorLinux NOTIFY themeChanged)
+
+    // Legacy Aliases
+    Q_PROPERTY(QColor tagColorSeries READ tagColorSteamProton NOTIFY themeChanged)
+    Q_PROPERTY(QColor tagColorMovie READ tagColorProtonGe NOTIFY themeChanged)
+    Q_PROPERTY(QColor tagColorAnime READ tagColorCachyos NOTIFY themeChanged)
 
     // Layout & Card Customization
     Q_PROPERTY(bool sidebarCollapsed READ sidebarCollapsed WRITE setSidebarCollapsed NOTIFY sidebarCollapsedChanged)
@@ -103,11 +108,18 @@ public:
     QColor textSecColor() const;
     QColor textTerColor() const;
 
-    QColor tagColorSeries() const { return QColor(QStringLiteral("#38bdf8")); } // Proton / Proton-GE
-    QColor tagColorMovie() const { return QColor(QStringLiteral("#a855f7")); }  // Wine
-    QColor tagColorAnime() const { return QColor(QStringLiteral("#34d399")); }  // Staging / Custom
+    QColor tagColorSteamProton() const { return m_tagColorSteamProton; }
+    void setTagColorSteamProton(const QColor& c);
+    QColor tagColorProtonGe() const { return m_tagColorProtonGe; }
+    void setTagColorProtonGe(const QColor& c);
+    QColor tagColorCachyos() const { return m_tagColorCachyos; }
+    void setTagColorCachyos(const QColor& c);
     QColor tagColorLinux() const { return m_tagColorLinux; }
     void setTagColorLinux(const QColor& c);
+
+    QColor tagColorSeries() const { return m_tagColorSteamProton; }
+    QColor tagColorMovie() const { return m_tagColorProtonGe; }
+    QColor tagColorAnime() const { return m_tagColorCachyos; }
 
     // Layout & Card
     bool sidebarCollapsed() const { return m_sidebarCollapsed; }
@@ -181,6 +193,9 @@ private:
     QSettings m_settings;
     int m_themeMode = 0; // 0: Dark, 1: Light, 2: System
     QColor m_accentColor;
+    QColor m_tagColorSteamProton;
+    QColor m_tagColorProtonGe;
+    QColor m_tagColorCachyos;
     QColor m_tagColorLinux;
     bool m_sidebarCollapsed = false;
     int m_defaultFilter = -1;

@@ -545,22 +545,14 @@ Page {
 
                 RowDiv {}
 
-                // Linux Tag Color
+                // Runner & Platform Tag Colors
                 SettingRow {
-                    label: "Linux Tag Color"
-                    description: "Badge and highlight color for native Linux games in library and details"
-                    controlItem: M3ColorPicker {
-                        presets: [
-                            { name: "Amber",  color: "#f59e0b" },
-                            { name: "Orange", color: "#f97316" },
-                            { name: "Green",  color: "#10b981" },
-                            { name: "Cyan",   color: "#06b6d4" },
-                            { name: "Blue",   color: "#3b82f6" },
-                            { name: "Purple", color: "#a855f7" },
-                            { name: "Red",    color: "#ef4444" }
-                        ]
-                        currentColor: String(appSettings.tagColorLinux)
-                        onColorSelected: (hex) => appSettings.tagColorLinux = hex
+                    label: "Runner & Platform Tag Colors"
+                    description: "Customize badge colors for Proton, Proton-GE, CachyOS, and Linux"
+                    controlItem: M3Button {
+                        text: "Edit Colors"
+                        buttonType: "tonal"
+                        onClicked: tagColorsModal.open()
                     }
                 }
 
@@ -891,6 +883,455 @@ Page {
             }
 
             Item { Layout.preferredHeight: 32 }
+        }
+    }
+
+    // ── Runner & Platform Tag Colors Dialog ─────────────────────────────────
+    Popup {
+        id: tagColorsModal
+        modal: true
+        focus: true
+        width: Math.min(settingsPage.width - 48, 600)
+        contentWidth: width
+        x: Math.round((settingsPage.width - width) / 2)
+        y: Math.max(20, Math.round((settingsPage.height - height) / 2))
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+            NumberAnimation { property: "scale"; from: 0.96; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 120; easing.type: Easing.InCubic }
+            NumberAnimation { property: "scale"; from: 1.0; to: 0.96; duration: 120; easing.type: Easing.InCubic }
+        }
+
+        background: Rectangle {
+            color: appSettings.surfaceColor
+            radius: 12
+            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+            border.width: 1
+            layer.enabled: true
+            layer.effect: MultiEffect {
+                shadowEnabled: true
+                shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.6 : 0.25)
+                shadowBlur: 0.8
+                shadowVerticalOffset: 8
+            }
+        }
+
+        contentItem: ColumnLayout {
+            width: tagColorsModal.availableWidth
+            spacing: 0
+
+            // ── Dialog Header ──
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 64
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 24
+                    anchors.rightMargin: 16
+                    spacing: 12
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: 2
+                        Label {
+                            text: "Runner & Platform Tag Colors"
+                            color: appSettings.textColor
+                            font.pixelSize: 18
+                            font.weight: Font.DemiBold
+                        }
+                        Label {
+                            text: "Customize badge colors across library and runners"
+                            color: appSettings.textSecColor
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    Rectangle {
+                        id: modalCloseBtn
+                        implicitWidth: 36
+                        implicitHeight: 36
+                        radius: 18
+                        Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                        color: closeHover.hovered 
+                            ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)) 
+                            : "transparent"
+                        border.color: closeHover.hovered 
+                            ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.12))
+                            : "transparent"
+                        border.width: 1
+                        scale: closeMA.pressed ? 0.92 : 1.0
+
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on border.color { ColorAnimation { duration: 120 } }
+                        Behavior on scale { NumberAnimation { duration: 100 } }
+
+                        HoverHandler { id: closeHover }
+
+                        YIcon {
+                            anchors.centerIn: parent
+                            source: "qrc:/tsuki_app/icons/actions/close.svg"
+                            color: closeHover.hovered ? appSettings.textColor : appSettings.textSecColor
+                            size: 16
+                        }
+
+                        MouseArea {
+                            id: closeMA
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: tagColorsModal.close()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                }
+            }
+
+            // ── Live Badge Preview ──
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.leftMargin: 24
+                Layout.rightMargin: 24
+                Layout.topMargin: 16
+                Layout.bottomMargin: 8
+                Layout.preferredHeight: 76
+                radius: 10
+                color: appSettings.surfaceAltColor
+                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
+                border.width: 1
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Label {
+                        text: "LIVE BADGE PREVIEW"
+                        color: appSettings.textSecColor
+                        font.pixelSize: 10
+                        font.weight: Font.Bold
+                        font.letterSpacing: 1.0
+                    }
+
+                    RowLayout {
+                        spacing: 10
+                        Layout.fillWidth: true
+
+                        // Steam Proton Preview Badge
+                        Rectangle {
+                            implicitHeight: 24
+                            implicitWidth: spBadgeText.implicitWidth + 16
+                            radius: 6
+                            color: {
+                                let c = Qt.color(appSettings.tagColorSteamProton)
+                                return Qt.rgba(c.r, c.g, c.b, 0.18)
+                            }
+                            border.color: {
+                                let c = Qt.color(appSettings.tagColorSteamProton)
+                                return Qt.rgba(c.r, c.g, c.b, 0.45)
+                            }
+                            border.width: 1
+                            Text {
+                                id: spBadgeText
+                                anchors.centerIn: parent
+                                text: "PROTON"
+                                color: appSettings.tagColorSteamProton
+                                font.pixelSize: 10
+                                font.weight: Font.Bold
+                            }
+                        }
+
+                        // Proton-GE Preview Badge
+                        Rectangle {
+                            implicitHeight: 24
+                            implicitWidth: geBadgeText.implicitWidth + 16
+                            radius: 6
+                            color: {
+                                let c = Qt.color(appSettings.tagColorProtonGe)
+                                return Qt.rgba(c.r, c.g, c.b, 0.18)
+                            }
+                            border.color: {
+                                let c = Qt.color(appSettings.tagColorProtonGe)
+                                return Qt.rgba(c.r, c.g, c.b, 0.45)
+                            }
+                            border.width: 1
+                            Text {
+                                id: geBadgeText
+                                anchors.centerIn: parent
+                                text: "PROTON-GE"
+                                color: appSettings.tagColorProtonGe
+                                font.pixelSize: 10
+                                font.weight: Font.Bold
+                            }
+                        }
+
+                        // CachyOS Preview Badge
+                        Rectangle {
+                            implicitHeight: 24
+                            implicitWidth: cachyBadgeText.implicitWidth + 16
+                            radius: 6
+                            color: {
+                                let c = Qt.color(appSettings.tagColorCachyos)
+                                return Qt.rgba(c.r, c.g, c.b, 0.18)
+                            }
+                            border.color: {
+                                let c = Qt.color(appSettings.tagColorCachyos)
+                                return Qt.rgba(c.r, c.g, c.b, 0.45)
+                            }
+                            border.width: 1
+                            Text {
+                                id: cachyBadgeText
+                                anchors.centerIn: parent
+                                text: "CACHYOS"
+                                color: appSettings.tagColorCachyos
+                                font.pixelSize: 10
+                                font.weight: Font.Bold
+                            }
+                        }
+
+                        // Linux Preview Badge
+                        Rectangle {
+                            implicitHeight: 24
+                            implicitWidth: linuxBadgeText.implicitWidth + 16
+                            radius: 6
+                            color: {
+                                let c = Qt.color(appSettings.tagColorLinux)
+                                return Qt.rgba(c.r, c.g, c.b, 0.18)
+                            }
+                            border.color: {
+                                let c = Qt.color(appSettings.tagColorLinux)
+                                return Qt.rgba(c.r, c.g, c.b, 0.45)
+                            }
+                            border.width: 1
+                            Text {
+                                id: linuxBadgeText
+                                anchors.centerIn: parent
+                                text: "LINUX"
+                                color: appSettings.tagColorLinux
+                                font.pixelSize: 10
+                                font.weight: Font.Bold
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+                    }
+                }
+            }
+
+            // ── Scrollable Picker Body ──
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(380, pickerCol.implicitHeight + 24)
+                contentWidth: availableWidth
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical: ScrollBar {
+                    width: 6
+                    policy: parent.contentHeight > parent.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                    contentItem: Rectangle {
+                        implicitWidth: 6
+                        radius: 3
+                        color: appSettings.accentColor
+                        opacity: 0.5
+                    }
+                }
+
+                ColumnLayout {
+                    id: pickerCol
+                    width: parent.width - 48
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 16
+
+                    Item { Layout.preferredHeight: 8 }
+
+                    // Proton
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+                        Label {
+                            text: "Proton Tag Color"
+                            color: appSettings.textColor
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                        }
+                        Label {
+                            text: "Badge color for system and Steam Proton installations"
+                            color: appSettings.textSecColor
+                            font.pixelSize: 11
+                        }
+                        M3ColorPicker {
+                            presets: [
+                                { name: "Sky",    color: "#38bdf8" },
+                                { name: "Blue",   color: "#3b82f6" },
+                                { name: "Cyan",   color: "#06b6d4" },
+                                { name: "Indigo", color: "#6366f1" },
+                                { name: "Teal",   color: "#14b8a6" }
+                            ]
+                            currentColor: String(appSettings.tagColorSteamProton)
+                            onColorSelected: (hex) => appSettings.tagColorSteamProton = hex
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)
+                    }
+
+                    // Proton-GE
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+                        Label {
+                            text: "Proton-GE Tag Color"
+                            color: appSettings.textColor
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                        }
+                        Label {
+                            text: "Badge color for GloriousEggroll Proton-GE releases"
+                            color: appSettings.textSecColor
+                            font.pixelSize: 11
+                        }
+                        M3ColorPicker {
+                            presets: [
+                                { name: "Purple", color: "#a855f7" },
+                                { name: "Violet", color: "#8b5cf6" },
+                                { name: "Pink",   color: "#ec4899" },
+                                { name: "Rose",   color: "#f43f5e" },
+                                { name: "Blue",   color: "#3b82f6" }
+                            ]
+                            currentColor: String(appSettings.tagColorProtonGe)
+                            onColorSelected: (hex) => appSettings.tagColorProtonGe = hex
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)
+                    }
+
+                    // Proton-CachyOS
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+                        Label {
+                            text: "Proton-CachyOS Tag Color"
+                            color: appSettings.textColor
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                        }
+                        Label {
+                            text: "Badge color for CachyOS optimized Proton builds"
+                            color: appSettings.textSecColor
+                            font.pixelSize: 11
+                        }
+                        M3ColorPicker {
+                            presets: [
+                                { name: "Teal",    color: "#2dd4bf" },
+                                { name: "Emerald", color: "#10b981" },
+                                { name: "Cyan",    color: "#06b6d4" },
+                                { name: "Green",   color: "#22c55e" },
+                                { name: "Sky",     color: "#38bdf8" }
+                            ]
+                            currentColor: String(appSettings.tagColorCachyos)
+                            onColorSelected: (hex) => appSettings.tagColorCachyos = hex
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)
+                    }
+
+                    // Linux Native
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+                        Label {
+                            text: "Linux Native Tag Color"
+                            color: appSettings.textColor
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                        }
+                        Label {
+                            text: "Badge color for native Linux games in library and details"
+                            color: appSettings.textSecColor
+                            font.pixelSize: 11
+                        }
+                        M3ColorPicker {
+                            presets: [
+                                { name: "Amber",  color: "#f59e0b" },
+                                { name: "Orange", color: "#f97316" },
+                                { name: "Green",  color: "#10b981" },
+                                { name: "Cyan",   color: "#06b6d4" },
+                                { name: "Blue",   color: "#3b82f6" },
+                                { name: "Purple", color: "#a855f7" },
+                                { name: "Red",    color: "#ef4444" }
+                            ]
+                            currentColor: String(appSettings.tagColorLinux)
+                            onColorSelected: (hex) => appSettings.tagColorLinux = hex
+                        }
+                    }
+
+                    Item { Layout.preferredHeight: 12 }
+                }
+            }
+
+            // ── Dialog Footer ──
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 64
+
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 24
+                    anchors.rightMargin: 24
+                    spacing: 12
+
+                    M3Button {
+                        text: "Reset Defaults"
+                        buttonType: "outlined"
+                        onClicked: {
+                            appSettings.tagColorSteamProton = "#38bdf8"
+                            appSettings.tagColorProtonGe = "#a855f7"
+                            appSettings.tagColorCachyos = "#2dd4bf"
+                            appSettings.tagColorLinux = "#f59e0b"
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    M3Button {
+                        text: "Done"
+                        buttonType: "filled"
+                        onClicked: tagColorsModal.close()
+                    }
+                }
+            }
         }
     }
 }

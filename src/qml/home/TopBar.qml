@@ -229,16 +229,20 @@ Rectangle {
                 }
             }
 
+            readonly property bool isBtnHovered: sortHover.hovered
+            readonly property bool isKeyboardFocused: sortBtn.activeFocus && (uiController ? uiController.isKeyboardNavActive : false)
+            readonly property bool isHighlighted: sortPopup.visible || isBtnHovered || isKeyboardFocused
+
             background: Rectangle {
                 radius: 10
-                color: (sortBtn.hovered || sortPopup.visible || sortBtn.activeFocus)
+                color: sortBtn.isHighlighted
                     ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
                     : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04))
-                border.color: (sortBtn.hovered || sortPopup.visible || sortBtn.activeFocus)
+                border.color: sortBtn.isHighlighted
                     ? appSettings.accentColor
                     : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
-                border.width: (sortPopup.visible || sortBtn.activeFocus) ? 1.5 : 1
-                scale: sortBtn.pressed ? 0.96 : (sortBtn.activeFocus ? 1.02 : 1.0)
+                border.width: (sortPopup.visible || sortBtn.isKeyboardFocused) ? 1.5 : 1
+                scale: sortBtn.pressed ? 0.96 : (sortBtn.isKeyboardFocused ? 1.02 : 1.0)
                 Behavior on color { ColorAnimation { duration: 120 } }
                 Behavior on border.color { ColorAnimation { duration: 120 } }
                 Behavior on scale { NumberAnimation { duration: 100 } }
@@ -257,7 +261,7 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         size: 16
                         source: "qrc:/tsuki_app/icons/actions/sort.svg"
-                        color: (sortBtn.hovered || sortPopup.visible) ? appSettings.accentColor : appSettings.textSecColor
+                        color: sortBtn.isHighlighted ? appSettings.accentColor : appSettings.textSecColor
                     }
 
                     Label {
@@ -273,7 +277,7 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         size: 12
                         source: "qrc:/tsuki_app/icons/actions/chevron_down.svg"
-                        color: (sortPopup.visible || sortBtn.hovered) ? appSettings.accentColor : appSettings.textSecColor
+                        color: sortBtn.isHighlighted ? appSettings.accentColor : appSettings.textSecColor
                         rotation: sortPopup.visible ? 180 : 0
                         Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                     }
@@ -288,7 +292,11 @@ Rectangle {
                     sortPopup.open()
                 }
             }
-            HoverHandler { cursorShape: Qt.PointingHandCursor }
+
+            HoverHandler {
+                id: sortHover
+                cursorShape: Qt.PointingHandCursor
+            }
 
             Popup {
                 id: sortPopup
@@ -298,6 +306,10 @@ Rectangle {
                 padding: 6
                 dim: false
                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnPressOutsideParent
+
+                onClosed: {
+                    sortBtn.focus = false
+                }
 
                 property real unfoldProgress: 0.0
 

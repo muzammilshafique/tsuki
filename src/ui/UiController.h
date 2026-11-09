@@ -25,6 +25,7 @@ class UiController : public QObject {
     Q_PROPERTY(Tsuki::ControllerManager* gamepad READ gamepad CONSTANT)
 
     // Tsuki Modular Services
+    Q_PROPERTY(Tsuki::DownloadManager* downloadManager READ downloadManager CONSTANT)
     Q_PROPERTY(Tsuki::GameManager* gameManager READ gameManager CONSTANT)
     Q_PROPERTY(Tsuki::RunnerManager* runnerManager READ runnerManager CONSTANT)
     Q_PROPERTY(Tsuki::PrefixManager* prefixManager READ prefixManager CONSTANT)
@@ -54,6 +55,7 @@ public:
     GameListModel* searchModel() const { return m_gameMgr->model(); }
     ControllerManager* gamepad() const { return m_ctrlMgr; }
 
+    DownloadManager* downloadManager() const { return m_dl; }
     GameManager* gameManager() const { return m_gameMgr; }
     RunnerManager* runnerManager() const { return m_runnerMgr; }
     PrefixManager* prefixManager() const { return m_prefixMgr; }
