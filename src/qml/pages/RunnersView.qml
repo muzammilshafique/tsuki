@@ -341,9 +341,10 @@ Item {
                                                 font.pixelSize: 11
                                             }
 
-                                            RowLayout {
+                                            Row {
                                                 id: actionBtnsRow
                                                 spacing: 6
+                                                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
                                                 readonly property bool isCompact: dlItemDelegate.width < 450
 
                                                 // Pause / Resume Button
@@ -353,6 +354,7 @@ Item {
                                                     height: 26
                                                     width: actionBtnsRow.isCompact ? 26 : (pauseRow.implicitWidth + 20)
                                                     radius: 13
+                                                    clip: true
                                                     color: pauseHover.hovered 
                                                         ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10))
                                                         : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
@@ -361,7 +363,6 @@ Item {
                                                     scale: pauseMA.pressed ? 0.94 : 1.0
 
                                                     Behavior on color { ColorAnimation { duration: 120 } }
-                                                    Behavior on width { NumberAnimation { duration: 150 } }
                                                     Behavior on scale { NumberAnimation { duration: 100 } }
 
                                                     HoverHandler { id: pauseHover }
@@ -404,6 +405,7 @@ Item {
                                                     height: 26
                                                     width: actionBtnsRow.isCompact ? 26 : (cancelRow.implicitWidth + 20)
                                                     radius: 13
+                                                    clip: true
                                                     color: cancelHover.hovered 
                                                         ? "#ef4444"
                                                         : (appSettings.isEffectiveDark ? Qt.rgba(0.93, 0.27, 0.27, 0.15) : Qt.rgba(0.93, 0.27, 0.27, 0.09))
@@ -412,7 +414,6 @@ Item {
                                                     scale: cancelMA.pressed ? 0.94 : 1.0
 
                                                     Behavior on color { ColorAnimation { duration: 120 } }
-                                                    Behavior on width { NumberAnimation { duration: 150 } }
                                                     Behavior on scale { NumberAnimation { duration: 100 } }
 
                                                     HoverHandler { id: cancelHover }
