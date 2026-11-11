@@ -507,15 +507,58 @@ Page {
                 Layout.fillWidth: true
                 sectionTitle: "Appearance & Layout"
 
+                readonly property var accentPresets: [
+                    { name: "Blue",   color: "#5b9cf6" },
+                    { name: "Purple", color: "#9c27b0" },
+                    { name: "Pink",   color: "#ec4899" },
+                    { name: "Red",    color: "#ef4444" },
+                    { name: "Orange", color: "#f97316" },
+                    { name: "Green",  color: "#10b981" },
+                    { name: "Slate",  color: "#94a3b8" }
+                ]
+
+                readonly property var bgPresets: appSettings.isEffectiveDark ? [
+                    { name: "Default (Auto)", color: "" },
+                    { name: "OLED Black",     color: "#000000" },
+                    { name: "Midnight Navy",  color: "#0b0f19" },
+                    { name: "Deep Charcoal",  color: "#121215" },
+                    { name: "Dark Slate",     color: "#161c24" },
+                    { name: "Cyber Violet",   color: "#120e1c" }
+                ] : [
+                    { name: "Default (Auto)", color: "" },
+                    { name: "Pure White",     color: "#ffffff" },
+                    { name: "Soft Pearl",     color: "#f4f4f5" },
+                    { name: "Warm Cream",     color: "#f5f0e8" },
+                    { name: "Light Slate",    color: "#eef2f6" },
+                    { name: "Soft Linen",     color: "#f5f5f4" }
+                ]
+
+                readonly property var sidebarPresets: appSettings.isEffectiveDark ? [
+                    { name: "Default (Auto)", color: "" },
+                    { name: "OLED Black",     color: "#000000" },
+                    { name: "Onyx Dark",      color: "#18181b" },
+                    { name: "Midnight Navy",  color: "#0f172a" },
+                    { name: "Deep Slate",     color: "#1e232d" },
+                    { name: "Dark Plum",      color: "#1a1020" }
+                ] : [
+                    { name: "Default (Auto)", color: "" },
+                    { name: "Pure White",     color: "#ffffff" },
+                    { name: "Light Gray",     color: "#f0f2f5" },
+                    { name: "Soft Cream",     color: "#ede8df" },
+                    { name: "Cool Ice",       color: "#e8eef5" },
+                    { name: "Deep Contrast",  color: "#18181b" }
+                ]
+
                 // Theme Mode
                 SettingRow {
                     label: "Theme Mode"
-                    description: "Select light, dark, or system mode to follow the OS desktop appearance"
+                    description: "Select light, dark, system, or AMOLED pure black mode"
                     controlItem: M3SegmentedButton {
                         model: [
-                            { label: "Dark", val: 0 },
-                            { label: "Light", val: 1 },
-                            { label: "System", val: 2 }
+                            { label: "Dark",   val: 0 },
+                            { label: "Light",  val: 1 },
+                            { label: "System", val: 2 },
+                            { label: "AMOLED", val: 3 }
                         ]
                         selectedValue: appSettings.themeMode
                         onSelectionChanged: (val) => appSettings.themeMode = val
@@ -529,17 +572,61 @@ Page {
                     label: "Accent Color"
                     description: "Primary accent for active tabs, buttons, focus rings, and highlights"
                     controlItem: M3ColorPicker {
-                        presets: [
-                            { name: "Blue",   color: "#5b9cf6" },
-                            { name: "Purple", color: "#9c27b0" },
-                            { name: "Pink",   color: "#ec4899" },
-                            { name: "Red",    color: "#ef4444" },
-                            { name: "Orange", color: "#f97316" },
-                            { name: "Green",  color: "#10b981" },
-                            { name: "Slate",  color: "#94a3b8" }
-                        ]
+                        presets: secAppearance.accentPresets
                         currentColor: String(appSettings.accentColor)
-                        onColorSelected: (hex) => appSettings.accentColor = hex
+                        allowCustom: true
+                        onColorSelected: (hex) => appSettings.setAccentColor(hex)
+                    }
+                }
+
+                RowDiv {}
+
+                // Match Sidebar & Background Toggle
+                SettingRow {
+                    label: "Match Sidebar & Background"
+                    description: "Synchronize navigation sidebar and window canvas colors"
+                    controlItem: Toggle {
+                        checked: appSettings.syncSidebarColor
+                        onToggled: (c) => appSettings.setSyncSidebarColor(c)
+                    }
+                }
+
+                RowDiv {}
+
+                // Background Color
+                SettingRow {
+                    id: bgSettingRow
+                    label: "Background Color"
+                    description: appSettings.syncSidebarColor ? "Color applied to both window background and navigation sidebar" : "Primary canvas and window background tone"
+                    controlItem: M3ColorPicker {
+                        presets: secAppearance.bgPresets
+                        currentColor: appSettings.customBgColor
+                        allowCustom: true
+                        onColorSelected: (hex) => {
+                            if (hex === "") appSettings.resetBgColor()
+                            else appSettings.setCustomBgColor(hex)
+                        }
+                    }
+                }
+
+                // Sidebar Color (Shown only when independent)
+                RowDiv {
+                    visible: !appSettings.syncSidebarColor
+                }
+
+                SettingRow {
+                    id: sidebarSettingRow
+                    visible: !appSettings.syncSidebarColor
+                    label: "Sidebar Color"
+                    description: "Navigation sidebar background tone"
+                    controlItem: M3ColorPicker {
+                        presets: secAppearance.sidebarPresets
+                        currentColor: appSettings.customSidebarColor
+                        allowCustom: true
+                        onColorSelected: (hex) => {
+                            if (hex === "") appSettings.resetSidebarColor()
+                            else appSettings.setCustomSidebarColor(hex)
+                        }
                     }
                 }
 

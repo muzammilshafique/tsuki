@@ -15,11 +15,16 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QCommandLineParser>
 #include <QIcon>
 #include <QTimer>
 
 int main(int argc, char* argv[]) {
+    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+
     QApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("Tsuki"));
     app.setApplicationName(QStringLiteral("TsukiLauncher"));

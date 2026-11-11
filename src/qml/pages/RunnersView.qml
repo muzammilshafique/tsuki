@@ -116,7 +116,7 @@ Item {
                 Layout.fillHeight: true
                 radius: 20
                 color: appSettings.surfaceColor
-                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                border.color: appSettings.borderColor
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -482,7 +482,7 @@ Item {
                 Layout.fillHeight: true
                 radius: 20
                 color: appSettings.surfaceColor
-                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                border.color: appSettings.borderColor
 
                 ColumnLayout {
                     anchors.fill: parent

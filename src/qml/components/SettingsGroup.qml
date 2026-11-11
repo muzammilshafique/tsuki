@@ -25,7 +25,7 @@ Rectangle {
     radius: 24
     border.color: group.isHighlighted
         ? appSettings.accentColor
-        : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+        : appSettings.borderColor
     border.width: group.isHighlighted ? 2 : 1
     implicitHeight: outerCol.implicitHeight + 36
 

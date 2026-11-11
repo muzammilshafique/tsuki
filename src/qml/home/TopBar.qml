@@ -55,17 +55,26 @@ Rectangle {
             Layout.maximumWidth: 540
             radius: 20
             readonly property bool isSearchHovered: searchTileHover.hovered || searchField.hovered
-            color: searchField.activeFocus
-                ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
-                : (isSearchHovered
-                    ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.06))
-                    : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)))
+            color: {
+                let base = appSettings.inputColor
+                if (searchField.activeFocus) {
+                    return appSettings.isEffectiveDark
+                        ? Qt.rgba(Math.min(1.0, base.r + 0.08), Math.min(1.0, base.g + 0.08), Math.min(1.0, base.b + 0.08), 1.0)
+                        : Qt.rgba(Math.max(0.0, base.r - 0.04), Math.max(0.0, base.g - 0.04), Math.max(0.0, base.b - 0.04), 1.0)
+                }
+                if (isSearchHovered) {
+                    return appSettings.isEffectiveDark
+                        ? Qt.rgba(Math.min(1.0, base.r + 0.04), Math.min(1.0, base.g + 0.04), Math.min(1.0, base.b + 0.04), 1.0)
+                        : Qt.rgba(Math.max(0.0, base.r - 0.02), Math.max(0.0, base.g - 0.02), Math.max(0.0, base.b - 0.02), 1.0)
+                }
+                return base
+            }
 
             border.color: searchField.activeFocus
                 ? appSettings.accentColor
                 : (isSearchHovered
                     ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.14))
-                    : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)))
+                    : appSettings.borderColor)
             border.width: searchField.activeFocus ? 2 : 1
             Behavior on color { ColorAnimation { duration: 150 } }
             Behavior on border.color { ColorAnimation { duration: 150 } }

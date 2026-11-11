@@ -18,16 +18,39 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 12
-            YIcon { source: "qrc:/tsuki_app/icons/nav/diagnostics.svg"; color: appSettings.accentColor; size: 28 }
-            ColumnLayout {
-                Layout.fillWidth: true; spacing: 2
-                Label { text: "System & Gaming Diagnostics"; color: appSettings.textColor; font.pixelSize: 22; font.weight: Font.Bold; font.letterSpacing: -0.4 }
-                Label { text: "Verify system dependencies, Vulkan drivers, /dev/uinput permissions, and Wine environment integrity"; color: appSettings.textSecColor; font.pixelSize: 13 }
+
+            YIcon {
+                source: "qrc:/tsuki_app/icons/nav/diagnostics.svg"
+                color: appSettings.accentColor
+                size: 28
+                Layout.alignment: Qt.AlignVCenter
             }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                spacing: 2
+                Label {
+                    text: "System & Gaming Diagnostics"
+                    color: appSettings.textColor
+                    font.pixelSize: 22
+                    font.weight: Font.Bold
+                    font.letterSpacing: -0.4
+                }
+                Label {
+                    text: "Verify system dependencies, Vulkan drivers, /dev/uinput permissions, and Wine environment integrity"
+                    color: appSettings.textSecColor
+                    font.pixelSize: 13
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+            }
+
             M3Button {
                 text: "Run System Checks"
                 iconSource: "qrc:/tsuki_app/icons/actions/refresh.svg"
                 buttonType: "filled"
+                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
                 onClicked: uiController.diagnosticsManager.runSystemDiagnostics()
             }
         }
@@ -44,7 +67,7 @@ Item {
                 Layout.fillHeight: true
                 radius: 20
                 color: appSettings.surfaceColor
-                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                border.color: appSettings.borderColor
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -120,7 +143,7 @@ Item {
                 Layout.fillHeight: true
                 radius: 20
                 color: appSettings.surfaceColor
-                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                border.color: appSettings.borderColor
 
                 ColumnLayout {
                     anchors.fill: parent

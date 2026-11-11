@@ -336,69 +336,578 @@ Page {
                             Layout.fillWidth: true
                         }
 
-                        // Primary Action Buttons
-                        RowLayout {
-                            spacing: 12
+                        // ── Material 3 / Split Button Row ──────────────
+                        Item {
+                            id: splitButtonContainer
+                            readonly property var heroActionItems: {
+                                let items = []
+                                if (!root.isNative) {
+                                    items.push({
+                                        name: "Winetricks",
+                                        icon: "qrc:/tsuki_app/icons/actions/wrench.svg",
+                                        destructive: false,
+                                        action: function() {
+                                            root.winetricksRequested(root.gameData.prefixId || "default-prefix", root.gameData.title || "")
+                                        }
+                                    })
+                                }
+                                items.push({
+                                    name: "Shortcut",
+                                    icon: "qrc:/tsuki_app/icons/actions/shortcut.svg",
+                                    destructive: false,
+                                    action: function() {
+                                        uiController.gameManager.createDesktopShortcut(root.gameId, true)
+                                    }
+                                })
+                                items.push({
+                                    name: "Game Folder",
+                                    icon: "qrc:/tsuki_app/icons/actions/folder.svg",
+                                    destructive: false,
+                                    action: function() {
+                                        uiController.gameManager.openGameDirectory(root.gameId)
+                                    }
+                                })
+                                if (!root.isNative && Boolean(root.gameData.prefixId && root.gameData.prefixId.length > 0)) {
+                                    items.push({
+                                        name: "Prefix Folder",
+                                        icon: "qrc:/tsuki_app/icons/actions/folder.svg",
+                                        destructive: false,
+                                        action: function() {
+                                            if (root.gameData.prefixId) {
+                                                uiController.prefixManager.openPrefixInFileManager(root.gameData.prefixId)
+                                            }
+                                        }
+                                    })
+                                }
+                                items.push({
+                                    name: "Remove",
+                                    icon: "qrc:/tsuki_app/icons/actions/trash.svg",
+                                    destructive: true,
+                                    action: function() {
+                                        removeGameDialog.openDialog(root.gameId, root.gameData.title, root.gameData.prefixId)
+                                    }
+                                })
+                                return items
+                            }
 
-                            M3Button {
-                                text: root.gameData.isRunning ? "Stop Game" : "Play Now"
-                                iconSource: root.gameData.isRunning ? "qrc:/tsuki_app/icons/actions/stop.svg" : "qrc:/tsuki_app/icons/actions/play.svg"
-                                buttonType: root.gameData.isRunning ? "destructive" : "filled"
-                                implicitHeight: 44
-                                onClicked: {
-                                    if (root.gameData.isRunning) {
-                                        uiController.launchPipeline.stopGame(root.gameId)
-                                    } else {
-                                        root.saveAllChanges()
-                                        uiController.launchPipeline.launchGame(root.gameId)
+                            implicitWidth: splitButtonRow.implicitWidth
+                            implicitHeight: 44
+                            Layout.preferredWidth: implicitWidth
+                            Layout.preferredHeight: 44
+
+                            Row {
+                                id: splitButtonRow
+                                spacing: 6
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                height: 44
+
+                                // 1. Leading Button: M3 Filled Play/Stop Action
+                                Button {
+                                    id: primaryActionBtn
+                                    text: root.gameData.isRunning ? "Stop Game" : "Play Now"
+                                    font.pixelSize: 15
+                                    font.weight: Font.DemiBold
+                                    implicitHeight: 44
+                                    implicitWidth: playContentRow ? Math.max(136, playContentRow.implicitWidth + leftPadding + rightPadding) : 140
+                                    width: implicitWidth
+                                    padding: 0
+                                    leftPadding: 20
+                                    rightPadding: 20
+                                    focus: true
+                                    z: primaryActionBtn.activeFocus ? 2 : 1
+
+                                    Behavior on implicitWidth {
+                                        SpringAnimation {
+                                            spring: 3.5
+                                            damping: 0.28
+                                            epsilon: 0.25
+                                        }
+                                    }
+
+                                    readonly property bool isBtnHovered: (!uiController || !uiController.isKeyboardNavActive) && primaryActionBtn.hovered
+                                    readonly property color effectiveColor: root.gameData.isRunning ? "#ef4444" : appSettings.accentColor
+                                    readonly property color onEffectiveColor: root.gameData.isRunning ? "#ffffff" : (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+
+                                    scale: down ? 0.96 : (isBtnHovered ? 1.01 : 1.0)
+                                    Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+
+                                    // Leading Button Background (Split Pill Left)
+                                    background: Item {
+                                        implicitHeight: 44
+                                        implicitWidth: primaryActionBtn.width
+
+                                        Rectangle {
+                                            id: playBg
+                                            anchors.fill: parent
+                                            topLeftRadius: 22
+                                            bottomLeftRadius: 22
+                                            topRightRadius: 4
+                                            bottomRightRadius: 4
+                                            clip: true
+
+                                            color: primaryActionBtn.down
+                                                ? Qt.darker(primaryActionBtn.effectiveColor, 1.12)
+                                                : (primaryActionBtn.isBtnHovered ? Qt.lighter(primaryActionBtn.effectiveColor, 1.08) : primaryActionBtn.effectiveColor)
+                                            Behavior on color { ColorAnimation { duration: 150 } }
+
+                                            // M3 Ripple effect inside clipped playBg
+                                            Rectangle {
+                                                id: playRipple
+                                                property real centerX: 0
+                                                property real centerY: 0
+                                                width: radius * 2
+                                                height: radius * 2
+                                                radius: 0
+                                                x: centerX - radius
+                                                y: centerY - radius
+                                                color: primaryActionBtn.onEffectiveColor
+                                                opacity: 0
+
+                                                NumberAnimation {
+                                                    id: playRippleAnim
+                                                    target: playRipple
+                                                    property: "radius"
+                                                    duration: 480
+                                                    easing.type: Easing.OutCubic
+                                                }
+                                                NumberAnimation {
+                                                    id: playRippleFade
+                                                    target: playRipple
+                                                    property: "opacity"
+                                                    to: 0
+                                                    duration: 550
+                                                    easing.type: Easing.OutCubic
+                                                }
+                                            }
+                                        }
+
+                                        // Focus outline ring
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            anchors.margins: -3
+                                            topLeftRadius: 25
+                                            bottomLeftRadius: 25
+                                            topRightRadius: 7
+                                            bottomRightRadius: 7
+                                            color: "transparent"
+                                            border.color: primaryActionBtn.effectiveColor
+                                            border.width: 2
+                                            visible: Boolean(uiController && uiController.isKeyboardNavActive && primaryActionBtn.activeFocus)
+                                            opacity: visible ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 120 } }
+                                        }
+                                    }
+
+                                    contentItem: Item {
+                                        clip: true
+
+                                        Row {
+                                            id: playContentRow
+                                            anchors.centerIn: parent
+                                            spacing: 8
+
+                                            YIcon {
+                                                size: 18
+                                                source: root.gameData.isRunning ? "qrc:/tsuki_app/icons/actions/stop.svg" : "qrc:/tsuki_app/icons/actions/play.svg"
+                                                color: primaryActionBtn.onEffectiveColor
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                            Label {
+                                                id: playLabel
+                                                text: primaryActionBtn.text
+                                                color: primaryActionBtn.onEffectiveColor
+                                                font: primaryActionBtn.font
+                                                renderType: Text.QtRendering
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                        }
+                                    }
+
+                                    Keys.onRightPressed: (event) => {
+                                        if (actionsDropdownBtn.visible && actionsDropdownBtn.enabled) {
+                                            event.accepted = true
+                                            actionsDropdownBtn.forceActiveFocus()
+                                        }
+                                    }
+                                    Keys.onReturnPressed: (event) => {
+                                        event.accepted = true
+                                        primaryActionBtn.clicked()
+                                    }
+                                    Keys.onEnterPressed: (event) => {
+                                        event.accepted = true
+                                        primaryActionBtn.clicked()
+                                    }
+                                    Keys.onSpacePressed: (event) => {
+                                        event.accepted = true
+                                        primaryActionBtn.clicked()
+                                    }
+
+                                    onClicked: {
+                                        if (root.gameData.isRunning) {
+                                            uiController.launchPipeline.stopGame(root.gameId)
+                                        } else {
+                                            root.saveAllChanges()
+                                            uiController.launchPipeline.launchGame(root.gameId)
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onPressed: (mouse) => {
+                                            playRipple.centerX = mouse.x
+                                            playRipple.centerY = mouse.y
+                                            playRipple.opacity = 0.22
+                                            playRippleAnim.from = 0
+                                            playRippleAnim.to = Math.max(primaryActionBtn.width, primaryActionBtn.height) * 1.5
+                                            playRippleAnim.restart()
+                                            primaryActionBtn.down = true
+                                        }
+                                        onReleased: {
+                                            primaryActionBtn.down = false
+                                            playRippleFade.restart()
+                                            primaryActionBtn.clicked()
+                                        }
+                                        onCanceled: {
+                                            primaryActionBtn.down = false
+                                            playRippleFade.restart()
+                                        }
+                                    }
+                                }
+
+                                // 2. Trailing Button: M3 Morphing Chevron Dropdown Anchor
+                                Button {
+                                    id: actionsDropdownBtn
+                                    flat: true
+                                    implicitHeight: 44
+                                    implicitWidth: 44
+                                    width: 44
+                                    height: 44
+                                    padding: 0
+                                    focus: true
+                                    z: actionsDropdownBtn.activeFocus ? 2 : 1
+
+                                    readonly property bool isBtnHovered: (!uiController || !uiController.isKeyboardNavActive) && actionsDropdownBtn.hovered
+
+                                    scale: down ? 0.94 : (isBtnHovered ? 1.04 : 1.0)
+                                    Behavior on scale { SpringAnimation { spring: 3.5; damping: 0.25; epsilon: 0.005 } }
+
+                                    background: Item {
+                                        implicitHeight: 44
+                                        implicitWidth: 44
+
+                                        Rectangle {
+                                            id: actionsBg
+                                            anchors.fill: parent
+
+                                            property real innerRadius: actionsPopup.visible ? 22 : 4
+                                            Behavior on innerRadius {
+                                                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                                            }
+
+                                            topLeftRadius: innerRadius
+                                            bottomLeftRadius: innerRadius
+                                            topRightRadius: 22
+                                            bottomRightRadius: 22
+
+                                            color: actionsDropdownBtn.down
+                                                ? Qt.darker(primaryActionBtn.effectiveColor, 1.12)
+                                                : (actionsDropdownBtn.isBtnHovered ? Qt.lighter(primaryActionBtn.effectiveColor, 1.08) : primaryActionBtn.effectiveColor)
+
+                                            Behavior on color { ColorAnimation { duration: 150 } }
+                                        }
+
+                                        // Focus outline ring
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            anchors.margins: -3
+                                            topLeftRadius: actionsBg.topLeftRadius + 3
+                                            bottomLeftRadius: actionsBg.bottomLeftRadius + 3
+                                            topRightRadius: 25
+                                            bottomRightRadius: 25
+                                            color: "transparent"
+                                            border.color: primaryActionBtn.effectiveColor
+                                            border.width: 2
+                                            visible: Boolean(uiController && uiController.isKeyboardNavActive && actionsDropdownBtn.activeFocus)
+                                            opacity: visible ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 120 } }
+                                        }
+                                    }
+
+                                    contentItem: Item {
+                                        anchors.fill: parent
+
+                                        YIcon {
+                                            id: chevronIcon
+                                            size: 18
+                                            source: "qrc:/tsuki_app/icons/actions/chevron_down.svg"
+                                            color: primaryActionBtn.onEffectiveColor
+                                            anchors.centerIn: parent
+                                            rotation: actionsPopup.visible ? 180 : 0
+                                            Behavior on rotation {
+                                                NumberAnimation {
+                                                    duration: 220
+                                                    easing.type: Easing.OutCubic
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    onClicked: {
+                                        if (actionsPopup.visible) {
+                                            actionsPopup.close()
+                                        } else {
+                                            actionsPopup.focusedActionIndex = 0
+                                            actionsPopup.open()
+                                        }
+                                    }
+
+                                    Keys.onLeftPressed: (event) => {
+                                        if (actionsPopup.visible) {
+                                            event.accepted = true
+                                            actionsPopup.close()
+                                        } else {
+                                            event.accepted = true
+                                            primaryActionBtn.forceActiveFocus()
+                                        }
+                                    }
+                                    Keys.onDownPressed: (event) => {
+                                        event.accepted = true
+                                        if (actionsPopup.visible) {
+                                            actionsPopup.handleDown()
+                                        } else {
+                                            actionsPopup.focusedActionIndex = 0
+                                            actionsPopup.open()
+                                        }
+                                    }
+                                    Keys.onUpPressed: (event) => {
+                                        if (actionsPopup.visible) {
+                                            event.accepted = true
+                                            actionsPopup.handleUp()
+                                        }
+                                    }
+                                    Keys.onReturnPressed: (event) => {
+                                        event.accepted = true
+                                        if (actionsPopup.visible) {
+                                            actionsPopup.handleSelect()
+                                        } else {
+                                            actionsPopup.focusedActionIndex = 0
+                                            actionsPopup.open()
+                                        }
+                                    }
+                                    Keys.onEnterPressed: (event) => {
+                                        event.accepted = true
+                                        if (actionsPopup.visible) {
+                                            actionsPopup.handleSelect()
+                                        } else {
+                                            actionsPopup.focusedActionIndex = 0
+                                            actionsPopup.open()
+                                        }
+                                    }
+                                    Keys.onSpacePressed: (event) => {
+                                        event.accepted = true
+                                        if (actionsPopup.visible) {
+                                            actionsPopup.handleSelect()
+                                        } else {
+                                            actionsPopup.focusedActionIndex = 0
+                                            actionsPopup.open()
+                                        }
+                                    }
+                                    Keys.onEscapePressed: (event) => {
+                                        if (actionsPopup.visible) {
+                                            event.accepted = true
+                                            actionsPopup.close()
+                                        }
+                                    }
+
+                                    HoverHandler {
+                                        cursorShape: Qt.PointingHandCursor
                                     }
                                 }
                             }
 
-                            M3Button {
-                                visible: !root.isNative
-                                text: "Winetricks"
-                                iconSource: "qrc:/tsuki_app/icons/actions/wrench.svg"
-                                buttonType: "tonal"
-                                implicitHeight: 44
-                                onClicked: root.winetricksRequested(root.gameData.prefixId || "default-prefix", root.gameData.title || "")
-                            }
+                            // ── Material 3 Elevated Actions Menu ───────────────
+                            Popup {
+                                id: actionsPopup
+                                parent: splitButtonContainer
+                                readonly property real fullContentHeight: Math.min(260, actionsContentCol.implicitHeight + 12)
+                                readonly property bool opensUpward: {
+                                    let win = root.Window.window
+                                    if (!win) return false
+                                    let p = splitButtonContainer.mapToItem(null, 0, splitButtonContainer.height)
+                                    return (p.y + fullContentHeight + 16 > win.height) && (p.y > win.height / 2)
+                                }
+                                y: opensUpward ? (-height - 6) : (splitButtonContainer.height + 6)
+                                x: 0
+                                width: Math.max(splitButtonContainer.implicitWidth, 210)
+                                padding: 6
+                                dim: false
+                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnPressOutsideParent
 
-                            M3Button {
-                                text: "Shortcut"
-                                iconSource: "qrc:/tsuki_app/icons/actions/shortcut.svg"
-                                buttonType: "tonal"
-                                implicitHeight: 44
-                                onClicked: uiController.gameManager.createDesktopShortcut(root.gameId, true)
-                            }
+                                property int focusedActionIndex: 0
+                                onAboutToShow: {
+                                    focusedActionIndex = 0
+                                }
 
-                            M3Button {
-                                text: "Game Folder"
-                                iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
-                                buttonType: "tonal"
-                                implicitHeight: 44
-                                onClicked: uiController.gameManager.openGameDirectory(root.gameId)
-                            }
-
-                            M3Button {
-                                visible: !root.isNative && Boolean(root.gameData.prefixId && root.gameData.prefixId.length > 0)
-                                text: "Prefix Folder"
-                                iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
-                                buttonType: "tonal"
-                                implicitHeight: 44
-                                onClicked: {
-                                    if (root.gameData.prefixId) {
-                                        uiController.prefixManager.openPrefixInFileManager(root.gameData.prefixId)
+                                function handleDown() {
+                                    if (splitButtonContainer.heroActionItems && splitButtonContainer.heroActionItems.length > 0) {
+                                        focusedActionIndex = (focusedActionIndex + 1) % splitButtonContainer.heroActionItems.length
                                     }
                                 }
-                            }
+                                function handleUp() {
+                                    if (splitButtonContainer.heroActionItems && splitButtonContainer.heroActionItems.length > 0) {
+                                        focusedActionIndex = (focusedActionIndex - 1 + splitButtonContainer.heroActionItems.length) % splitButtonContainer.heroActionItems.length
+                                    }
+                                }
+                                function handleSelect() {
+                                    if (splitButtonContainer.heroActionItems && focusedActionIndex >= 0 && focusedActionIndex < splitButtonContainer.heroActionItems.length) {
+                                        let act = splitButtonContainer.heroActionItems[focusedActionIndex]
+                                        close()
+                                        if (act && act.action) act.action()
+                                    }
+                                }
 
-                            M3Button {
-                                text: "Remove"
-                                iconSource: "qrc:/tsuki_app/icons/actions/trash.svg"
-                                buttonType: "destructive"
-                                implicitHeight: 44
-                                onClicked: removeGameDialog.openDialog(root.gameId, root.gameData.title, root.gameData.prefixId)
+                                property real unfoldProgress: 0.0
+
+                                enter: Transition {
+                                    ParallelAnimation {
+                                        NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 180; easing.type: Easing.OutCubic }
+                                        NumberAnimation { property: "unfoldProgress"; from: 0.0; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                                    }
+                                }
+                                exit: Transition {
+                                    ParallelAnimation {
+                                        NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 140; easing.type: Easing.InCubic }
+                                        NumberAnimation { property: "unfoldProgress"; from: 1.0; to: 0.0; duration: 160; easing.type: Easing.InCubic }
+                                    }
+                                }
+
+                                implicitHeight: fullContentHeight * unfoldProgress
+                                height: implicitHeight
+
+                                background: Rectangle {
+                                    id: popupCardBg
+                                    color: appSettings.surfaceColor
+                                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)
+                                    border.width: 1
+                                    radius: 14
+
+                                    layer.enabled: true
+                                    layer.effect: MultiEffect {
+                                        shadowEnabled: true
+                                        shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.45 : 0.18)
+                                        shadowBlur: 0.60
+                                        shadowVerticalOffset: 4
+                                    }
+                                }
+
+                                contentItem: Item {
+                                    clip: true
+
+                                    Flickable {
+                                        id: flick
+                                        anchors.fill: parent
+                                        contentHeight: actionsContentCol.implicitHeight
+                                        clip: true
+                                        boundsBehavior: Flickable.StopAtBounds
+
+                                        Column {
+                                            id: actionsContentCol
+                                            width: flick.width
+                                            spacing: 2
+
+                                            Repeater {
+                                                model: splitButtonContainer.heroActionItems
+                                                delegate: Column {
+                                                    id: aCol
+                                                    width: actionsContentCol.width
+                                                    spacing: 2
+                                                    required property int index
+                                                    required property var modelData
+
+                                                    // Divider before destructive action (Remove)
+                                                    Rectangle {
+                                                        visible: Boolean(aCol.modelData.destructive)
+                                                        width: parent.width - 16
+                                                        anchors.horizontalCenter: parent.horizontalCenter
+                                                        height: 1
+                                                        color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                                                    }
+
+                                                    Item {
+                                                        id: aRow
+                                                        width: parent.width
+                                                        height: 38
+
+                                                        readonly property bool isFocusedAction: actionsPopup.focusedActionIndex === aCol.index
+                                                        readonly property bool isHovered: aRowMA.containsMouse || (Boolean(uiController && uiController.isKeyboardNavActive) && isFocusedAction)
+                                                        readonly property bool isDestructive: Boolean(aCol.modelData.destructive)
+
+                                                        Rectangle {
+                                                            anchors.fill: parent
+                                                            radius: 10
+                                                            color: {
+                                                                if (aRow.isHovered) {
+                                                                    if (aRow.isDestructive) {
+                                                                        return appSettings.isEffectiveDark ? Qt.rgba(0.93, 0.27, 0.27, 0.18) : Qt.rgba(0.93, 0.27, 0.27, 0.12)
+                                                                    }
+                                                                    return appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                                                                }
+                                                                return "transparent"
+                                                            }
+                                                            border.color: (Boolean(uiController && uiController.isKeyboardNavActive) && aRow.isFocusedAction)
+                                                                ? (aRow.isDestructive ? "#ef4444" : appSettings.accentColor)
+                                                                : "transparent"
+                                                            border.width: (Boolean(uiController && uiController.isKeyboardNavActive) && aRow.isFocusedAction) ? 1.5 : 0
+
+                                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                                        }
+
+                                                        RowLayout {
+                                                            anchors.fill: parent
+                                                            anchors.leftMargin: 12
+                                                            anchors.rightMargin: 12
+                                                            spacing: 10
+
+                                                            YIcon {
+                                                                size: 16
+                                                                source: aCol.modelData.icon || ""
+                                                                color: aRow.isDestructive
+                                                                    ? "#ef4444"
+                                                                    : (aRow.isHovered ? appSettings.accentColor : appSettings.textSecColor)
+                                                                Layout.alignment: Qt.AlignVCenter
+                                                                Behavior on color { ColorAnimation { duration: 120 } }
+                                                            }
+
+                                                            Label {
+                                                                Layout.fillWidth: true
+                                                                verticalAlignment: Text.AlignVCenter
+                                                                text: aCol.modelData.name || ""
+                                                                color: aRow.isDestructive ? "#ef4444" : appSettings.textColor
+                                                                font.pixelSize: 13
+                                                                font.weight: aRow.isHovered ? Font.Medium : Font.Normal
+                                                                renderType: Text.QtRendering
+                                                                elide: Text.ElideRight
+                                                            }
+                                                        }
+
+                                                        MouseArea {
+                                                            id: aRowMA
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                actionsPopup.close()
+                                                                if (aCol.modelData.action) aCol.modelData.action()
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

@@ -8,8 +8,12 @@ Rectangle {
     id: sidebar
     property bool isCollapsed: appSettings.sidebarCollapsed
     property real targetWidth: isCollapsed ? 68 : 220
+    width: targetWidth
+    implicitWidth: targetWidth
     Layout.fillHeight: true
     Layout.preferredWidth: targetWidth
+    Layout.minimumWidth: targetWidth
+    Layout.maximumWidth: targetWidth
     Behavior on targetWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
     color: appSettings.sidebarColor
     Behavior on color { ColorAnimation { duration: 150 } }
@@ -30,8 +34,8 @@ Rectangle {
             { name: "Favourites",  icon: "qrc:/tsuki_app/icons/nav/favourite.svg",   action: "filter",  val: 3,  section: "library" },
             { name: "Recent",      icon: "qrc:/tsuki_app/icons/nav/recent.svg",      action: "filter",  val: 4,  section: "library" },
             { name: "divider",     icon: "",                                         action: "",        val: 0,  section: "" },
-            { name: "Runners",     icon: "qrc:/tsuki_app/icons/nav/runner.svg",      action: "section", val: 0,  section: "runners" },
             { name: "Prefixes",    icon: "qrc:/tsuki_app/icons/nav/prefixes.svg",    action: "section", val: 0,  section: "prefixes" },
+            { name: "Runners",     icon: "qrc:/tsuki_app/icons/nav/runner.svg",      action: "section", val: 0,  section: "runners" },
             { name: "Diagnostics", icon: "qrc:/tsuki_app/icons/nav/diagnostics.svg", action: "section", val: 0, section: "diagnostics" }
         ]
         return items

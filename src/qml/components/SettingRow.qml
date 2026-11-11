@@ -9,7 +9,8 @@ Item {
     property Item controlItem: null
 
     width: parent ? parent.width : 0
-    height: Math.max(68, sr.controlItem ? sr.controlItem.implicitHeight + 24 : 68)
+    height: visible ? Math.max(68, sr.controlItem ? sr.controlItem.implicitHeight + 24 : 68) : 0
+    implicitHeight: height
     focus: true
     activeFocusOnTab: true
 

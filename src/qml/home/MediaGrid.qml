@@ -384,7 +384,7 @@ Item {
                 Rectangle {
                     id: cardBg
                     anchors.fill: parent
-                    radius: appSettings.cardRadius
+                    radius: root.cardRadius
                     color: appSettings.surfaceColor
                     antialiasing: true
                 }
@@ -394,7 +394,7 @@ Item {
                     id: cardMask
                     anchors.fill: parent
                     anchors.margins: 1
-                    radius: appSettings.cardRadius + 2.5
+                    radius: root.cardRadius + 2.5
                     color: "white"
                     antialiasing: true
                     visible: false
@@ -434,7 +434,7 @@ Item {
                         Rectangle {
                             anchors { top: parent.top; left: parent.left; right: parent.right }
                             height: 1
-                            color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.06)
+                            color: root.isDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.06)
                         }
 
                         ColumnLayout {
@@ -522,7 +522,7 @@ Item {
                         anchors.bottom: metadataArea.visible ? metadataArea.top : parent.bottom
                         clip: true
 
-                        Rectangle { anchors.fill: parent; color: "#0f0f11" }
+                        Rectangle { anchors.fill: parent; color: appSettings.surfaceAltColor }
 
                         Image {
                             id: coverImg
@@ -615,7 +615,7 @@ Item {
                         id: onPosterTagLabel
                         anchors.centerIn: parent
                         text: cell.isRunning ? "RUNNING" : root.typeLabel(cell.type, cell.runnerTag)
-                        color: cell.isHoveredOrFocused ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff") : parent.tagC
+                        color: cell.isHoveredOrFocused ? (root.isDark ? "#0f0f11" : "#ffffff") : parent.tagC
                         font { pixelSize: 10; weight: Font.Medium; letterSpacing: 0.5 }
                         renderType: Text.QtRendering
                     }
@@ -773,7 +773,7 @@ Item {
                             if (appSettings.leftClickBehavior === 1) return "qrc:/tsuki_app/icons/actions/edit.svg"
                             return "qrc:/tsuki_app/icons/actions/play.svg"
                         }
-                        color: cell.isRunning ? "#ffffff" : (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+                        color: cell.isRunning ? "#ffffff" : (root.isDark ? "#0f0f11" : "#ffffff")
                     }
                 }
 
@@ -852,7 +852,7 @@ Item {
                 Rectangle {
                     id: actionOverlay
                     anchors.fill: cardContent
-                    radius: appSettings.cardRadius
+                    radius: root.cardRadius
                     color: Qt.rgba(0, 0, 0, 0.45)
                     opacity: cell.isMenuOpen ? 1.0 : 0.0
                     visible: opacity > 0
@@ -901,13 +901,13 @@ Item {
                                     size: 18
                                     source: "qrc:/tsuki_app/icons/actions/edit.svg"
                                     color: editBtn.isBtnActive
-                                        ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+                                        ? (root.isDark ? "#0f0f11" : "#ffffff")
                                         : "#ffffff"
                                 }
                                 Label {
                                     text: "Details"
                                     color: editBtn.isBtnActive
-                                        ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+                                        ? (root.isDark ? "#0f0f11" : "#ffffff")
                                         : "#ffffff"
                                     font.pixelSize: 14
                                     font.weight: Font.Normal
@@ -1007,13 +1007,13 @@ Item {
                                     size: 18
                                     source: "qrc:/tsuki_app/icons/actions/pin.svg"
                                     color: pinBtn.isBtnActive
-                                        ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+                                        ? (root.isDark ? "#0f0f11" : "#ffffff")
                                         : (cell.isPinned ? appSettings.accentColor : "#ffffff")
                                 }
                                 Label {
                                     text: cell.isPinned ? "Unpin" : "Pin to Top"
                                     color: pinBtn.isBtnActive
-                                        ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+                                        ? (root.isDark ? "#0f0f11" : "#ffffff")
                                         : "#ffffff"
                                     font.pixelSize: 14
                                     font.weight: Font.Normal
@@ -1084,7 +1084,7 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     color: "transparent"
-                    radius: appSettings.cardRadius
+                    radius: root.cardRadius
                     antialiasing: true
                     border.color: cell.isRunning
                         ? "#22c55e"
