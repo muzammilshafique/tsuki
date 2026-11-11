@@ -250,22 +250,33 @@ Page {
                     anchors.bottomMargin: 20
                     spacing: 24
 
-                    // Poster Card (dynamically scaled, 2:3 aspect ratio)
-                    Rectangle {
-                        id: posterCard
-                        readonly property real targetHeight: Math.min(270, Math.max(185, heroBannerItem.height * 0.48))
-                        Layout.preferredHeight: targetHeight
-                        Layout.preferredWidth: Math.round(targetHeight * (2.0 / 3.0))
-                        radius: appSettings.cardRadius
-                        color: appSettings.surfaceColor
-                        border.color: root.gameData.isRunning ? "#22c55e" : appSettings.accentColor
-                        border.width: 2
-                        clip: true
+                    // Transparent Game Logo
+                    Item {
+                        id: gameLogoCard
+                        readonly property bool hasLogo: Boolean(root.gameData.logoPath && root.gameData.logoPath.length > 0)
+                        visible: hasLogo && gameLogoImg.status !== Image.Error
+                        readonly property real targetHeight: Math.min(180, Math.max(100, heroBannerItem.height * 0.40))
+                        Layout.preferredHeight: visible ? targetHeight : 0
+                        Layout.preferredWidth: {
+                            if (!visible) return 0
+                            if (gameLogoImg.status === Image.Ready && gameLogoImg.implicitHeight > 0) {
+                                let w = targetHeight * (gameLogoImg.implicitWidth / gameLogoImg.implicitHeight)
+                                return Math.min(Math.min(380, root.width * 0.35), Math.max(80, w))
+                            }
+                            return Math.min(300, Math.round(targetHeight * 1.6))
+                        }
+                        Layout.alignment: Qt.AlignBottom
 
                         Image {
+                            id: gameLogoImg
                             anchors.fill: parent
-                            source: root.gameData.coverPath || ""
-                            fillMode: Image.PreserveAspectCrop
+                            source: root.gameData.logoPath || ""
+                            fillMode: Image.PreserveAspectFit
+                            horizontalAlignment: Image.AlignLeft
+                            verticalAlignment: Image.AlignBottom
+                            asynchronous: true
+                            smooth: true
+                            mipmap: true
                         }
                     }
 
