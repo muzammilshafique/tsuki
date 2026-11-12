@@ -94,6 +94,9 @@ AppSettings::AppSettings(QObject *parent)
       m_settings.value(QStringLiteral("appearance/tagPosition"), 2).toInt();
   m_showYear =
       m_settings.value(QStringLiteral("appearance/showYear"), true).toBool();
+  m_showGameName =
+      m_settings.value(QStringLiteral("appearance/showGameName"), false)
+          .toBool();
   m_leftClickBehavior =
       m_settings.value(QStringLiteral("behavior/leftClickBehavior"), 0).toInt();
   m_minimizeOnLaunch =
@@ -600,6 +603,14 @@ QColor AppSettings::surfaceColor() const {
           return;
         m_showYear = s;
         m_settings.setValue(QStringLiteral("appearance/showYear"), s);
+        emit cardStyleChanged();
+      }
+
+      void AppSettings::setShowGameName(bool s) {
+        if (m_showGameName == s)
+          return;
+        m_showGameName = s;
+        m_settings.setValue(QStringLiteral("appearance/showGameName"), s);
         emit cardStyleChanged();
       }
 

@@ -1333,6 +1333,24 @@ private slots:
     settings.setSyncSidebarColor(false);
     settings.setThemeMode(0);
   }
+
+  void testShowGameNameSetting() {
+    AppSettings settings;
+    settings.setShowGameName(false);
+    QCOMPARE(settings.showGameName(), false);
+
+    bool signalFired = false;
+    QObject::connect(&settings, &AppSettings::cardStyleChanged, [&]() {
+      signalFired = true;
+    });
+
+    settings.setShowGameName(true);
+    QCOMPARE(settings.showGameName(), true);
+    QVERIFY(signalFired);
+
+    settings.setShowGameName(false);
+    QCOMPARE(settings.showGameName(), false);
+  }
 };
 
 QTEST_MAIN(TestTsuki)

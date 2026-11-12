@@ -71,6 +71,10 @@ class AppSettings : public QObject {
                  cardStyleChanged)
   Q_PROPERTY(
       bool showYear READ showYear WRITE setShowYear NOTIFY cardStyleChanged)
+  Q_PROPERTY(bool showGameName READ showGameName WRITE setShowGameName NOTIFY
+                 cardStyleChanged)
+  Q_PROPERTY(bool showGameTitle READ showGameName WRITE setShowGameName NOTIFY
+                 cardStyleChanged)
   Q_PROPERTY(int leftClickBehavior READ leftClickBehavior WRITE
                  setLeftClickBehavior NOTIFY behaviorChanged)
   Q_PROPERTY(bool minimizeOnLaunch READ minimizeOnLaunch WRITE
@@ -189,6 +193,8 @@ public:
   void setTagPosition(int p);
   bool showYear() const { return m_showYear; }
   void setShowYear(bool s);
+  bool showGameName() const { return m_showGameName; }
+  void setShowGameName(bool s);
   int leftClickBehavior() const {
     return m_leftClickBehavior;
   } // 0: Launch Game, 1: Open Game Details
@@ -262,6 +268,7 @@ private:
   int m_titleVisibility = 0; // 0: Below Card, 1: Hover Overlay, 2: Hidden
   int m_tagPosition = 2; // 0: Below Title, 1: Above Title, 2: Badge on Poster
   bool m_showYear = true;
+  bool m_showGameName = false;
   int m_leftClickBehavior =
       0; // 0: Launch game directly (per spec), 1: Open details
   bool m_minimizeOnLaunch = false;

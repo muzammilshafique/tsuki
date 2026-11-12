@@ -711,6 +711,18 @@ Page {
 
                 RowDiv {}
 
+                // Show Game Name in Details
+                SettingRow {
+                    label: "Show Game Name in Details"
+                    description: "Display game text title on detail page header"
+                    controlItem: Toggle {
+                        checked: appSettings.showGameName
+                        onToggled: (c) => appSettings.showGameName = c
+                    }
+                }
+
+                RowDiv {}
+
                 // Left-Click Behavior
                 SettingRow {
                     label: "Card Left-Click Action"

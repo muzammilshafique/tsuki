@@ -240,37 +240,62 @@ Page {
                     }
                 }
 
-                // Game Summary Row
-                RowLayout {
+                // Game Summary Column (Anchored to bottom-left of hero banner/poster)
+                ColumnLayout {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     anchors.leftMargin: 36
                     anchors.rightMargin: 36
                     anchors.bottomMargin: 20
-                    spacing: 24
+                    spacing: 12
 
-                    // Transparent Game Logo
+                    // Transparent Game Logo / Icon (Scales dynamically with window size)
                     Item {
                         id: gameLogoCard
-                        readonly property bool hasLogo: Boolean(root.gameData.logoPath && root.gameData.logoPath.length > 0)
-                        visible: hasLogo && gameLogoImg.status !== Image.Error
-                        readonly property real targetHeight: Math.min(180, Math.max(100, heroBannerItem.height * 0.40))
-                        Layout.preferredHeight: visible ? targetHeight : 0
-                        Layout.preferredWidth: {
+                        readonly property bool hasFullLogo: Boolean(root.gameData.logoPath && root.gameData.logoPath.length > 0)
+                        readonly property string logoSource: hasFullLogo
+                            ? root.gameData.logoPath
+                            : (root.gameData.iconPath || "")
+                        readonly property bool hasVisual: Boolean(logoSource && logoSource.length > 0)
+                        visible: hasVisual && gameLogoImg.status !== Image.Error
+
+                        // Responsive height scaling directly with window width and hero banner height:
+                        // Small window  (width ~900-1100):  ~75-100px
+                        // Medium window (width ~1200-1500): ~115-155px
+                        // Large/maximized window (width ~1600-1920+): ~170-220px
+                        // 2K/4K/Ultrawide (width > 2000): up to ~250px
+                        readonly property real targetHeight: {
+                            if (!visible) return 0
+                            let byWidth = root.width * 0.11
+                            let byBanner = heroBannerItem.height * 0.38
+                            let responsiveH = Math.min(byWidth, byBanner)
+                            return Math.max(70, Math.min(250, responsiveH))
+                        }
+
+                        implicitHeight: visible ? targetHeight : 0
+                        Layout.preferredHeight: implicitHeight
+
+                        // Responsive width preserving aspect ratio within window bounds
+                        readonly property real calculatedWidth: {
                             if (!visible) return 0
                             if (gameLogoImg.status === Image.Ready && gameLogoImg.implicitHeight > 0) {
-                                let w = targetHeight * (gameLogoImg.implicitWidth / gameLogoImg.implicitHeight)
-                                return Math.min(Math.min(380, root.width * 0.35), Math.max(80, w))
+                                let aspect = gameLogoImg.implicitWidth / gameLogoImg.implicitHeight
+                                let w = targetHeight * aspect
+                                let maxAllowed = Math.min(Math.max(220, root.width * 0.48), 620)
+                                return Math.min(maxAllowed, Math.max(60, w))
                             }
-                            return Math.min(300, Math.round(targetHeight * 1.6))
+                            return Math.min(Math.round(root.width * 0.35), Math.round(targetHeight * 1.8))
                         }
-                        Layout.alignment: Qt.AlignBottom
+
+                        implicitWidth: calculatedWidth
+                        Layout.preferredWidth: calculatedWidth
+                        Layout.alignment: Qt.AlignLeft
 
                         Image {
                             id: gameLogoImg
                             anchors.fill: parent
-                            source: root.gameData.logoPath || ""
+                            source: gameLogoCard.logoSource
                             fillMode: Image.PreserveAspectFit
                             horizontalAlignment: Image.AlignLeft
                             verticalAlignment: Image.AlignBottom
@@ -280,61 +305,23 @@ Page {
                         }
                     }
 
-                    // Title & Actions Column
-                    ColumnLayout {
+                    // Title
+                    Label {
+                        id: gameTitleLbl
+                        text: root.gameData.title || "Game Title"
+                        color: appSettings.textColor
+                        font.pixelSize: Math.max(26, Math.min(36, Math.round(root.width * 0.024)))
+                        font.weight: Font.Bold
+                        font.letterSpacing: -0.6
+                        elide: Text.ElideRight
                         Layout.fillWidth: true
-                        Layout.alignment: Qt.AlignBottom
-                        spacing: 12
+                        visible: appSettings.showGameName || !gameLogoCard.hasFullLogo
+                    }
 
-                        // Metadata Chips Row
-                        RowLayout {
-                            spacing: 10
-
-                            Rectangle {
-                                id: rTagRect
-                                radius: 6
-                                height: 24
-                                implicitHeight: 24
-                                implicitWidth: rTagLbl.implicitWidth + 20
-                                Layout.preferredWidth: implicitWidth
-                                Layout.preferredHeight: 24
-                                Layout.alignment: Qt.AlignVCenter
-                                readonly property color effectiveTagColor: root.gameData.isRunning
-                                    ? "#22c55e"
-                                    : (root.isNative ? appSettings.tagColorLinux : appSettings.accentColor)
-                                color: Qt.rgba(effectiveTagColor.r, effectiveTagColor.g, effectiveTagColor.b, 0.2)
-                                border.color: effectiveTagColor
-                                border.width: 1
-
-                                Label {
-                                    id: rTagLbl
-                                    anchors.centerIn: parent
-                                    text: root.gameData.isRunning ? "RUNNING" : (root.gameData.runnerTag || (root.isNative ? "LINUX" : "WINE"))
-                                    color: rTagRect.effectiveTagColor
-                                    font.pixelSize: 11
-                                    font.weight: Font.Bold
-                                    renderType: Text.QtRendering
-                                }
-                            }
-
-                            Label {
-                                text: "Playtime: " + (root.gameData.playtimeFormatted || "Never played") + "  •  Last Played: " + (root.gameData.lastPlayedFormatted || "Never")
-                                color: appSettings.textSecColor
-                                font.pixelSize: 13
-                                Layout.alignment: Qt.AlignVCenter
-                            }
-                        }
-
-                        // Title
-                        Label {
-                            text: root.gameData.title || "Game Title"
-                            color: appSettings.textColor
-                            font.pixelSize: 34
-                            font.weight: Font.Bold
-                            font.letterSpacing: -0.6
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
+                    // Bottom Row: Action (Play Now) + Metadata (Proton Tag, Playtime, Last Played)
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 16
 
                         // ── Material 3 / Split Button Row ──────────────
                         Item {
@@ -909,6 +896,53 @@ Page {
                                     }
                                 }
                             }
+                        }
+
+                        // Metadata Chips Row (Proton Tag, Playtime, Last Played)
+                        RowLayout {
+                            id: metadataChipsRow
+                            spacing: 10
+                            Layout.alignment: Qt.AlignVCenter
+
+                            Rectangle {
+                                id: rTagRect
+                                radius: 6
+                                height: 24
+                                implicitHeight: 24
+                                implicitWidth: rTagLbl.implicitWidth + 20
+                                Layout.preferredWidth: implicitWidth
+                                Layout.preferredHeight: 24
+                                Layout.alignment: Qt.AlignVCenter
+                                readonly property color effectiveTagColor: root.gameData.isRunning
+                                    ? "#22c55e"
+                                    : (root.isNative ? appSettings.tagColorLinux : appSettings.accentColor)
+                                color: Qt.rgba(effectiveTagColor.r, effectiveTagColor.g, effectiveTagColor.b, 0.2)
+                                border.color: effectiveTagColor
+                                border.width: 1
+
+                                Label {
+                                    id: rTagLbl
+                                    anchors.centerIn: parent
+                                    text: root.gameData.isRunning ? "RUNNING" : (root.gameData.runnerTag || (root.isNative ? "LINUX" : "WINE"))
+                                    color: rTagRect.effectiveTagColor
+                                    font.pixelSize: 11
+                                    font.weight: Font.Bold
+                                    renderType: Text.QtRendering
+                                }
+                            }
+
+                            Label {
+                                id: playtimeLbl
+                                text: "Playtime: " + (root.gameData.playtimeFormatted || "Never played") + "  •  Last Played: " + (root.gameData.lastPlayedFormatted || "Never")
+                                color: appSettings.textSecColor
+                                font.pixelSize: 13
+                                elide: Text.ElideRight
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
                         }
                     }
                 }
