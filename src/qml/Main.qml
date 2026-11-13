@@ -112,6 +112,44 @@ ApplicationWindow {
         id: globalWinetricksModal
     }
 
+    Connections {
+        target: uiController ? uiController.controllerManager : null
+        function onSettingsActionRequested() {
+            if (globalWinetricksModal.visible) return
+            if (stack.currentItem && stack.currentItem.objectName === "settingsPage") return
+            stack.push(settingsPageComponent)
+        }
+    }
+
+    Shortcut {
+        sequence: "Tab"
+        context: Qt.ApplicationShortcut
+        enabled: !globalWinetricksModal.visible
+                 && !(stack.currentItem && stack.currentItem.isAnyModalOpen && stack.currentItem.isAnyModalOpen())
+                 && !(stack.currentItem && stack.currentItem.isModalOpen)
+                 && !(stack.currentItem && stack.currentItem.isTextInputActive && stack.currentItem.isTextInputActive())
+                 && (stack.currentItem ? stack.currentItem.objectName !== "settingsPage" : true)
+        onActivated: {
+            if (uiController) uiController.setKeyboardNavActive(true)
+            stack.push(settingsPageComponent)
+        }
+    }
+
+    NavigationHudBar {
+        id: navHudBar
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 12
+        anchors.horizontalCenter: parent.horizontalCenter
+        z: 900
+        pageContext: {
+            if (!stack.currentItem || stack.depth <= 1) return "home"
+            if (stack.currentItem.objectName === "settingsPage") return "settings"
+            if (stack.currentItem.objectName === "gameDetailPage") return "gameDetail"
+            return "home"
+        }
+        isLibraryActive: homePage.activeSection === "library"
+    }
+
     // Non-blocking Toast Notification Banner
     Rectangle {
         id: toastBanner
@@ -120,7 +158,7 @@ ApplicationWindow {
 
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottomMargin: 28
+        anchors.bottomMargin: navHudBar.visible ? 56 : 28
         z: 999
         width: Math.min(parent.width - 80, Math.max(280, toastLabel.implicitWidth + 44))
         height: 44

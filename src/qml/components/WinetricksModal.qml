@@ -19,6 +19,15 @@ Popup {
     property string activeCategory: "all"
     property string searchQuery: ""
     property var filteredItems: []
+    readonly property var categoryOrder: ["all", "vcpp", "directx", "dlls", "fonts"]
+
+    function cycleCategory(delta) {
+        let idx = categoryOrder.indexOf(activeCategory)
+        if (idx < 0) idx = 0
+        let next = (idx + delta + categoryOrder.length) % categoryOrder.length
+        activeCategory = categoryOrder[next]
+        refreshList()
+    }
 
     function openForPrefix(id, name) {
         prefixId = id || "default-prefix"
@@ -27,6 +36,14 @@ Popup {
         searchQuery = ""
         refreshList()
         root.open()
+        Qt.callLater(() => {
+            if (verbListView.count > 0) {
+                verbListView.currentIndex = 0
+                verbListView.forceActiveFocus()
+            } else {
+                wtSearchField.forceActiveFocus()
+            }
+        })
     }
 
     function refreshList() {
@@ -36,6 +53,14 @@ Popup {
     Connections {
         target: uiController.winetricksManager
         function onCatalogChanged() { root.refreshList() }
+    }
+
+    Connections {
+        target: uiController ? uiController.controllerManager : null
+        enabled: root.opened
+        function onTabLeftRequested() { root.cycleCategory(-1) }
+        function onTabRightRequested() { root.cycleCategory(1) }
+        function onSearchActionRequested() { wtSearchField.activate() }
     }
 
     background: Rectangle {
@@ -54,6 +79,27 @@ Popup {
 
     contentItem: ColumnLayout {
         spacing: 0
+        Keys.onBackPressed: (event) => {
+            if (wtSearchField.isEditing) { wtSearchField.returnFocusToRow(); event.accepted = true; return }
+            event.accepted = true
+            root.close()
+        }
+        Keys.onPressed: (event) => {
+            if (wtSearchField.isEditing) return
+            if (event.key === Qt.Key_Backspace) {
+                event.accepted = true
+                root.close()
+            } else if (event.key === Qt.Key_Slash) {
+                event.accepted = true
+                wtSearchField.activate()
+            } else if (event.key === Qt.Key_BracketLeft) {
+                event.accepted = true
+                root.cycleCategory(-1)
+            } else if (event.key === Qt.Key_BracketRight) {
+                event.accepted = true
+                root.cycleCategory(1)
+            }
+        }
 
         // ── Header Row ───────────────────────────────────────────────────────
         Item {
@@ -90,9 +136,12 @@ Popup {
                 }
 
                 M3Button {
+                    id: nativeGuiBtn
                     text: "Native GUI"
                     buttonType: "outlined"
                     onClicked: uiController.winetricksManager.launchWinetricksGui(root.prefixId)
+                    Keys.onDownPressed: (event) => { event.accepted = true; wtSearchField.forceActiveFocus() }
+                    Keys.onLeftPressed: (event) => { event.accepted = true; wtSearchField.forceActiveFocus() }
                 }
 
                 ToolButton {
@@ -180,6 +229,8 @@ Popup {
                 Item { Layout.fillWidth: true }
 
                 M3TextField {
+                    id: wtSearchField
+                    twoStageFocus: true
                     implicitWidth: 230
                     placeholderText: "Search verbs (e.g. vcrun2022)…"
                     leadingIcon: "qrc:/tsuki_app/icons/actions/search.svg"
@@ -190,6 +241,20 @@ Popup {
                     onCleared: {
                         root.searchQuery = ""
                         root.refreshList()
+                    }
+                    Keys.onUpPressed: (event) => { if (!isEditing) { event.accepted = true; nativeGuiBtn.forceActiveFocus() } }
+                    Keys.onDownPressed: (event) => {
+                        if (!isEditing) {
+                            event.accepted = true
+                            if (verbListView.count > 0) verbListView.forceActiveFocus()
+                            else wtCloseBtn.forceActiveFocus()
+                        }
+                    }
+                    Keys.onLeftPressed: (event) => {
+                        if (!isEditing) { event.accepted = true; root.cycleCategory(-1) }
+                    }
+                    Keys.onRightPressed: (event) => {
+                        if (!isEditing) { event.accepted = true; root.cycleCategory(1) }
                     }
                 }
             }
@@ -202,6 +267,8 @@ Popup {
 
             ListView {
                 id: verbListView
+                focus: true
+                keyNavigationEnabled: false
                 anchors.fill: parent
                 anchors.leftMargin: 24
                 anchors.rightMargin: 24
@@ -210,19 +277,64 @@ Popup {
                 clip: true
                 model: root.filteredItems
 
+                onActiveFocusChanged: {
+                    if (activeFocus && currentIndex < 0 && count > 0) currentIndex = 0
+                }
+
+                Keys.onUpPressed: (event) => {
+                    event.accepted = true
+                    if (currentIndex > 0) {
+                        currentIndex--
+                        positionViewAtIndex(currentIndex, ListView.Contain)
+                    } else {
+                        wtSearchField.forceActiveFocus()
+                    }
+                }
+                Keys.onDownPressed: (event) => {
+                    event.accepted = true
+                    if (currentIndex < count - 1) {
+                        currentIndex++
+                        positionViewAtIndex(currentIndex, ListView.Contain)
+                    } else {
+                        wtCloseBtn.forceActiveFocus()
+                    }
+                }
+                Keys.onLeftPressed: (event) => { event.accepted = true; root.cycleCategory(-1) }
+                Keys.onRightPressed: (event) => { event.accepted = true; root.cycleCategory(1) }
+                Keys.onReturnPressed: (event) => {
+                    event.accepted = true
+                    if (currentItem && !currentItem.isVerbInstalled && !currentItem.isVerbInstalling && !uiController.winetricksManager.isRunning) {
+                        uiController.winetricksManager.installVerb(root.prefixId, currentItem.modelData.verb)
+                    }
+                }
+                Keys.onEnterPressed: (event) => {
+                    event.accepted = true
+                    if (currentItem && !currentItem.isVerbInstalled && !currentItem.isVerbInstalling && !uiController.winetricksManager.isRunning) {
+                        uiController.winetricksManager.installVerb(root.prefixId, currentItem.modelData.verb)
+                    }
+                }
+                Keys.onSpacePressed: (event) => {
+                    event.accepted = true
+                    if (currentItem && !currentItem.isVerbInstalled && !currentItem.isVerbInstalling && !uiController.winetricksManager.isRunning) {
+                        uiController.winetricksManager.installVerb(root.prefixId, currentItem.modelData.verb)
+                    }
+                }
+
                 delegate: Rectangle {
                     id: verbRow
                     required property var modelData
+                    required property int index
+                    readonly property bool isCurrentRow: verbListView.activeFocus && verbListView.currentIndex === index
                     readonly property bool isVerbInstalling: uiController.winetricksManager.isRunning && uiController.winetricksManager.currentVerb === verbRow.modelData.verb
                     readonly property bool isVerbInstalled: Boolean(verbRow.modelData.isInstalled)
                     width: verbListView.width
                     height: 52
                     radius: 12
-                    color: rowMA.containsMouse 
+                    color: (rowMA.containsMouse || isCurrentRow)
                         ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
                         : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03))
-                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)
-                    border.width: 1
+                    border.color: isCurrentRow ? appSettings.accentColor : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04))
+                    border.width: isCurrentRow ? 2 : 1
                     Behavior on color { ColorAnimation { duration: 120 } }
 
                     RowLayout {
@@ -378,9 +490,15 @@ Popup {
                 }
 
                 M3Button {
+                    id: wtCloseBtn
                     text: "Close"
                     buttonType: "tonal"
                     onClicked: root.close()
+                    Keys.onUpPressed: (event) => {
+                        event.accepted = true
+                        if (verbListView.count > 0) verbListView.forceActiveFocus()
+                        else wtSearchField.forceActiveFocus()
+                    }
                 }
             }
         }

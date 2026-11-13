@@ -14,6 +14,7 @@ Item {
     implicitWidth: mainCol.implicitWidth
     implicitHeight: mainCol.implicitHeight
     focus: true
+    activeFocusOnTab: false
 
     readonly property int totalCount: (presets ? presets.length : 0) + (allowCustom ? 1 : 0)
 
@@ -50,14 +51,14 @@ Item {
     readonly property bool isParentRowFocused: {
         let p = root.parent
         while (p) {
-            if (p.isTvFocused !== undefined && p.isTvFocused) return true
-            if (p.activeFocus && uiController && uiController.isKeyboardNavActive) return true
+            if (p.isTvFocused !== undefined) return Boolean(p.isTvFocused)
             p = p.parent
         }
         return false
     }
 
-    readonly property bool isNavActive: root.activeFocus || isParentRowFocused
+    readonly property bool isNavActive: Boolean(uiController && uiController.isKeyboardNavActive)
+                                        && (root.activeFocus || isParentRowFocused)
 
     function adjustLeft() {
         if (totalCount <= 0) return
@@ -142,11 +143,11 @@ Item {
                         anchors.fill: parent
                         radius: 17
                         color: "transparent"
-                        border.color: (swatchItem.isKeyboardFocused || swatchItem.isSelected)
-                            ? appSettings.accentColor
-                            : "transparent"
-                        border.width: 2
-                        scale: (swatchItem.isKeyboardFocused || swatchItem.isSelected) ? 1.0 : 0.8
+                        border.color: swatchItem.isKeyboardFocused
+                            ? "#ffffff"
+                            : (swatchItem.isSelected ? appSettings.accentColor : "transparent")
+                        border.width: swatchItem.isKeyboardFocused ? 2.5 : 2
+                        scale: swatchItem.isKeyboardFocused ? 1.12 : (swatchItem.isSelected ? 1.0 : 0.8)
                         opacity: (swatchItem.isKeyboardFocused || swatchItem.isSelected) ? 1.0 : 0.0
 
                         Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -219,11 +220,11 @@ Item {
                     anchors.fill: parent
                     radius: 17
                     color: "transparent"
-                    border.color: (customItem.isCustomFocused || customItem.isSelected)
-                        ? appSettings.accentColor
-                        : "transparent"
-                    border.width: 2
-                    scale: (customItem.isCustomFocused || customItem.isSelected) ? 1.0 : 0.8
+                    border.color: customItem.isCustomFocused
+                        ? "#ffffff"
+                        : (customItem.isSelected ? appSettings.accentColor : "transparent")
+                    border.width: customItem.isCustomFocused ? 2.5 : 2
+                    scale: customItem.isCustomFocused ? 1.12 : (customItem.isSelected ? 1.0 : 0.8)
                     opacity: (customItem.isCustomFocused || customItem.isSelected) ? 1.0 : 0.0
                     Behavior on opacity { NumberAnimation { duration: 150 } }
                     Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
@@ -307,6 +308,7 @@ Item {
 
                     TextField {
                         id: hexField
+                        activeFocusOnTab: false
                         width: parent.width - 20
                         height: parent.height
                         anchors.verticalCenter: parent.verticalCenter

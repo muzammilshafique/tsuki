@@ -16,11 +16,19 @@ Item {
     property alias slider: slider
 
     function adjustLeft() {
-        slider.value = Math.max(slider.from, slider.value - (slider.stepSize || 1))
+        const next = Math.max(slider.from, slider.value - (slider.stepSize || 1))
+        if (next !== slider.value) {
+            slider.value = next
+            slider.moved()
+        }
     }
 
     function adjustRight() {
-        slider.value = Math.min(slider.to, slider.value + (slider.stepSize || 1))
+        const next = Math.min(slider.to, slider.value + (slider.stepSize || 1))
+        if (next !== slider.value) {
+            slider.value = next
+            slider.moved()
+        }
     }
 
     Row {
@@ -32,6 +40,8 @@ Item {
             width: parent.width - valueBadge.width - 14
             anchors.verticalCenter: parent.verticalCenter
             focus: true
+            activeFocusOnTab: false
+            readonly property bool kbFocused: slider.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
 
             Keys.onLeftPressed: (event) => {
                 event.accepted = true
@@ -89,9 +99,9 @@ Item {
                 id: sliderHandle
                 x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
                 y: slider.topPadding + slider.availableHeight / 2 - height / 2
-                implicitWidth: (slider.pressed || slider.activeFocus || sliderHover.hovered) ? 6 : 4
+                implicitWidth: (slider.pressed || slider.kbFocused || sliderHover.hovered) ? 6 : 4
                 implicitHeight: 44
-                radius: (slider.pressed || slider.activeFocus || sliderHover.hovered) ? 3 : 2
+                radius: (slider.pressed || slider.kbFocused || sliderHover.hovered) ? 3 : 2
                 color: appSettings.accentColor
 
                 Behavior on implicitWidth { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }

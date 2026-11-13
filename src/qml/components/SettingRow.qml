@@ -12,7 +12,7 @@ Item {
     height: visible ? Math.max(68, sr.controlItem ? sr.controlItem.implicitHeight + 24 : 68) : 0
     implicitHeight: height
     focus: true
-    activeFocusOnTab: true
+    activeFocusOnTab: false
 
     onControlItemChanged: {
         if (controlItem) {
@@ -88,6 +88,15 @@ Item {
             }
             return true
         }
+        if (controlItem.children) {
+            for (let i = 0; i < controlItem.children.length; i++) {
+                let c = controlItem.children[i]
+                if (c && c.clicked && c.forceActiveFocus) {
+                    c.forceActiveFocus()
+                    return true
+                }
+            }
+        }
         return false
     }
 
@@ -117,6 +126,19 @@ Item {
         if (controlItem.forceActiveFocus && (controlItem.placeholderText !== undefined || controlItem.text !== undefined)) {
             controlItem.forceActiveFocus()
             return true
+        }
+        if (controlItem.children) {
+            for (let i = 0; i < controlItem.children.length; i++) {
+                let c = controlItem.children[i]
+                if (c && c.activate) {
+                    c.activate()
+                    return true
+                }
+                if (c && c.clicked) {
+                    c.clicked()
+                    return true
+                }
+            }
         }
         return false
     }
@@ -180,9 +202,20 @@ Item {
         if (isControlPopupOpen) {
             event.accepted = true
             controlItem.popup.close()
-        } else {
+        } else if (typeof settingsPage !== "undefined") {
             event.accepted = true
-            if (typeof backBtn !== "undefined") backBtn.forceActiveFocus()
+            settingsPage.backRequested()
+        }
+    }
+    Keys.onPressed: (event) => {
+        if (event.key === Qt.Key_Backspace) {
+            if (isControlPopupOpen) {
+                event.accepted = true
+                controlItem.popup.close()
+            } else if (typeof settingsPage !== "undefined") {
+                event.accepted = true
+                settingsPage.backRequested()
+            }
         }
     }
 

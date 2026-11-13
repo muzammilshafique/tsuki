@@ -17,7 +17,7 @@ Rectangle {
     signal focusGridRequested()
     signal focusSidebarRequested()
 
-    function forceSearchFocus() { searchField.forceActiveFocus() }
+    function forceSearchFocus() { searchTile.forceActiveFocus() }
     function activateSearch() { searchField.forceActiveFocus() }
 
     readonly property var sortOptions: [
@@ -48,16 +48,19 @@ Rectangle {
         // ── Search Input Tile (Navigable Box with M3 focus border) ───────────
         Rectangle {
             id: searchTile
+            focus: true
             Layout.alignment: Qt.AlignVCenter
             Layout.preferredWidth: 380
             Layout.preferredHeight: 40
             Layout.minimumWidth: 240
             Layout.maximumWidth: 540
             radius: 20
+            readonly property bool isEditing: searchField.activeFocus
+            readonly property bool isTileFocused: searchTile.activeFocus && (uiController ? uiController.isKeyboardNavActive : false)
             readonly property bool isSearchHovered: searchTileHover.hovered || searchField.hovered
             color: {
                 let base = appSettings.inputColor
-                if (searchField.activeFocus) {
+                if (searchField.activeFocus || searchTile.isTileFocused) {
                     return appSettings.isEffectiveDark
                         ? Qt.rgba(Math.min(1.0, base.r + 0.08), Math.min(1.0, base.g + 0.08), Math.min(1.0, base.b + 0.08), 1.0)
                         : Qt.rgba(Math.max(0.0, base.r - 0.04), Math.max(0.0, base.g - 0.04), Math.max(0.0, base.b - 0.04), 1.0)
@@ -70,14 +73,55 @@ Rectangle {
                 return base
             }
 
-            border.color: searchField.activeFocus
+            border.color: (searchField.activeFocus || searchTile.isTileFocused)
                 ? appSettings.accentColor
                 : (isSearchHovered
                     ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.14))
                     : appSettings.borderColor)
-            border.width: searchField.activeFocus ? 2 : 1
+            border.width: (searchField.activeFocus || searchTile.isTileFocused) ? 2 : 1
             Behavior on color { ColorAnimation { duration: 150 } }
             Behavior on border.color { ColorAnimation { duration: 150 } }
+
+            Keys.onLeftPressed: (event) => {
+                if (!searchTile.isEditing) {
+                    event.accepted = true
+                    topBar.focusSidebarRequested()
+                }
+            }
+            Keys.onRightPressed: (event) => {
+                if (!searchTile.isEditing) {
+                    event.accepted = true
+                    sortBtn.forceActiveFocus()
+                }
+            }
+            Keys.onDownPressed: (event) => {
+                event.accepted = true
+                topBar.focusGridRequested()
+            }
+            Keys.onReturnPressed: (event) => {
+                event.accepted = true
+                searchField.forceActiveFocus()
+            }
+            Keys.onEnterPressed: (event) => {
+                event.accepted = true
+                searchField.forceActiveFocus()
+            }
+            Keys.onSpacePressed: (event) => {
+                if (!searchTile.isEditing) {
+                    event.accepted = true
+                    searchField.forceActiveFocus()
+                }
+            }
+            Keys.onEscapePressed: (event) => {
+                event.accepted = true
+                topBar.focusGridRequested()
+            }
+            Keys.onPressed: (event) => {
+                if (!searchTile.isEditing && event.key === Qt.Key_Backspace) {
+                    event.accepted = true
+                    topBar.focusGridRequested()
+                }
+            }
 
             HoverHandler { id: searchTileHover; cursorShape: Qt.IBeamCursor }
 
@@ -88,7 +132,7 @@ Rectangle {
                 anchors.leftMargin: 14
                 size: 18
                 source: "qrc:/tsuki_app/icons/actions/search.svg"
-                color: searchField.activeFocus ? appSettings.accentColor : appSettings.textSecColor
+                color: (searchField.activeFocus || searchTile.isTileFocused) ? appSettings.accentColor : appSettings.textSecColor
                 Behavior on color { ColorAnimation { duration: 120 } }
             }
 
@@ -96,7 +140,7 @@ Rectangle {
                 id: searchField
                 anchors.fill: parent
                 leftPadding: 42
-                rightPadding: searchField.text.length > 0 ? 36 : 16
+                rightPadding: searchField.text.length > 0 ? 36 : 44
                 color: appSettings.textColor
                 font.pixelSize: 13
                 background: null
@@ -113,23 +157,38 @@ Rectangle {
 
                 Keys.onEscapePressed: (event) => {
                     event.accepted = true
-                    searchField.clear()
-                    searchField.focus = false
-                    topBar.focusGridRequested()
+                    if (searchField.text.length > 0) {
+                        searchTile.forceActiveFocus()
+                    } else {
+                        topBar.focusGridRequested()
+                    }
                 }
                 Keys.onDownPressed: (event) => {
                     event.accepted = true
-                    searchField.focus = false
                     topBar.focusGridRequested()
                 }
                 onAccepted: {
-                    searchField.focus = false
                     topBar.focusGridRequested()
                 }
                 onTextChanged: {
                     topBar.searchQuery = text
                     topBar.searchRequested(text)
                 }
+            }
+
+            GamepadPrompt {
+                readonly property bool showPrompt: Boolean(uiController && uiController.isKeyboardNavActive) && searchField.text.length === 0 && !searchTile.isEditing
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                opacity: showPrompt ? 0.85 : 0.0
+                visible: opacity > 0.01
+                Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                iconSource: (uiController && uiController.controllerManager) ? uiController.controllerManager.searchIconSource : ""
+                keyName: "/"
+                pixelSize: 12
+                iconSize: 17
+                iconColor: searchTile.isTileFocused ? appSettings.accentColor : appSettings.textSecColor
             }
 
             // Clear text button
@@ -167,7 +226,7 @@ Rectangle {
         Button {
             id: sortBtn
             padding: 0
-            focus: true
+            activeFocusOnTab: false
             Layout.alignment: Qt.AlignVCenter
             implicitHeight: 40
             implicitWidth: sortInner.implicitWidth + 28
@@ -210,6 +269,18 @@ Rectangle {
                     sortPopup.open()
                 }
             }
+            Keys.onLeftPressed: (event) => {
+                if (!sortPopup.visible) {
+                    event.accepted = true
+                    searchTile.forceActiveFocus()
+                }
+            }
+            Keys.onRightPressed: (event) => {
+                if (!sortPopup.visible) {
+                    event.accepted = true
+                    addGameBtn.forceActiveFocus()
+                }
+            }
             Keys.onUpPressed: (event) => {
                 if (sortPopup.visible) {
                     event.accepted = true
@@ -217,15 +288,26 @@ Rectangle {
                 }
             }
             Keys.onDownPressed: (event) => {
+                event.accepted = true
                 if (sortPopup.visible) {
-                    event.accepted = true
                     sortBtn.handlePopupDown()
+                } else {
+                    topBar.focusGridRequested()
                 }
             }
             Keys.onEscapePressed: (event) => {
+                event.accepted = true
                 if (sortPopup.visible) {
-                    event.accepted = true
                     sortPopup.close()
+                } else {
+                    topBar.focusGridRequested()
+                }
+            }
+            Keys.onPressed: (event) => {
+                if (event.key === Qt.Key_Backspace) {
+                    event.accepted = true
+                    if (sortPopup.visible) sortPopup.close()
+                    else topBar.focusGridRequested()
                 }
             }
 
@@ -317,7 +399,11 @@ Rectangle {
                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnPressOutsideParent
 
                 onClosed: {
-                    sortBtn.focus = false
+                    if (uiController && uiController.isKeyboardNavActive) {
+                        sortBtn.forceActiveFocus()
+                    } else {
+                        sortBtn.focus = false
+                    }
                 }
 
                 property real unfoldProgress: 0.0
@@ -439,10 +525,10 @@ Rectangle {
         Button {
             id: addGameBtn
             padding: 0
-            focus: true
+            activeFocusOnTab: false
             Layout.alignment: Qt.AlignVCenter
 
-            readonly property bool isBtnActive: addGameBtn.hovered || addGameBtn.activeFocus
+            readonly property bool isBtnActive: addGameBtn.hovered || (addGameBtn.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
             property real expandedWidth: 10 + 16 + 8 + addGameLabel.implicitWidth + 14
             implicitWidth: isBtnActive ? expandedWidth : 40
             implicitHeight: 40
@@ -497,6 +583,36 @@ Rectangle {
             }
 
             onClicked: topBar.addGameRequested()
+            Keys.onLeftPressed: (event) => {
+                event.accepted = true
+                sortBtn.forceActiveFocus()
+            }
+            Keys.onDownPressed: (event) => {
+                event.accepted = true
+                topBar.focusGridRequested()
+            }
+            Keys.onEscapePressed: (event) => {
+                event.accepted = true
+                topBar.focusGridRequested()
+            }
+            Keys.onReturnPressed: (event) => {
+                event.accepted = true
+                topBar.addGameRequested()
+            }
+            Keys.onEnterPressed: (event) => {
+                event.accepted = true
+                topBar.addGameRequested()
+            }
+            Keys.onSpacePressed: (event) => {
+                event.accepted = true
+                topBar.addGameRequested()
+            }
+            Keys.onPressed: (event) => {
+                if (event.key === Qt.Key_Backspace) {
+                    event.accepted = true
+                    topBar.focusGridRequested()
+                }
+            }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
         }
     }

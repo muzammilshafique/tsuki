@@ -235,12 +235,25 @@ Item {
                 if (event.isAutoRepeat) return
                 let currItem = grid.currentItem
                 if (currItem && currItem.isMenuOpen) {
-                    currItem.triggerMenuAction()
+                    grid.isHoldingActionKey = false
+                    holdMenuTimer.stop()
                     return
                 }
                 grid.isHoldingActionKey = true
                 grid.holdTriggered = false
                 holdMenuTimer.restart()
+                return
+            }
+            if (event.key === Qt.Key_Backspace) {
+                event.accepted = true
+                holdMenuTimer.stop()
+                grid.isHoldingActionKey = false
+                let currItem = grid.currentItem
+                if (currItem && currItem.isMenuOpen) {
+                    currItem.isMenuOpen = false
+                } else {
+                    root.focusSidebarRequested()
+                }
                 return
             }
             if (event.key === Qt.Key_M && !event.isAutoRepeat) {
@@ -258,12 +271,20 @@ Item {
                 event.accepted = true
                 if (event.isAutoRepeat) return
                 holdMenuTimer.stop()
+                let currItem = grid.currentItem
+                if (currItem && currItem.isMenuOpen && !grid.isHoldingActionKey) {
+                    currItem.triggerMenuAction()
+                    return
+                }
                 if (grid.isHoldingActionKey) {
                     grid.isHoldingActionKey = false
                     if (!grid.holdTriggered) {
-                        let currItem = grid.currentItem
-                        if (!currItem || !currItem.isMenuOpen) {
-                            grid.selectCurrent()
+                        if (grid.count === 0) {
+                            root.addGameRequested()
+                        } else {
+                            if (!currItem || !currItem.isMenuOpen) {
+                                grid.selectCurrent()
+                            }
                         }
                     }
                     grid.holdTriggered = false
@@ -373,6 +394,7 @@ Item {
 
                 HoverHandler {
                     id: tileHover
+                    enabled: !uiController.isKeyboardNavActive
                     onHoveredChanged: {
                         if (!hovered && !uiController.isKeyboardNavActive) {
                             cell.isMenuOpen = false
@@ -731,7 +753,7 @@ Item {
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: 10
-                    height: 18
+                    height: 24
                     z: 12
 
                     opacity: (appSettings.titleVisibility === 1 && cell.isHoveredOrFocused && !cell.isMenuOpen) ? 1.0 : 0.0
@@ -741,8 +763,8 @@ Item {
                     GamepadPrompt {
                         anchors.centerIn: parent
                         prefixText: uiController.isKeyboardNavActive ? "Press" : ""
-                        iconSource: (uiController.gamepad && uiController.gamepad.isConnected && uiController.isKeyboardNavActive) ? uiController.gamepad.actionIconSource : ""
-                        keyName: (uiController.isKeyboardNavActive && (!uiController.gamepad || !uiController.gamepad.isConnected)) ? "Enter" : ""
+                        iconSource: (uiController.isKeyboardNavActive && uiController.isGamepadActive && uiController.controllerManager) ? uiController.controllerManager.confirmIconSource : ""
+                        keyName: (uiController.isKeyboardNavActive && !uiController.isGamepadActive) ? "Enter" : ""
                         suffixText: {
                             if (cell.isRunning) return uiController.isKeyboardNavActive ? "to view" : "Click to view"
                             if (appSettings.leftClickBehavior === 1) return uiController.isKeyboardNavActive ? "to view" : "Click to view"
@@ -751,7 +773,7 @@ Item {
                         textColor: cell.isRunning ? "#22c55e" : appSettings.accentColor
                         iconColor: cell.isRunning ? "#22c55e" : appSettings.accentColor
                         pixelSize: 12
-                        iconSize: 14
+                        iconSize: 16
                         isBold: false
                     }
                 }
@@ -785,11 +807,10 @@ Item {
                 MouseArea {
                     id: hoverMouse
                     anchors.fill: parent
-                    hoverEnabled: true
+                    hoverEnabled: !uiController.isKeyboardNavActive
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     cursorShape: Qt.PointingHandCursor
                     enabled: !cell.isMenuOpen
-                    onPositionChanged: { uiController.setKeyboardNavActive(false) }
                     onPressed: { uiController.setKeyboardNavActive(false) }
                     onClicked: (mouse) => {
                         if (cell.isMenuOpen) {
@@ -884,7 +905,7 @@ Item {
                         Rectangle {
                             id: editBtn
                             readonly property bool isBtnFocused: uiController.isKeyboardNavActive && cell.isMenuOpen && cell.menuFocusedIndex === 0
-                            readonly property bool isBtnActive: editMA.containsMouse || isBtnFocused
+                            readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && editMA.containsMouse) || isBtnFocused
                             Layout.fillWidth: true
                             height: 38
                             radius: 19
@@ -934,7 +955,7 @@ Item {
                         Rectangle {
                             id: favBtnCard
                             readonly property bool isBtnFocused: uiController.isKeyboardNavActive && cell.isMenuOpen && cell.menuFocusedIndex === 1
-                            readonly property bool isBtnActive: favMA.containsMouse || isBtnFocused
+                            readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && favMA.containsMouse) || isBtnFocused
                             Layout.fillWidth: true
                             height: 38
                             radius: 19
@@ -986,7 +1007,7 @@ Item {
                         Rectangle {
                             id: pinBtn
                             readonly property bool isBtnFocused: uiController.isKeyboardNavActive && cell.isMenuOpen && cell.menuFocusedIndex === 2
-                            readonly property bool isBtnActive: pinMA.containsMouse || isBtnFocused
+                            readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && pinMA.containsMouse) || isBtnFocused
                             Layout.fillWidth: true
                             height: 38
                             radius: 19
@@ -1040,7 +1061,7 @@ Item {
                         Rectangle {
                             id: removeBtnCard
                             readonly property bool isBtnFocused: uiController.isKeyboardNavActive && cell.isMenuOpen && cell.menuFocusedIndex === 3
-                            readonly property bool isBtnActive: removeMA.containsMouse || isBtnFocused
+                            readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && removeMA.containsMouse) || isBtnFocused
                             Layout.fillWidth: true
                             height: 38
                             radius: 19

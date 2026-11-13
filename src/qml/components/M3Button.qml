@@ -10,11 +10,13 @@ Item {
     property alias buttonStyle: root.buttonType
     property bool isSuccess: false
     property string successText: "Cleared ✓"
+    readonly property bool kbFocused: root.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
     signal clicked()
 
     implicitWidth: Math.max(80, buttonRow.implicitWidth + 32)
     implicitHeight: 38
     focus: true
+    activeFocusOnTab: false
 
     Keys.onSpacePressed: (event) => {
         event.accepted = true
@@ -34,7 +36,7 @@ Item {
         anchors.fill: parent
         radius: height / 2
 
-        readonly property bool isHovered: btnMa.containsMouse || root.activeFocus
+        readonly property bool isHovered: btnMa.containsMouse || root.kbFocused
         readonly property bool isPressed: btnMa.pressed
 
         color: {
@@ -59,14 +61,14 @@ Item {
         }
 
         border.color: {
-            if (root.activeFocus) return appSettings.accentColor
+            if (root.kbFocused) return appSettings.accentColor
             if (root.isSuccess) return "#22c55e"
             if (root.buttonType === "destructive") return isHovered ? "#ef4444" : Qt.rgba(0.93, 0.27, 0.27, 0.3)
             if (root.buttonType === "outlined") return appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.15)
             return "transparent"
         }
-        border.width: root.activeFocus ? 2 : (root.buttonType === "outlined" || root.isSuccess ? 1 : 0)
-        scale: isPressed ? 0.97 : (root.activeFocus ? 1.02 : 1.0)
+        border.width: root.kbFocused ? 2 : (root.buttonType === "outlined" || root.isSuccess ? 1 : 0)
+        scale: isPressed ? 0.97 : (root.kbFocused ? 1.02 : 1.0)
 
         Behavior on color { ColorAnimation { duration: 150 } }
         Behavior on border.color { ColorAnimation { duration: 150 } }

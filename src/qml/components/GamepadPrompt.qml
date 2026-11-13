@@ -8,13 +8,17 @@ RowLayout {
 
     property string prefixText: ""
     property url iconSource: ""
+    property url secondaryIconSource: ""
     property string keyName: ""
     property string suffixText: ""
     property color textColor: appSettings.textSecColor
     property color iconColor: appSettings.accentColor
     property int pixelSize: 13
-    property int iconSize: 16
+    property int iconSize: 18
+    property int gamepadIconSize: Math.round(root.iconSize * 1.3)
     property bool isBold: false
+
+    readonly property bool showGamepad: root.iconSource.toString().length > 0 && (root.keyName.length === 0 || (uiController && uiController.isGamepadActive))
 
     Label {
         visible: root.prefixText.length > 0
@@ -26,14 +30,21 @@ RowLayout {
     }
 
     YIcon {
-        visible: root.iconSource.toString().length > 0
+        visible: root.showGamepad
         source: root.iconSource
         color: root.iconColor
-        size: root.iconSize
+        size: root.gamepadIconSize
+    }
+
+    YIcon {
+        visible: root.showGamepad && root.secondaryIconSource.toString().length > 0
+        source: root.secondaryIconSource
+        color: root.iconColor
+        size: root.gamepadIconSize
     }
 
     Rectangle {
-        visible: root.keyName.length > 0 && root.iconSource.toString().length === 0
+        visible: !root.showGamepad && root.keyName.length > 0
         implicitWidth: keyLbl.implicitWidth + 10
         implicitHeight: root.iconSize + 4
         radius: 4

@@ -9,11 +9,21 @@
 #include "../src/services/RunnerManager.h"
 #include "../src/services/SteamGridDbService.h"
 #include "../src/services/WinetricksManager.h"
+#include "../src/ui/UiController.h"
+#include <QKeyEvent>
+#include <QMouseEvent>
+#include <QQmlComponent>
+#include <QQmlContext>
+#include <QQmlEngine>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QSignalSpy>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QTemporaryDir>
+#include <QWheelEvent>
 #include <QtTest>
+#include <SDL2/SDL.h>
 #include <cerrno>
 #include <linux/input-event-codes.h>
 #include <linux/uinput.h>
@@ -1350,6 +1360,340 @@ private slots:
 
     settings.setShowGameName(false);
     QCOMPARE(settings.showGameName(), false);
+  }
+
+  void testGamepadAutoDetectionIconsAndInputNavigation() {
+    // 1. Controller type auto-detection (PlayStation vs Xbox vs vendor IDs & names)
+    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
+                 QStringLiteral("Unknown Pad"), 0, SDL_CONTROLLER_TYPE_PS4),
+             QStringLiteral("playstation"));
+    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
+                 QStringLiteral("Unknown Pad"), 0, SDL_CONTROLLER_TYPE_PS5),
+             QStringLiteral("playstation"));
+    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
+                 QStringLiteral("Sony Controller"), 0x054c, SDL_CONTROLLER_TYPE_UNKNOWN),
+             QStringLiteral("playstation"));
+    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
+                 QStringLiteral("DualSense Wireless Controller"), 0, SDL_CONTROLLER_TYPE_UNKNOWN),
+             QStringLiteral("playstation"));
+    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
+                 QStringLiteral("PS4 Controller"), 0, SDL_CONTROLLER_TYPE_UNKNOWN),
+             QStringLiteral("playstation"));
+
+    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
+                 QStringLiteral("Xbox Pad"), 0, SDL_CONTROLLER_TYPE_XBOXONE),
+             QStringLiteral("xbox"));
+    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
+                 QStringLiteral("Controller"), 0x045e, SDL_CONTROLLER_TYPE_UNKNOWN),
+             QStringLiteral("xbox"));
+    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
+                 QStringLiteral("Xbox Wireless Controller"), 0, SDL_CONTROLLER_TYPE_UNKNOWN),
+             QStringLiteral("xbox"));
+    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
+                 QStringLiteral("Generic Gamepad"), 0, SDL_CONTROLLER_TYPE_UNKNOWN),
+             QStringLiteral("xbox"));
+
+    // 2. Dynamic icons & controllerType override
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    DatabaseManager db(dir.filePath("gamepad_nav_test.db"));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    settings.setDatabaseManager(&db);
+    DownloadManager dlMgr;
+    RunnerManager runnerMgr(&db, &settings, &dlMgr);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dlMgr);
+    ControllerManager ctrlMgr(&db, &settings, std::make_unique<MockUinputBackend>());
+    SteamGridDbService sgdb(&settings, &dlMgr);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    GameManager gameMgr(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+    UiController uiCtrl(&db, &settings, &dlMgr, &runnerMgr, &prefixMgr, &wtMgr,
+                        &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gameMgr);
+
+    ctrlMgr.setControllerTypeOverride(QStringLiteral("playstation"));
+    QCOMPARE(ctrlMgr.controllerType(), QStringLiteral("playstation"));
+    QVERIFY(ctrlMgr.isPlayStation());
+    QVERIFY(!ctrlMgr.isXbox());
+    QCOMPARE(ctrlMgr.settingsIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/ps/options.svg"));
+    QCOMPARE(ctrlMgr.tabLeftIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/ps/l1.svg"));
+    QCOMPARE(ctrlMgr.tabLeftTriggerIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/ps/l2.svg"));
+    QCOMPARE(ctrlMgr.tabRightIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/ps/r1.svg"));
+    QCOMPARE(ctrlMgr.tabRightTriggerIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/ps/r2.svg"));
+
+    ctrlMgr.setControllerTypeOverride(QStringLiteral("xbox"));
+    QCOMPARE(ctrlMgr.controllerType(), QStringLiteral("xbox"));
+    QVERIFY(!ctrlMgr.isPlayStation());
+    QVERIFY(ctrlMgr.isXbox());
+    QCOMPARE(ctrlMgr.settingsIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/xbox/xbox-menu.svg"));
+    QCOMPARE(ctrlMgr.tabLeftIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/xbox/lb.svg"));
+    QCOMPARE(ctrlMgr.tabLeftTriggerIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/xbox/lt.svg"));
+    QCOMPARE(ctrlMgr.tabRightIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/xbox/rb.svg"));
+    QCOMPARE(ctrlMgr.tabRightTriggerIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/xbox/rt.svg"));
+
+    QCOMPARE(ctrlMgr.confirmIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-down.svg"));
+    QCOMPARE(ctrlMgr.cancelIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-right.svg"));
+    QCOMPARE(ctrlMgr.optionsIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-left.svg"));
+    QCOMPARE(ctrlMgr.searchIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-up.svg"));
+    QCOMPARE(ctrlMgr.dpadUpIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/dpad-up.svg"));
+    QCOMPARE(ctrlMgr.leftAnalogIconSource(),
+             QStringLiteral("qrc:/tsuki_app/icons/gamepad/left-analog.svg"));
+
+    // 3. SDL button signals & trigger hysteresis + UiController activeInputType switching
+    QSignalSpy optionsSpy(&ctrlMgr, &ControllerManager::optionsActionRequested);
+    QSignalSpy searchSpy(&ctrlMgr, &ControllerManager::searchActionRequested);
+    QSignalSpy settingsSpy(&ctrlMgr, &ControllerManager::settingsActionRequested);
+    QSignalSpy tabLeftSpy(&ctrlMgr, &ControllerManager::tabLeftRequested);
+    QSignalSpy tabRightSpy(&ctrlMgr, &ControllerManager::tabRightRequested);
+    QSignalSpy inputSpy(&ctrlMgr, &ControllerManager::gamepadInputReceived);
+
+    // Start in keyboard mode
+    uiCtrl.setActiveInputType(QStringLiteral("keyboard"));
+    QCOMPARE(uiCtrl.activeInputType(), QStringLiteral("keyboard"));
+    QVERIFY(!uiCtrl.isGamepadActive());
+
+    // Simulate PlayStation gamepad press -> UiController switches activeInputType to playstation
+    ctrlMgr.setControllerTypeOverride(QStringLiteral("playstation"));
+    ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_X);
+    QCOMPARE(optionsSpy.count(), 1);
+    QCOMPARE(inputSpy.count(), 1);
+    QCOMPARE(uiCtrl.activeInputType(), QStringLiteral("playstation"));
+    QVERIFY(uiCtrl.isGamepadActive());
+    QVERIFY(uiCtrl.isKeyboardNavActive());
+
+    ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_Y);
+    QCOMPARE(searchSpy.count(), 1);
+
+    ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_START);
+    QCOMPARE(settingsSpy.count(), 1);
+
+    ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
+    ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+    QCOMPARE(tabLeftSpy.count(), 1);
+    QCOMPARE(tabRightSpy.count(), 1);
+
+    // Trigger hysteresis: L2/R2 fire once above 16000, stay latched at 18000, reset below 8000
+    ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERLEFT, 20000);
+    QCOMPARE(tabLeftSpy.count(), 2);
+    ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERLEFT, 18000);
+    QCOMPARE(tabLeftSpy.count(), 2);
+    ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERLEFT, 4000);
+    ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERLEFT, 20000);
+    QCOMPARE(tabLeftSpy.count(), 3);
+
+    ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 20000);
+    QCOMPARE(tabRightSpy.count(), 2);
+    ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 18000);
+    QCOMPARE(tabRightSpy.count(), 2);
+    ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 4000);
+    ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 20000);
+    QCOMPARE(tabRightSpy.count(), 3);
+
+    // Switch controller override to Xbox and trigger button -> activeInputType tracks xbox
+    ctrlMgr.setControllerTypeOverride(QStringLiteral("xbox"));
+    ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_A);
+    QCOMPARE(uiCtrl.activeInputType(), QStringLiteral("xbox"));
+    QVERIFY(uiCtrl.isGamepadActive());
+
+    // Switching back to keyboard disables gamepad prompts
+    uiCtrl.setActiveInputType(QStringLiteral("keyboard"));
+    QCOMPARE(uiCtrl.activeInputType(), QStringLiteral("keyboard"));
+    QVERIFY(!uiCtrl.isGamepadActive());
+
+    // While a game is running, controller input must not trigger Tsuki UI navigation
+    ctrlMgr.setGameRunning(true);
+    QVERIFY(ctrlMgr.isGameRunning());
+    const int settingsBefore = settingsSpy.count();
+    const int tabLeftBefore = tabLeftSpy.count();
+    const int tabRightBefore = tabRightSpy.count();
+    ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_START);
+    ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_A);
+    ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
+    ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERLEFT, 20000);
+    ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 20000);
+    QCOMPARE(settingsSpy.count(), settingsBefore);
+    QCOMPARE(tabLeftSpy.count(), tabLeftBefore);
+    QCOMPARE(tabRightSpy.count(), tabRightBefore);
+
+    // Stopping the game re-enables UI controller navigation
+    ctrlMgr.setGameRunning(false);
+    QVERIFY(!ctrlMgr.isGameRunning());
+    ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_START);
+    QCOMPARE(settingsSpy.count(), settingsBefore + 1);
+  }
+
+  void testUiControllerInputSwitchingAndQmlNavigation() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    DatabaseManager db(tmpDir.filePath("test_ui_nav.db"));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dl);
+    ControllerManager ctrlMgr(&db, &settings);
+    SteamGridDbService sgdb(&settings, &dl);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+    const QString gameId = gm.addGame("Test Game", "/games/test.exe");
+    QVERIFY(!gameId.isEmpty());
+
+    UiController uiCtrl(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
+                        &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm);
+
+    QQuickWindow win;
+    win.resize(1280, 820);
+
+    // 1. KeyPress (Down, Space, Tab) activates keyboard nav and hides cursor
+    QKeyEvent keyDown(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier);
+    QCoreApplication::sendEvent(&win, &keyDown);
+    QVERIFY(uiCtrl.isKeyboardNavActive());
+    QCOMPARE(uiCtrl.activeInputType(), QStringLiteral("keyboard"));
+    QVERIFY(QGuiApplication::overrideCursor() != nullptr);
+    QCOMPARE(QGuiApplication::overrideCursor()->shape(), Qt::BlankCursor);
+
+    // 2. MouseMove with >= 2px delta immediately deactivates keyboard nav and restores cursor
+    QMouseEvent move1(QEvent::MouseMove, QPointF(100, 100), QPointF(100, 100),
+                      Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&win, &move1);
+    QVERIFY(!uiCtrl.isKeyboardNavActive());
+    QVERIFY(QGuiApplication::overrideCursor() == nullptr);
+
+    // 3. Space key re-activates keyboard nav
+    QKeyEvent keySpace(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier,
+                       QStringLiteral(" "));
+    QCoreApplication::sendEvent(&win, &keySpace);
+    QVERIFY(uiCtrl.isKeyboardNavActive());
+
+    // 4. Wheel event immediately deactivates keyboard nav
+    QWheelEvent wheel(QPointF(100, 100), QPointF(100, 100), QPoint(0, 0),
+                      QPoint(0, 120), Qt::NoButton, Qt::NoModifier,
+                      Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(&win, &wheel);
+    QVERIFY(!uiCtrl.isKeyboardNavActive());
+
+    // 5. Tab key activates keyboard nav
+    QKeyEvent keyTab(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+    QCoreApplication::sendEvent(&win, &keyTab);
+    QVERIFY(uiCtrl.isKeyboardNavActive());
+
+    // 6. Small MouseMove delta >= 2px after initial position deactivates again
+    QMouseEvent move2(QEvent::MouseMove, QPointF(105, 105), QPointF(105, 105),
+                      Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(&win, &move2);
+    QVERIFY(!uiCtrl.isKeyboardNavActive());
+
+    // 7. Load GameDetailPage.qml & SettingsPage.qml and verify zero QML errors + M3TextField nav
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
+                                             &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"),
+                                             &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
+                                             &uiCtrl);
+
+    const QString qmlBase =
+        QFileInfo(QString::fromUtf8(__FILE__)).absolutePath() +
+        QStringLiteral("/../src/qml/pages/");
+
+    QQmlComponent settingsComp(
+        &engine, QUrl::fromLocalFile(qmlBase + QStringLiteral("SettingsPage.qml")));
+    QVERIFY2(settingsComp.errors().isEmpty(),
+             qPrintable(settingsComp.errorString()));
+    QScopedPointer<QObject> settingsObj(settingsComp.create());
+    QVERIFY(settingsObj != nullptr);
+    auto *settingsItem = qobject_cast<QQuickItem *>(settingsObj.get());
+    QVERIFY(settingsItem != nullptr);
+    settingsItem->setParentItem(win.contentItem());
+    settingsItem->setSize(QSizeF(1280, 820));
+
+    QQmlComponent detailComp(
+        &engine,
+        QUrl::fromLocalFile(qmlBase + QStringLiteral("GameDetailPage.qml")));
+    QVERIFY2(detailComp.errors().isEmpty(),
+             qPrintable(detailComp.errorString()));
+    QScopedPointer<QObject> detailObj(detailComp.createWithInitialProperties(
+        {{QStringLiteral("gameId"), gameId}}));
+    QVERIFY(detailObj != nullptr);
+    auto *detailItem = qobject_cast<QQuickItem *>(detailObj.get());
+    QVERIFY(detailItem != nullptr);
+    detailItem->setParentItem(win.contentItem());
+    detailItem->setSize(QSizeF(1280, 820));
+
+    win.show();
+    QCoreApplication::processEvents();
+
+    // Navigate down from primaryActionBtn -> tabsBar -> titleField -> exePathField
+    // Verifies titleField (M3TextField wrapper) does NOT freeze isTextInputActive()
+    QTest::keyClick(&win, Qt::Key_Down);
+    QCoreApplication::processEvents();
+    QTest::keyClick(&win, Qt::Key_Down);
+    QCoreApplication::processEvents();
+
+    QVariant isEditingVar;
+    QVERIFY(QMetaObject::invokeMethod(detailObj.get(), "isTextInputActive",
+                                      Q_RETURN_ARG(QVariant, isEditingVar)));
+    QVERIFY(!isEditingVar.toBool());
+
+    // Must still be able to press Down past titleField onto exePathField!
+    QObject *focusOnTitle = win.activeFocusItem();
+    QVERIFY(focusOnTitle != nullptr);
+    QTest::keyClick(&win, Qt::Key_Down);
+    QCoreApplication::processEvents();
+    QObject *focusAfterDown = win.activeFocusItem();
+    QVERIFY(focusAfterDown != nullptr);
+    QVERIFY(focusAfterDown != focusOnTitle);
+
+    // Move mouse >= 2px while detail page is open -> immediately hides keyboard nav
+    QMouseEvent moveHide(QEvent::MouseMove, QPointF(250, 250),
+                         QPointF(250, 250), Qt::NoButton, Qt::NoButton,
+                         Qt::NoModifier);
+    QCoreApplication::sendEvent(&win, &moveHide);
+    QVERIFY(!uiCtrl.isKeyboardNavActive());
+
+    // 8. Verify showNavigationHud setting toggles NavigationHudBar showBar and emits signal
+    const bool origHud = settings.showNavigationHud();
+    QSignalSpy behaviorSpy(&settings, &AppSettings::behaviorChanged);
+    QQmlComponent hudComp(
+        &engine, QUrl::fromLocalFile(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath() +
+                                    QStringLiteral("/../src/qml/components/NavigationHudBar.qml")));
+    QVERIFY2(hudComp.errors().isEmpty(), qPrintable(hudComp.errorString()));
+    QScopedPointer<QObject> hudObj(hudComp.create());
+    QVERIFY(hudObj != nullptr);
+
+    settings.setShowNavigationHud(true);
+    uiCtrl.setKeyboardNavActive(true);
+    QCOMPARE(hudObj->property("showBar").toBool(), true);
+    settings.setShowNavigationHud(false);
+    QCOMPARE(hudObj->property("showBar").toBool(), false);
+    QVERIFY(behaviorSpy.count() >= 1);
+    settings.setShowNavigationHud(origHud);
+
+    // 9. Verify RunnersView.qml compiles/loads cleanly with active downloads navigation
+    QQmlComponent runnersComp(
+        &engine, QUrl::fromLocalFile(qmlBase + QStringLiteral("RunnersView.qml")));
+    QVERIFY2(runnersComp.errors().isEmpty(), qPrintable(runnersComp.errorString()));
+    QScopedPointer<QObject> runnersObj(runnersComp.create());
+    QVERIFY(runnersObj != nullptr);
   }
 };
 

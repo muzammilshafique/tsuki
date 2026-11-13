@@ -419,6 +419,9 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
     session->environment = plan.environment;
 
     m_running.insert(gameId, session);
+    if (m_controllerMgr) {
+        m_controllerMgr->setGameRunning(true);
+    }
     emit runningGamesChanged();
     emit gameStarted(gameId, game.title);
 
@@ -481,6 +484,9 @@ void LaunchPipeline::handleSessionTermination(const QString& gameId, int exitCod
 }
 
 void LaunchPipeline::updateEmulationLifecycle() {
+    if (m_controllerMgr) {
+        m_controllerMgr->setGameRunning(!m_running.isEmpty());
+    }
     bool anyNeedsEmulation = false;
     for (const RunningSession* s : m_running) {
         if (s->usesXboxEmulation) {

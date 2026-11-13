@@ -9,10 +9,23 @@ Item {
     property int selectedIndex: 0
     property bool openUpward: false
     property bool forceDownward: false
+    property bool upDownNavigatesFocus: false
     signal selected(int idx)
 
     property alias popup: popup
     property int focusedPopupIndex: selectedIndex
+    readonly property bool kbFocused: combo.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+
+    function scrollFocusedIntoView() {
+        if (!flick || flick.height <= 0) return
+        const stride = 38
+        const itemY = focusedPopupIndex * stride
+        if (itemY < flick.contentY) {
+            flick.contentY = Math.max(0, itemY)
+        } else if (itemY + 36 > flick.contentY + flick.height) {
+            flick.contentY = Math.max(0, itemY + 36 - flick.height)
+        }
+    }
 
     function togglePopup() {
         if (popup.visible) {
@@ -20,18 +33,21 @@ Item {
         } else {
             focusedPopupIndex = selectedIndex
             popup.open()
+            Qt.callLater(scrollFocusedIntoView)
         }
     }
 
     function handleDown() {
         if (comboModel && comboModel.length > 0) {
             focusedPopupIndex = (focusedPopupIndex + 1) % comboModel.length
+            scrollFocusedIntoView()
         }
     }
 
     function handleUp() {
         if (comboModel && comboModel.length > 0) {
             focusedPopupIndex = (focusedPopupIndex - 1 + comboModel.length) % comboModel.length
+            scrollFocusedIntoView()
         }
     }
 
@@ -64,6 +80,7 @@ Item {
     implicitWidth: Math.max(160, labelMeasure.implicitWidth + 48)
     implicitHeight: 36
     focus: true
+    activeFocusOnTab: false
 
     Text {
         id: labelMeasure
@@ -89,19 +106,21 @@ Item {
         else togglePopup()
     }
     Keys.onUpPressed: (event) => {
-        event.accepted = true
         if (popup.visible) {
+            event.accepted = true
             handleUp()
-        } else if (combo.selectedIndex > 0) {
+        } else if (!combo.upDownNavigatesFocus && combo.selectedIndex > 0) {
+            event.accepted = true
             combo.selectedIndex--
             combo.selected(combo.selectedIndex)
         }
     }
     Keys.onDownPressed: (event) => {
-        event.accepted = true
         if (popup.visible) {
+            event.accepted = true
             handleDown()
-        } else if (combo.comboModel && combo.selectedIndex < combo.comboModel.length - 1) {
+        } else if (!combo.upDownNavigatesFocus && combo.comboModel && combo.selectedIndex < combo.comboModel.length - 1) {
+            event.accepted = true
             combo.selectedIndex++
             combo.selected(combo.selectedIndex)
         }
@@ -112,21 +131,27 @@ Item {
             popup.close()
         }
     }
+    Keys.onPressed: (event) => {
+        if (event.key === Qt.Key_Backspace && popup.visible) {
+            event.accepted = true
+            popup.close()
+        }
+    }
 
     // Material 3 Dropdown Squircle Button (Matching M3 design system)
     Rectangle {
         id: comboBox
         anchors.fill: parent
         radius: 10
-        color: (comboMA.containsMouse || popup.visible || combo.activeFocus)
+        color: (comboMA.containsMouse || popup.visible || combo.kbFocused)
             ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
             : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04))
 
-        border.color: (popup.visible || combo.activeFocus)
+        border.color: (popup.visible || combo.kbFocused)
             ? appSettings.accentColor
             : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
-        border.width: (popup.visible || combo.activeFocus) ? 1.5 : 1
-        scale: comboMA.pressed ? 0.96 : (combo.activeFocus ? 1.02 : 1.0)
+        border.width: (popup.visible || combo.kbFocused) ? 1.5 : 1
+        scale: comboMA.pressed ? 0.96 : (combo.kbFocused ? 1.02 : 1.0)
 
         Behavior on color { ColorAnimation { duration: 120 } }
         Behavior on border.color { ColorAnimation { duration: 120 } }
@@ -153,7 +178,7 @@ Item {
             YIcon {
                 size: 11
                 source: "qrc:/tsuki_app/icons/actions/chevron_down.svg"
-                color: (popup.visible || combo.activeFocus || comboMA.containsMouse) ? appSettings.accentColor : appSettings.textSecColor
+                color: (popup.visible || combo.kbFocused || comboMA.containsMouse) ? appSettings.accentColor : appSettings.textSecColor
                 rotation: popup.visible ? 180 : 0
                 Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                 Behavior on color { ColorAnimation { duration: 120 } }
@@ -254,7 +279,12 @@ Item {
                                 color: provRow.isSelectedProv
                                     ? appSettings.accentColor
                                     : (provRow.isHoveredProv ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : "transparent")
+                                border.color: (combo.focusedPopupIndex === index && !provRow.isSelectedProv && Boolean(uiController && uiController.isKeyboardNavActive))
+                                    ? appSettings.accentColor
+                                    : "transparent"
+                                border.width: 1.5
                                 Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on border.color { ColorAnimation { duration: 120 } }
                             }
 
                             RowLayout {

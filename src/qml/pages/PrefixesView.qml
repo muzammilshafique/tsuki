@@ -6,8 +6,27 @@ import "../components"
 Item {
     id: root
     signal winetricksRequested(string prefixId, string prefixName)
+    signal focusSidebarRequested()
 
     property string targetPrefixForInstaller: "default-prefix"
+
+    function forceFocus() {
+        if (prefixesList.count > 0) {
+            if (prefixesList.currentIndex < 0) prefixesList.currentIndex = 0
+            prefixesList.forceActiveFocus()
+        } else {
+            newPfxNameField.forceActiveFocus()
+        }
+    }
+
+    Keys.onEscapePressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
+    Keys.onBackPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
+    Keys.onPressed: (event) => {
+        if (event.key === Qt.Key_Backspace) {
+            event.accepted = true
+            root.focusSidebarRequested()
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -54,6 +73,7 @@ Item {
                 Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
 
                 M3Button {
+                    id: importPfxBtn
                     text: "Import Prefix…"
                     iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                     buttonType: "tonal"
@@ -65,9 +85,13 @@ Item {
                             uiController.prefixManager.importPrefix(name, p)
                         }
                     }
+                    Keys.onLeftPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
+                    Keys.onRightPressed: (event) => { event.accepted = true; restoreBackupBtn.forceActiveFocus() }
+                    Keys.onDownPressed: (event) => { event.accepted = true; newPfxNameField.forceActiveFocus() }
                 }
 
                 M3Button {
+                    id: restoreBackupBtn
                     text: "Restore Backup…"
                     iconSource: "qrc:/tsuki_app/icons/actions/refresh.svg"
                     buttonType: "tonal"
@@ -78,6 +102,8 @@ Item {
                             uiController.prefixManager.restorePrefix(p, "", "")
                         }
                     }
+                    Keys.onLeftPressed: (event) => { event.accepted = true; importPfxBtn.forceActiveFocus() }
+                    Keys.onDownPressed: (event) => { event.accepted = true; createPfxBtn.forceActiveFocus() }
                 }
             }
         }
@@ -106,9 +132,14 @@ Item {
 
                 M3TextField {
                     id: newPfxNameField
+                    twoStageFocus: true
                     Layout.preferredWidth: 200
                     placeholderText: "Prefix Name (e.g. gta-v)"
                     Layout.alignment: Qt.AlignVCenter
+                    Keys.onLeftPressed: (event) => { if (!isEditing) { event.accepted = true; root.focusSidebarRequested() } }
+                    Keys.onRightPressed: (event) => { if (!isEditing) { event.accepted = true; archSegBtn.forceActiveFocus() } }
+                    Keys.onUpPressed: (event) => { if (!isEditing) { event.accepted = true; importPfxBtn.forceActiveFocus() } }
+                    Keys.onDownPressed: (event) => { if (!isEditing && prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } }
                 }
 
                 M3SegmentedButton {
@@ -120,16 +151,36 @@ Item {
                     ]
                     selectedValue: 0
                     Layout.alignment: Qt.AlignVCenter
+                    Keys.onUpPressed: (event) => { event.accepted = true; importPfxBtn.forceActiveFocus() }
+                    Keys.onDownPressed: (event) => { if (prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                    Keys.onRightPressed: (event) => {
+                        if (selectedValue === 1) {
+                            event.accepted = true
+                            newPfxPathField.forceActiveFocus()
+                        }
+                    }
+                    Keys.onLeftPressed: (event) => {
+                        if (selectedValue === 0) {
+                            event.accepted = true
+                            newPfxNameField.forceActiveFocus()
+                        }
+                    }
                 }
 
                 M3TextField {
                     id: newPfxPathField
+                    twoStageFocus: true
                     Layout.fillWidth: true
                     text: appSettings.defaultPrefixLocation
                     Layout.alignment: Qt.AlignVCenter
+                    Keys.onLeftPressed: (event) => { if (!isEditing) { event.accepted = true; archSegBtn.forceActiveFocus() } }
+                    Keys.onRightPressed: (event) => { if (!isEditing) { event.accepted = true; folderCreateBtn.forceActiveFocus() } }
+                    Keys.onUpPressed: (event) => { if (!isEditing) { event.accepted = true; importPfxBtn.forceActiveFocus() } }
+                    Keys.onDownPressed: (event) => { if (!isEditing && prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } }
                 }
 
                 M3Button {
+                    id: folderCreateBtn
                     text: "Folder…"
                     buttonType: "tonal"
                     Layout.alignment: Qt.AlignVCenter
@@ -139,9 +190,14 @@ Item {
                             newPfxPathField.text = p
                         }
                     }
+                    Keys.onLeftPressed: (event) => { event.accepted = true; newPfxPathField.forceActiveFocus() }
+                    Keys.onRightPressed: (event) => { event.accepted = true; createPfxBtn.forceActiveFocus() }
+                    Keys.onUpPressed: (event) => { event.accepted = true; restoreBackupBtn.forceActiveFocus() }
+                    Keys.onDownPressed: (event) => { if (prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } }
                 }
 
                 M3Button {
+                    id: createPfxBtn
                     text: "Create"
                     iconSource: "qrc:/tsuki_app/icons/actions/add.svg"
                     buttonType: "filled"
@@ -158,12 +214,18 @@ Item {
                             newPfxNameField.text = ""
                         }
                     }
+                    Keys.onLeftPressed: (event) => { event.accepted = true; folderCreateBtn.forceActiveFocus() }
+                    Keys.onUpPressed: (event) => { event.accepted = true; restoreBackupBtn.forceActiveFocus() }
+                    Keys.onDownPressed: (event) => { if (prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } }
                 }
             }
         }
 
         // ── Prefixes List ────────────────────────────────────────────────────
         ListView {
+            id: prefixesList
+            focus: true
+            keyNavigationEnabled: false
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -171,15 +233,59 @@ Item {
             model: uiController.prefixManager.prefixes
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+            onActiveFocusChanged: {
+                if (activeFocus && currentIndex < 0 && count > 0) currentIndex = 0
+            }
+
+            Keys.onUpPressed: (event) => {
+                event.accepted = true
+                if (currentIndex > 0) {
+                    currentIndex--
+                    positionViewAtIndex(currentIndex, ListView.Contain)
+                } else {
+                    newPfxNameField.forceActiveFocus()
+                }
+            }
+            Keys.onDownPressed: (event) => {
+                event.accepted = true
+                if (currentIndex < count - 1) {
+                    currentIndex++
+                    positionViewAtIndex(currentIndex, ListView.Contain)
+                }
+            }
+            Keys.onLeftPressed: (event) => {
+                event.accepted = true
+                root.focusSidebarRequested()
+            }
+            Keys.onRightPressed: (event) => {
+                event.accepted = true
+                if (currentItem && currentItem.runExeBtn) currentItem.runExeBtn.forceActiveFocus()
+            }
+            Keys.onReturnPressed: (event) => {
+                event.accepted = true
+                if (currentItem && currentItem.runExeBtn) currentItem.runExeBtn.forceActiveFocus()
+            }
+            Keys.onEnterPressed: (event) => {
+                event.accepted = true
+                if (currentItem && currentItem.runExeBtn) currentItem.runExeBtn.forceActiveFocus()
+            }
+            Keys.onSpacePressed: (event) => {
+                event.accepted = true
+                if (currentItem && currentItem.runExeBtn) currentItem.runExeBtn.forceActiveFocus()
+            }
+
             delegate: Rectangle {
                 id: pfxCard
                 required property var modelData
+                required property int index
+                property alias runExeBtn: runExeBtnItem
+                readonly property bool isCurrentRow: prefixesList.activeFocus && prefixesList.currentIndex === index
                 width: ListView.view.width
                 implicitHeight: cardInner.implicitHeight + 28
                 radius: 16
                 color: appSettings.surfaceColor
-                border.color: Boolean(modelData.isDefault) ? appSettings.accentColor : appSettings.borderColor
-                border.width: Boolean(modelData.isDefault) ? 2 : 1
+                border.color: isCurrentRow ? appSettings.accentColor : (Boolean(modelData.isDefault) ? appSettings.accentColor : appSettings.borderColor)
+                border.width: (isCurrentRow || Boolean(modelData.isDefault)) ? 2 : 1
 
                 RowLayout {
                     id: cardInner
@@ -250,6 +356,7 @@ Item {
                         Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
 
                         M3Button {
+                            id: runExeBtnItem
                             text: "Run .EXE"
                             iconSource: "qrc:/tsuki_app/icons/actions/play.svg"
                             buttonType: "tonal"
@@ -261,37 +368,75 @@ Item {
                                     uiController.prefixManager.runExecutableInPrefix(pfxCard.modelData.id, p, [])
                                 }
                             }
+                            Keys.onLeftPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onRightPressed: (event) => { event.accepted = true; winetricksBtnItem.forceActiveFocus() }
+                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
                         }
 
                         M3Button {
+                            id: winetricksBtnItem
                             text: "Winetricks"
                             iconSource: "qrc:/tsuki_app/icons/actions/wrench.svg"
                             buttonType: "tonal"
                             Layout.alignment: Qt.AlignVCenter
                             onClicked: root.winetricksRequested(pfxCard.modelData.id, pfxCard.modelData.name)
+                            Keys.onLeftPressed: (event) => { event.accepted = true; runExeBtnItem.forceActiveFocus() }
+                            Keys.onRightPressed: (event) => { event.accepted = true; folderBtnItem.forceActiveFocus() }
+                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
                         }
 
                         M3Button {
+                            id: folderBtnItem
                             text: "Folder"
                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                             buttonType: "tonal"
                             Layout.alignment: Qt.AlignVCenter
                             onClicked: uiController.prefixManager.openPrefixInFileManager(pfxCard.modelData.id)
+                            Keys.onLeftPressed: (event) => { event.accepted = true; winetricksBtnItem.forceActiveFocus() }
+                            Keys.onRightPressed: (event) => { event.accepted = true; backupBtnItem.forceActiveFocus() }
+                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
                         }
 
                         M3Button {
+                            id: backupBtnItem
                             text: "Backup"
                             buttonType: "tonal"
                             Layout.alignment: Qt.AlignVCenter
                             onClicked: uiController.prefixManager.backupPrefix(pfxCard.modelData.id, "")
+                            Keys.onLeftPressed: (event) => { event.accepted = true; folderBtnItem.forceActiveFocus() }
+                            Keys.onRightPressed: (event) => { if (deleteBtnItem.visible) { event.accepted = true; deleteBtnItem.forceActiveFocus() } }
+                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
                         }
 
                         M3Button {
+                            id: deleteBtnItem
                             visible: !pfxCard.modelData.isDefault
                             text: "Delete"
                             buttonType: "destructive"
                             Layout.alignment: Qt.AlignVCenter
                             onClicked: uiController.prefixManager.deletePrefix(pfxCard.modelData.id, true)
+                            Keys.onLeftPressed: (event) => { event.accepted = true; backupBtnItem.forceActiveFocus() }
+                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
                         }
                     }
                 }

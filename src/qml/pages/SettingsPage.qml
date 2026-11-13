@@ -6,6 +6,7 @@ import "../components"
 
 Page {
     id: settingsPage
+    objectName: "settingsPage"
     signal backRequested()
 
     background: Rectangle {
@@ -15,9 +16,58 @@ Page {
 
     focus: true
 
+    function isAnyModalOpen() {
+        return tagColorsModal.visible
+    }
+
+    function isTextInputActive() {
+        const fi = settingsPage.Window.activeFocusItem
+        if (!fi) return false
+        const s = fi.toString()
+        if (s.indexOf("M3TextField") !== -1) {
+            return Boolean(fi.isEditing)
+        }
+        return s.indexOf("TextInput") !== -1 || s.indexOf("TextField") !== -1 || s.indexOf("TextArea") !== -1 || s.indexOf("TextEdit") !== -1
+    }
+
     Keys.onEscapePressed: (event) => {
-        event.accepted = true
-        settingsPage.backRequested()
+        if (tagColorsModal.visible) {
+            event.accepted = true
+            tagColorsModal.close()
+        } else {
+            event.accepted = true
+            settingsPage.backRequested()
+        }
+    }
+    Keys.onPressed: (event) => {
+        if (event.key === Qt.Key_Backspace && !isTextInputActive()) {
+            event.accepted = true
+            if (tagColorsModal.visible) tagColorsModal.close()
+            else settingsPage.backRequested()
+        } else if (event.key === Qt.Key_Down && !tagColorsModal.visible && settingsPage.activeFocus) {
+            event.accepted = true
+            let rows = getVisibleRows()
+            if (rows.length > 1) {
+                rows[1].forceActiveFocus()
+                scrollToSettingRow(rows[1])
+            }
+        }
+    }
+
+    Shortcut {
+        sequences: ["/", "Ctrl+F"]
+        enabled: settingsPage.visible && settingsPage.StackView.status === StackView.Active && !tagColorsModal.visible && !settingsPage.isTextInputActive()
+        onActivated: searchField.forceActiveFocus()
+    }
+
+    Connections {
+        target: uiController ? uiController.controllerManager : null
+        function onSearchActionRequested() {
+            if (settingsPage.StackView.status === StackView.Active && !tagColorsModal.visible) {
+                uiController.setKeyboardNavActive(true)
+                searchField.forceActiveFocus()
+            }
+        }
     }
 
     property var settingsCatalog: []
@@ -93,20 +143,117 @@ Page {
     function scrollToSetting(targetItem) {
         if (!targetItem || !settingsCol) return
         Qt.callLater(() => {
-            let p = targetItem.mapToItem(settingsCol, 0, 0)
-            let maxScrollY = Math.max(0, settingsScroll.contentHeight - settingsScroll.height)
-            let desiredY = Math.min(Math.max(0, p.y - 20), maxScrollY)
-            settingsScroll.ScrollBar.vertical.position = (maxScrollY > 0 && settingsScroll.contentHeight > 0)
-                ? (desiredY / settingsScroll.contentHeight)
-                : 0
+            scrollToSettingRow(targetItem, true)
+            targetItem.forceActiveFocus()
             if (typeof targetItem.highlight === "function") {
                 targetItem.highlight()
             }
         })
     }
 
+    function getVisibleRows() {
+        let rows = [searchTile]
+        let sections = [secAppearance, secRunners, secPerf, secSystem]
+        for (let s = 0; s < sections.length; s++) {
+            let sec = sections[s]
+            if (!sec || !sec.visible || !sec.rowsContainer) continue
+            let ch = sec.rowsContainer.children
+            for (let i = 0; i < ch.length; i++) {
+                let row = ch[i]
+                if (row && row.visible && row.label !== undefined) {
+                    rows.push(row)
+                }
+            }
+        }
+        return rows
+    }
+
+    function isDescendant(item, ancestor) {
+        let p = item
+        while (p) {
+            if (p === ancestor) return true
+            p = p.parent
+        }
+        return false
+    }
+
+    function findActiveRowIndex(rows) {
+        const fi = settingsPage.Window.activeFocusItem
+        if (!fi) return -1
+        for (let i = 0; i < rows.length; i++) {
+            if (rows[i].activeFocus || isDescendant(fi, rows[i])) {
+                return i
+            }
+        }
+        return -1
+    }
+
+    function scrollToSettingRow(targetItem, centerView) {
+        if (!targetItem || targetItem === searchTile || targetItem === backBtn || !settingsCol) return
+        let flick = settingsScroll.contentItem
+        if (!flick || flick.contentY === undefined) return
+        let p = targetItem.mapToItem(settingsCol, 0, 0)
+        let maxY = Math.max(0, flick.contentHeight - settingsScroll.height)
+        if (centerView) {
+            let centered = Math.max(0, Math.min(maxY, p.y - 40))
+            rowScrollAnim.to = centered
+            rowScrollAnim.restart()
+            return
+        }
+        let viewTop = flick.contentY
+        let viewBottom = flick.contentY + settingsScroll.height - 68
+        let desiredY = flick.contentY
+        if (p.y - 24 < viewTop) {
+            desiredY = Math.max(0, p.y - 24)
+        } else if (p.y + targetItem.height + 24 > viewBottom) {
+            desiredY = Math.min(maxY, p.y + targetItem.height + 24 - (settingsScroll.height - 68))
+        }
+        if (Math.abs(desiredY - flick.contentY) > 1) {
+            rowScrollAnim.to = desiredY
+            rowScrollAnim.restart()
+        }
+    }
+
+    function focusNextSettingRow() {
+        let rows = getVisibleRows()
+        if (rows.length === 0) return
+        let idx = findActiveRowIndex(rows)
+        let nextIdx = (idx < 0) ? Math.min(1, rows.length - 1) : Math.min(rows.length - 1, idx + 1)
+        let target = rows[nextIdx]
+        target.forceActiveFocus()
+        scrollToSettingRow(target, false)
+    }
+
+    function focusPrevSettingRow() {
+        let rows = getVisibleRows()
+        if (rows.length === 0) return
+        let idx = findActiveRowIndex(rows)
+        if (idx <= 0) {
+            backBtn.forceActiveFocus()
+            return
+        }
+        let prevIdx = idx - 1
+        let target = rows[prevIdx]
+        target.forceActiveFocus()
+        if (target === searchTile) {
+            let flick = settingsScroll.contentItem
+            if (flick && flick.contentY !== undefined && flick.contentY > 0) {
+                rowScrollAnim.to = 0
+                rowScrollAnim.restart()
+            }
+        } else {
+            scrollToSettingRow(target, false)
+        }
+    }
+
     Component.onCompleted: {
         Qt.callLater(buildIndex)
+        Qt.callLater(() => {
+            if (uiController && uiController.isKeyboardNavActive) {
+                let rows = getVisibleRows()
+                if (rows.length > 1) rows[1].forceActiveFocus()
+            }
+        })
     }
 
     // ── Top Navigation & Search Header (Matching Yoru Layout) ────────────────
@@ -143,7 +290,7 @@ Page {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
 
-                readonly property bool isBtnActive: backBtn.hovered || backBtn.activeFocus
+                readonly property bool isBtnActive: backBtn.hovered || (backBtn.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
                 property real expandedWidth: 10 + 18 + 8 + backLabel.implicitWidth + 14
                 implicitWidth: isBtnActive ? expandedWidth : 40
                 implicitHeight: 40
@@ -199,31 +346,78 @@ Page {
                 }
 
                 onClicked: settingsPage.backRequested()
+                activeFocusOnTab: false
+                Keys.onRightPressed: (event) => { event.accepted = true; searchTile.forceActiveFocus() }
+                Keys.onDownPressed: (event) => { event.accepted = true; settingsPage.focusNextSettingRow() }
+                Keys.onReturnPressed: (event) => { event.accepted = true; settingsPage.backRequested() }
+                Keys.onEnterPressed: (event) => { event.accepted = true; settingsPage.backRequested() }
+                Keys.onSpacePressed: (event) => { event.accepted = true; settingsPage.backRequested() }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
             }
 
             // Center: Material 3 Search Bar Pill
             Rectangle {
                 id: searchTile
+                focus: true
+                activeFocusOnTab: false
                 anchors.centerIn: parent
                 width: Math.min(420, Math.max(260, parent.width - 320))
                 height: 40
                 radius: 20
-                color: searchField.activeFocus
+                readonly property bool isEditing: searchField.activeFocus
+                readonly property bool isTileFocused: searchTile.activeFocus && (uiController ? uiController.isKeyboardNavActive : false)
+                color: (searchField.activeFocus || searchTile.isTileFocused)
                     ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
                     : (searchTileHover.hovered
                         ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.06))
                         : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)))
 
-                border.color: searchField.activeFocus
+                border.color: (searchField.activeFocus || searchTile.isTileFocused)
                     ? appSettings.accentColor
                     : (searchTileHover.hovered
                         ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.14))
                         : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.06)))
-                border.width: searchField.activeFocus ? 2 : 1
+                border.width: (searchField.activeFocus || searchTile.isTileFocused) ? 2 : 1
 
                 Behavior on color { ColorAnimation { duration: 150 } }
                 Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                Keys.onLeftPressed: (event) => {
+                    if (!searchTile.isEditing) {
+                        event.accepted = true
+                        backBtn.forceActiveFocus()
+                    }
+                }
+                Keys.onUpPressed: (event) => {
+                    if (!searchTile.isEditing) {
+                        event.accepted = true
+                        backBtn.forceActiveFocus()
+                    }
+                }
+                Keys.onDownPressed: (event) => {
+                    if (!searchTile.isEditing) {
+                        event.accepted = true
+                        settingsPage.focusNextSettingRow()
+                    }
+                }
+                Keys.onReturnPressed: (event) => {
+                    if (!searchTile.isEditing) {
+                        event.accepted = true
+                        searchField.forceActiveFocus()
+                    }
+                }
+                Keys.onEnterPressed: (event) => {
+                    if (!searchTile.isEditing) {
+                        event.accepted = true
+                        searchField.forceActiveFocus()
+                    }
+                }
+                Keys.onSpacePressed: (event) => {
+                    if (!searchTile.isEditing) {
+                        event.accepted = true
+                        searchField.forceActiveFocus()
+                    }
+                }
 
                 HoverHandler { id: searchTileHover; cursorShape: Qt.IBeamCursor }
 
@@ -233,7 +427,7 @@ Page {
                     anchors.leftMargin: 14
                     size: 16
                     source: "qrc:/tsuki_app/icons/actions/search.svg"
-                    color: searchField.activeFocus ? appSettings.accentColor : appSettings.textSecColor
+                    color: (searchField.activeFocus || searchTile.isTileFocused) ? appSettings.accentColor : appSettings.textSecColor
                     Behavior on color { ColorAnimation { duration: 150 } }
                 }
 
@@ -245,7 +439,7 @@ Page {
                     color: appSettings.textColor
                     font.pixelSize: 13
                     leftPadding: 38
-                    rightPadding: (clearSearchBtn.visible ? 34 : 14)
+                    rightPadding: (clearSearchBtn.visible ? 34 : 42)
                     selectByMouse: true
                     background: null
                     renderType: Text.QtRendering
@@ -254,10 +448,13 @@ Page {
                     onTextChanged: settingsPage.updateSearchResults(text)
 
                     Keys.onDownPressed: (event) => {
+                        event.accepted = true
                         if (searchResultsPopup.visible && settingsPage.searchResults.length > 0) {
-                            event.accepted = true
                             settingsPage.focusedResultIndex = (settingsPage.focusedResultIndex + 1) % settingsPage.searchResults.length
                             sResListView.positionViewAtIndex(settingsPage.focusedResultIndex, ListView.Contain)
+                        } else {
+                            searchTile.forceActiveFocus()
+                            settingsPage.focusNextSettingRow()
                         }
                     }
                     Keys.onUpPressed: (event) => {
@@ -295,9 +492,24 @@ Page {
                             searchResultsPopup.close()
                         } else {
                             searchField.clear()
-                            searchField.focus = false
+                            searchTile.forceActiveFocus()
                         }
                     }
+                }
+
+                GamepadPrompt {
+                    readonly property bool showPrompt: Boolean(uiController && uiController.isKeyboardNavActive) && searchField.text.length === 0 && !searchTile.isEditing
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    opacity: showPrompt ? 0.85 : 0.0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                    iconSource: (uiController && uiController.controllerManager) ? uiController.controllerManager.searchIconSource : ""
+                    keyName: "/"
+                    pixelSize: 12
+                    iconSize: 17
+                    iconColor: searchTile.isTileFocused ? appSettings.accentColor : appSettings.textSecColor
                 }
 
                 ToolButton {
@@ -470,6 +682,14 @@ Page {
         }
     }
 
+    NumberAnimation {
+        id: rowScrollAnim
+        target: settingsScroll.contentItem
+        property: "contentY"
+        duration: 180
+        easing.type: Easing.OutCubic
+    }
+
     // ── Settings Scroll Content ──────────────────────────────────────────────
     ScrollView {
         id: settingsScroll
@@ -478,6 +698,7 @@ Page {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         contentWidth: availableWidth
+        contentHeight: settingsCol.implicitHeight
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ScrollBar.vertical: ScrollBar {
@@ -634,6 +855,7 @@ Page {
 
                 // Runner & Platform Tag Colors
                 SettingRow {
+                    id: tagColorsRow
                     label: "Runner & Platform Tag Colors"
                     description: "Customize badge colors for Proton, Proton-GE, CachyOS, and Linux"
                     controlItem: M3Button {
@@ -784,6 +1006,7 @@ Page {
 
                 // Default Prefix Location (Native system folder picker)
                 SettingRow {
+                    id: prefixDirRow
                     label: "Default Wine Prefix Directory"
                     description: "Base folder where newly created wine prefixes are initialized"
                     controlItem: RowLayout {
@@ -794,12 +1017,23 @@ Page {
                             onCommit: (val) => appSettings.defaultPrefixLocation = val
                         }
                         M3Button {
+                            id: prefixDirBrowseBtn
                             text: "Browse…"
                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                             buttonType: "tonal"
                             onClicked: {
                                 let p = uiController.selectFolder("Select Default Prefix Location", appSettings.defaultPrefixLocation)
                                 if (p && p.length > 0) appSettings.defaultPrefixLocation = p
+                            }
+                            Keys.onLeftPressed: (event) => { event.accepted = true; prefixDirRow.forceActiveFocus() }
+                            Keys.onUpPressed: (event) => { event.accepted = true; settingsPage.focusPrevSettingRow() }
+                            Keys.onDownPressed: (event) => { event.accepted = true; settingsPage.focusNextSettingRow() }
+                            Keys.onEscapePressed: (event) => { event.accepted = true; settingsPage.backRequested() }
+                            Keys.onPressed: (event) => {
+                                if (event.key === Qt.Key_Backspace) {
+                                    event.accepted = true
+                                    settingsPage.backRequested()
+                                }
                             }
                         }
                     }
@@ -809,6 +1043,7 @@ Page {
 
                 // Default Runner Download Location (Native system folder picker)
                 SettingRow {
+                    id: runnerDirRow
                     label: "Runner Download Directory"
                     description: "Folder where Proton-GE and Wine-Staging tarballs are extracted"
                     controlItem: RowLayout {
@@ -819,12 +1054,23 @@ Page {
                             onCommit: (val) => appSettings.defaultRunnerLocation = val
                         }
                         M3Button {
+                            id: runnerDirBrowseBtn
                             text: "Browse…"
                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                             buttonType: "tonal"
                             onClicked: {
                                 let p = uiController.selectFolder("Select Runner Download Location", appSettings.defaultRunnerLocation)
                                 if (p && p.length > 0) appSettings.defaultRunnerLocation = p
+                            }
+                            Keys.onLeftPressed: (event) => { event.accepted = true; runnerDirRow.forceActiveFocus() }
+                            Keys.onUpPressed: (event) => { event.accepted = true; settingsPage.focusPrevSettingRow() }
+                            Keys.onDownPressed: (event) => { event.accepted = true; settingsPage.focusNextSettingRow() }
+                            Keys.onEscapePressed: (event) => { event.accepted = true; settingsPage.backRequested() }
+                            Keys.onPressed: (event) => {
+                                if (event.key === Qt.Key_Backspace) {
+                                    event.accepted = true
+                                    settingsPage.backRequested()
+                                }
                             }
                         }
                     }
@@ -955,6 +1201,27 @@ Page {
 
                 RowDiv {}
 
+                // Bottom Navigation Hints Bar
+                SettingRow {
+                    label: "Bottom Navigation Hints Bar"
+                    description: "Show control hints shadow bar at the bottom during keyboard/gamepad navigation"
+                    controlItem: Toggle {
+                        id: settingsNavHudToggle
+                        checked: appSettings.showNavigationHud
+                        Connections {
+                            target: appSettings
+                            function onBehaviorChanged() {
+                                settingsNavHudToggle.checked = appSettings.showNavigationHud
+                            }
+                        }
+                        onToggled: (c) => {
+                            appSettings.showNavigationHud = c
+                        }
+                    }
+                }
+
+                RowDiv {}
+
                 // Verbose Wine Logs
                 SettingRow {
                     label: "Verbose Wine Debug Logging (+err,+warn)"
@@ -997,6 +1264,44 @@ Page {
         padding: 0
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
+        property int modalFocusIdx: 1
+
+        function focusModalItem(idx) {
+            const items = [modalCloseBtn, tagPickerProton, tagPickerGe, tagPickerCachy, tagPickerLinux, tagModalResetBtn, tagModalDoneBtn]
+            const sections = [null, secProtonRow, secGeRow, secCachyRow, secLinuxRow, null, null]
+            const safeIdx = ((idx % items.length) + items.length) % items.length
+            modalFocusIdx = safeIdx
+            const target = items[safeIdx]
+            if (target) target.forceActiveFocus()
+            const sec = sections[safeIdx]
+            if (sec && tagPickerScroll && tagPickerScroll.contentItem) {
+                const flick = tagPickerScroll.contentItem
+                const topY = sec.y - 8
+                const bottomY = sec.y + sec.height + 12
+                if (topY < flick.contentY) {
+                    flick.contentY = Math.max(0, topY)
+                } else if (bottomY > flick.contentY + flick.height) {
+                    const maxY = Math.max(0, flick.contentHeight - flick.height)
+                    flick.contentY = Math.min(maxY, bottomY - flick.height)
+                }
+            }
+        }
+
+        onAboutToShow: {
+            modalFocusIdx = 1
+            if (tagPickerScroll && tagPickerScroll.contentItem) {
+                tagPickerScroll.contentItem.contentY = 0
+            }
+        }
+
+        onOpened: {
+            Qt.callLater(() => focusModalItem(1))
+        }
+
+        onClosed: {
+            Qt.callLater(() => tagColorsRow.forceActiveFocus())
+        }
+
         enter: Transition {
             NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
             NumberAnimation { property: "scale"; from: 0.96; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
@@ -1023,6 +1328,13 @@ Page {
         contentItem: ColumnLayout {
             width: tagColorsModal.availableWidth
             spacing: 0
+            focus: true
+            Keys.onPressed: (event) => {
+                if (event.key === Qt.Key_Backspace && !settingsPage.isTextInputActive()) {
+                    event.accepted = true
+                    tagColorsModal.close()
+                }
+            }
 
             // ── Dialog Header ──
             Item {
@@ -1054,18 +1366,29 @@ Page {
 
                     Rectangle {
                         id: modalCloseBtn
+                        readonly property bool isKeyFocused: activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
                         implicitWidth: 36
                         implicitHeight: 36
                         radius: 18
+                        focus: true
+                        activeFocusOnTab: false
                         Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-                        color: closeHover.hovered 
-                            ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)) 
+                        color: (closeHover.hovered || isKeyFocused)
+                            ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10))
                             : "transparent"
-                        border.color: closeHover.hovered 
-                            ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.12))
-                            : "transparent"
-                        border.width: 1
-                        scale: closeMA.pressed ? 0.92 : 1.0
+                        border.color: isKeyFocused
+                            ? appSettings.accentColor
+                            : (closeHover.hovered
+                                ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.12))
+                                : "transparent")
+                        border.width: isKeyFocused ? 2 : 1
+                        scale: closeMA.pressed ? 0.92 : (isKeyFocused ? 1.06 : 1.0)
+
+                        Keys.onDownPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(1) }
+                        Keys.onUpPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(6) }
+                        Keys.onReturnPressed: (event) => { event.accepted = true; tagColorsModal.close() }
+                        Keys.onEnterPressed: (event) => { event.accepted = true; tagColorsModal.close() }
+                        Keys.onSpacePressed: (event) => { event.accepted = true; tagColorsModal.close() }
 
                         Behavior on color { ColorAnimation { duration: 120 } }
                         Behavior on border.color { ColorAnimation { duration: 120 } }
@@ -1232,10 +1555,15 @@ Page {
 
             // ── Scrollable Picker Body ──
             ScrollView {
+                id: tagPickerScroll
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.min(380, pickerCol.implicitHeight + 24)
                 contentWidth: availableWidth
+                contentHeight: pickerCol.implicitHeight + 24
                 clip: true
+                focus: false
+                focusPolicy: Qt.NoFocus
+                activeFocusOnTab: false
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                 ScrollBar.vertical: ScrollBar {
                     width: 6
@@ -1252,35 +1580,56 @@ Page {
                     id: pickerCol
                     width: parent.width - 48
                     anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: 16
+                    spacing: 12
 
                     Item { Layout.preferredHeight: 8 }
 
                     // Proton
-                    ColumnLayout {
+                    Rectangle {
+                        id: secProtonRow
                         Layout.fillWidth: true
-                        spacing: 4
-                        Label {
-                            text: "Proton Tag Color"
-                            color: appSettings.textColor
-                            font.pixelSize: 13
-                            font.weight: Font.DemiBold
-                        }
-                        Label {
-                            text: "Badge color for system and Steam Proton installations"
-                            color: appSettings.textSecColor
-                            font.pixelSize: 11
-                        }
-                        M3ColorPicker {
-                            presets: [
-                                { name: "Sky",    color: "#38bdf8" },
-                                { name: "Blue",   color: "#3b82f6" },
-                                { name: "Cyan",   color: "#06b6d4" },
-                                { name: "Indigo", color: "#6366f1" },
-                                { name: "Teal",   color: "#14b8a6" }
-                            ]
-                            currentColor: String(appSettings.tagColorSteamProton)
-                            onColorSelected: (hex) => appSettings.tagColorSteamProton = hex
+                        implicitHeight: protonInnerCol.implicitHeight + 20
+                        radius: 10
+                        color: (tagPickerProton.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
+                            ? Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.08)
+                            : "transparent"
+                        border.color: (tagPickerProton.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
+                            ? appSettings.accentColor
+                            : "transparent"
+                        border.width: 1.5
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                        ColumnLayout {
+                            id: protonInnerCol
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 4
+                            Label {
+                                text: "Proton Tag Color"
+                                color: appSettings.textColor
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                            }
+                            Label {
+                                text: "Badge color for system and Steam Proton installations"
+                                color: appSettings.textSecColor
+                                font.pixelSize: 11
+                            }
+                            M3ColorPicker {
+                                id: tagPickerProton
+                                Keys.onDownPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(2) }
+                                Keys.onUpPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(0) }
+                                presets: [
+                                    { name: "Sky",    color: "#38bdf8" },
+                                    { name: "Blue",   color: "#3b82f6" },
+                                    { name: "Cyan",   color: "#06b6d4" },
+                                    { name: "Indigo", color: "#6366f1" },
+                                    { name: "Teal",   color: "#14b8a6" }
+                                ]
+                                currentColor: String(appSettings.tagColorSteamProton)
+                                onColorSelected: (hex) => appSettings.tagColorSteamProton = hex
+                            }
                         }
                     }
 
@@ -1291,30 +1640,51 @@ Page {
                     }
 
                     // Proton-GE
-                    ColumnLayout {
+                    Rectangle {
+                        id: secGeRow
                         Layout.fillWidth: true
-                        spacing: 4
-                        Label {
-                            text: "Proton-GE Tag Color"
-                            color: appSettings.textColor
-                            font.pixelSize: 13
-                            font.weight: Font.DemiBold
-                        }
-                        Label {
-                            text: "Badge color for GloriousEggroll Proton-GE releases"
-                            color: appSettings.textSecColor
-                            font.pixelSize: 11
-                        }
-                        M3ColorPicker {
-                            presets: [
-                                { name: "Purple", color: "#a855f7" },
-                                { name: "Violet", color: "#8b5cf6" },
-                                { name: "Pink",   color: "#ec4899" },
-                                { name: "Rose",   color: "#f43f5e" },
-                                { name: "Blue",   color: "#3b82f6" }
-                            ]
-                            currentColor: String(appSettings.tagColorProtonGe)
-                            onColorSelected: (hex) => appSettings.tagColorProtonGe = hex
+                        implicitHeight: geInnerCol.implicitHeight + 20
+                        radius: 10
+                        color: (tagPickerGe.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
+                            ? Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.08)
+                            : "transparent"
+                        border.color: (tagPickerGe.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
+                            ? appSettings.accentColor
+                            : "transparent"
+                        border.width: 1.5
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                        ColumnLayout {
+                            id: geInnerCol
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 4
+                            Label {
+                                text: "Proton-GE Tag Color"
+                                color: appSettings.textColor
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                            }
+                            Label {
+                                text: "Badge color for GloriousEggroll Proton-GE releases"
+                                color: appSettings.textSecColor
+                                font.pixelSize: 11
+                            }
+                            M3ColorPicker {
+                                id: tagPickerGe
+                                Keys.onUpPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(1) }
+                                Keys.onDownPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(3) }
+                                presets: [
+                                    { name: "Purple", color: "#a855f7" },
+                                    { name: "Violet", color: "#8b5cf6" },
+                                    { name: "Pink",   color: "#ec4899" },
+                                    { name: "Rose",   color: "#f43f5e" },
+                                    { name: "Blue",   color: "#3b82f6" }
+                                ]
+                                currentColor: String(appSettings.tagColorProtonGe)
+                                onColorSelected: (hex) => appSettings.tagColorProtonGe = hex
+                            }
                         }
                     }
 
@@ -1325,30 +1695,51 @@ Page {
                     }
 
                     // Proton-CachyOS
-                    ColumnLayout {
+                    Rectangle {
+                        id: secCachyRow
                         Layout.fillWidth: true
-                        spacing: 4
-                        Label {
-                            text: "Proton-CachyOS Tag Color"
-                            color: appSettings.textColor
-                            font.pixelSize: 13
-                            font.weight: Font.DemiBold
-                        }
-                        Label {
-                            text: "Badge color for CachyOS optimized Proton builds"
-                            color: appSettings.textSecColor
-                            font.pixelSize: 11
-                        }
-                        M3ColorPicker {
-                            presets: [
-                                { name: "Teal",    color: "#2dd4bf" },
-                                { name: "Emerald", color: "#10b981" },
-                                { name: "Cyan",    color: "#06b6d4" },
-                                { name: "Green",   color: "#22c55e" },
-                                { name: "Sky",     color: "#38bdf8" }
-                            ]
-                            currentColor: String(appSettings.tagColorCachyos)
-                            onColorSelected: (hex) => appSettings.tagColorCachyos = hex
+                        implicitHeight: cachyInnerCol.implicitHeight + 20
+                        radius: 10
+                        color: (tagPickerCachy.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
+                            ? Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.08)
+                            : "transparent"
+                        border.color: (tagPickerCachy.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
+                            ? appSettings.accentColor
+                            : "transparent"
+                        border.width: 1.5
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                        ColumnLayout {
+                            id: cachyInnerCol
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 4
+                            Label {
+                                text: "Proton-CachyOS Tag Color"
+                                color: appSettings.textColor
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                            }
+                            Label {
+                                text: "Badge color for CachyOS optimized Proton builds"
+                                color: appSettings.textSecColor
+                                font.pixelSize: 11
+                            }
+                            M3ColorPicker {
+                                id: tagPickerCachy
+                                Keys.onUpPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(2) }
+                                Keys.onDownPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(4) }
+                                presets: [
+                                    { name: "Teal",    color: "#2dd4bf" },
+                                    { name: "Emerald", color: "#10b981" },
+                                    { name: "Cyan",    color: "#06b6d4" },
+                                    { name: "Green",   color: "#22c55e" },
+                                    { name: "Sky",     color: "#38bdf8" }
+                                ]
+                                currentColor: String(appSettings.tagColorCachyos)
+                                onColorSelected: (hex) => appSettings.tagColorCachyos = hex
+                            }
                         }
                     }
 
@@ -1359,32 +1750,53 @@ Page {
                     }
 
                     // Linux Native
-                    ColumnLayout {
+                    Rectangle {
+                        id: secLinuxRow
                         Layout.fillWidth: true
-                        spacing: 4
-                        Label {
-                            text: "Linux Native Tag Color"
-                            color: appSettings.textColor
-                            font.pixelSize: 13
-                            font.weight: Font.DemiBold
-                        }
-                        Label {
-                            text: "Badge color for native Linux games in library and details"
-                            color: appSettings.textSecColor
-                            font.pixelSize: 11
-                        }
-                        M3ColorPicker {
-                            presets: [
-                                { name: "Amber",  color: "#f59e0b" },
-                                { name: "Orange", color: "#f97316" },
-                                { name: "Green",  color: "#10b981" },
-                                { name: "Cyan",   color: "#06b6d4" },
-                                { name: "Blue",   color: "#3b82f6" },
-                                { name: "Purple", color: "#a855f7" },
-                                { name: "Red",    color: "#ef4444" }
-                            ]
-                            currentColor: String(appSettings.tagColorLinux)
-                            onColorSelected: (hex) => appSettings.tagColorLinux = hex
+                        implicitHeight: linuxInnerCol.implicitHeight + 20
+                        radius: 10
+                        color: (tagPickerLinux.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
+                            ? Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.08)
+                            : "transparent"
+                        border.color: (tagPickerLinux.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
+                            ? appSettings.accentColor
+                            : "transparent"
+                        border.width: 1.5
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                        ColumnLayout {
+                            id: linuxInnerCol
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 4
+                            Label {
+                                text: "Linux Native Tag Color"
+                                color: appSettings.textColor
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                            }
+                            Label {
+                                text: "Badge color for native Linux games in library and details"
+                                color: appSettings.textSecColor
+                                font.pixelSize: 11
+                            }
+                            M3ColorPicker {
+                                id: tagPickerLinux
+                                Keys.onUpPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(3) }
+                                Keys.onDownPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(6) }
+                                presets: [
+                                    { name: "Amber",  color: "#f59e0b" },
+                                    { name: "Orange", color: "#f97316" },
+                                    { name: "Green",  color: "#10b981" },
+                                    { name: "Cyan",   color: "#06b6d4" },
+                                    { name: "Blue",   color: "#3b82f6" },
+                                    { name: "Purple", color: "#a855f7" },
+                                    { name: "Red",    color: "#ef4444" }
+                                ]
+                                currentColor: String(appSettings.tagColorLinux)
+                                onColorSelected: (hex) => appSettings.tagColorLinux = hex
+                            }
                         }
                     }
 
@@ -1412,8 +1824,12 @@ Page {
                     spacing: 12
 
                     M3Button {
+                        id: tagModalResetBtn
                         text: "Reset Defaults"
                         buttonType: "outlined"
+                        Keys.onUpPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(4) }
+                        Keys.onRightPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(6) }
+                        Keys.onDownPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(0) }
                         onClicked: {
                             appSettings.tagColorSteamProton = "#38bdf8"
                             appSettings.tagColorProtonGe = "#a855f7"
@@ -1425,8 +1841,12 @@ Page {
                     Item { Layout.fillWidth: true }
 
                     M3Button {
+                        id: tagModalDoneBtn
                         text: "Done"
                         buttonType: "filled"
+                        Keys.onUpPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(4) }
+                        Keys.onLeftPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(5) }
+                        Keys.onDownPressed: (event) => { event.accepted = true; tagColorsModal.focusModalItem(0) }
                         onClicked: tagColorsModal.close()
                     }
                 }

@@ -6,9 +6,11 @@ import "../components"
 
 Page {
     id: root
+    objectName: "gameDetailPage"
     property string gameId: ""
     property var gameData: ({})
     property int activeTab: 0
+    property bool isSaving: false
 
     readonly property bool isNative: root.gameData.isNative === true
 
@@ -41,11 +43,244 @@ Page {
 
     focus: true
 
+    function isTextInputActive() {
+        const fi = root.Window.activeFocusItem
+        if (!fi) return false
+        const s = fi.toString()
+        if (s.indexOf("M3TextField") !== -1) {
+            return Boolean(fi.isEditing)
+        }
+        return s.indexOf("TextInput") !== -1 || s.indexOf("TextField") !== -1 || s.indexOf("TextArea") !== -1 || s.indexOf("TextEdit") !== -1
+    }
+
+    function isAnyModalOpen() {
+        return isAnyPopupOpen()
+    }
+
+    function isAnyPopupOpen() {
+        if (actionsPopup.visible || artworkUrlDialog.visible || removeGameDialog.visible) return true
+        if (typeof detailRunnerCombo !== "undefined" && detailRunnerCombo.popup.visible) return true
+        if (typeof detailPrefixCombo !== "undefined" && detailPrefixCombo.popup.visible) return true
+        if (typeof hudCombo !== "undefined" && hudCombo.popup.visible) return true
+        return false
+    }
+
+    function cycleTab(delta, focusTabContent) {
+        if (!tabList || tabList.length === 0) return
+        saveAllChanges()
+        let curPos = 0
+        for (let i = 0; i < tabList.length; i++) {
+            if (tabList[i].stackIndex === root.activeTab) {
+                curPos = i
+                break
+            }
+        }
+        let nextPos = (curPos + delta + tabList.length) % tabList.length
+        root.activeTab = tabList[nextPos].stackIndex
+        const shouldFocusContent = (focusTabContent !== false)
+        if (shouldFocusContent && !primaryActionBtn.activeFocus && !actionsDropdownBtn.activeFocus && !backBtn.activeFocus && !tabsBar.activeFocus) {
+            Qt.callLater(() => {
+                let grid = getFocusGrid()
+                if (grid.length > 3 && grid[3].length > 0 && grid[3][0]) {
+                    grid[3][0].forceActiveFocus()
+                    scrollToControl(grid[3][0])
+                }
+            })
+        }
+    }
+
+    function getFocusGrid() {
+        let rows = [
+            [backBtn],
+            [primaryActionBtn, actionsDropdownBtn],
+            [tabsBar]
+        ]
+        if (root.activeTab === 0) {
+            rows.push([titleField, argsField])
+            rows.push([exePathField, exeBrowseBtn])
+            rows.push([workDirField, workDirBrowseBtn])
+            if (!root.isNative) {
+                rows.push([detailRunnerCombo, detailPrefixCombo])
+            } else {
+                rows.push([nativeEnvWrap])
+            }
+        } else if (root.activeTab === 1 && !root.isNative) {
+            rows.push([dxvkToggle])
+            rows.push([vkd3dToggle])
+            rows.push(hudToggle.checked ? [hudCombo, hudToggle] : [hudToggle])
+            rows.push([esyncToggle])
+            rows.push([fsyncToggle])
+            rows.push(vdesktopCheck.checked ? [vdesktopResField, vdesktopCheck] : [vdesktopCheck])
+            rows.push([dllOverridesWrap, envVarsWrap])
+        } else if (root.activeTab === 2) {
+            rows.push([mangohudToggle])
+            rows.push([gamemodeToggle])
+            rows.push([affinityField])
+            rows.push([priorityField])
+            rows.push([detailXboxToggle])
+            rows.push([preScriptField, preScriptBrowseBtn])
+            rows.push([postScriptField, postScriptBrowseBtn])
+        } else if (root.activeTab === 3) {
+            rows.push([autoFetchArtBtn])
+            rows.push([coverLinkBtn, coverBrowseBtn])
+            rows.push([bannerLinkBtn, bannerBrowseBtn])
+            rows.push([logoLinkBtn, logoBrowseBtn])
+            rows.push([iconLinkBtn, iconBrowseBtn])
+        } else if (root.activeTab === 4) {
+            rows.push([exportLogBtn, clearLogBtn])
+            rows.push([logAreaWrap])
+        }
+        return rows
+    }
+
+    function navigateStep(dr, dc) {
+        let rows = getFocusGrid()
+        let pos = findFocusCoords(rows)
+        if (pos.r < 0) {
+            primaryActionBtn.forceActiveFocus()
+            scrollToControl(primaryActionBtn)
+            return true
+        }
+        if (dr !== 0) {
+            let nr = pos.r + dr
+            if (nr >= 0 && nr < rows.length) {
+                let nextRow = rows[nr]
+                let target = nextRow[Math.min(pos.c, nextRow.length - 1)]
+                if (target) {
+                    target.forceActiveFocus()
+                    scrollToControl(target)
+                    return true
+                }
+            }
+            return false
+        }
+        if (dc !== 0) {
+            if (rows[pos.r][pos.c] === tabsBar) {
+                root.cycleTab(dc, false)
+                return true
+            }
+            let nc = pos.c + dc
+            if (nc >= 0 && nc < rows[pos.r].length) {
+                let target = rows[pos.r][nc]
+                if (target) {
+                    target.forceActiveFocus()
+                    scrollToControl(target)
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    function findFocusCoords(rows) {
+        const fi = root.Window.activeFocusItem
+        if (!fi) return { r: -1, c: 0 }
+        for (let r = 0; r < rows.length; r++) {
+            for (let c = 0; c < rows[r].length; c++) {
+                let it = rows[r][c]
+                if (it && (it.activeFocus || fi === it)) {
+                    return { r: r, c: c }
+                }
+            }
+        }
+        return { r: -1, c: 0 }
+    }
+
+    function scrollToControl(item) {
+        if (!item || !detailScroll || !detailScroll.contentItem) return
+        if (item === backBtn || item === primaryActionBtn || item === actionsDropdownBtn) {
+            detailScrollAnim.to = 0
+            detailScrollAnim.restart()
+            return
+        }
+        let flick = detailScroll.contentItem
+        if (!flick || flick.contentY === undefined || !detailCol) return
+        let p = item.mapToItem(detailCol, 0, 0)
+        let maxY = Math.max(0, flick.contentHeight - detailScroll.height)
+        let viewTop = flick.contentY
+        let viewBottom = flick.contentY + detailScroll.height - 68
+        let desiredY = flick.contentY
+        if (p.y - 24 < viewTop) {
+            desiredY = Math.max(0, p.y - 24)
+        } else if (p.y + item.height + 24 > viewBottom) {
+            desiredY = Math.min(maxY, p.y + item.height + 24 - (detailScroll.height - 68))
+        }
+        if (Math.abs(desiredY - flick.contentY) > 1) {
+            detailScrollAnim.to = desiredY
+            detailScrollAnim.restart()
+        }
+    }
+
+    Connections {
+        target: uiController ? uiController.controllerManager : null
+        function onTabLeftRequested() {
+            if (root.StackView.status === StackView.Active && !root.isAnyPopupOpen()) {
+                uiController.setKeyboardNavActive(true)
+                root.cycleTab(-1)
+            }
+        }
+        function onTabRightRequested() {
+            if (root.StackView.status === StackView.Active && !root.isAnyPopupOpen()) {
+                uiController.setKeyboardNavActive(true)
+                root.cycleTab(1)
+            }
+        }
+    }
+
     Keys.onEscapePressed: (event) => {
+        if (actionsPopup.visible) {
+            event.accepted = true
+            actionsPopup.close()
+            return
+        }
         event.accepted = true
         root.saveAllChanges()
         root.backRequested()
     }
+
+    function handleDetailKeyPress(event) {
+        if (root.isAnyPopupOpen()) {
+            if (actionsPopup.visible && event.key === Qt.Key_Backspace) {
+                event.accepted = true
+                actionsPopup.close()
+            }
+            return
+        }
+        if (root.isTextInputActive()) return
+
+        if (event.key === Qt.Key_Backspace) {
+            event.accepted = true
+            root.saveAllChanges()
+            root.backRequested()
+            return
+        }
+        if (event.key === Qt.Key_PageUp || event.key === Qt.Key_BracketLeft) {
+            event.accepted = true
+            root.cycleTab(-1, true)
+            return
+        }
+        if (event.key === Qt.Key_PageDown || event.key === Qt.Key_BracketRight) {
+            event.accepted = true
+            root.cycleTab(1, true)
+            return
+        }
+
+        if (event.key === Qt.Key_Down) {
+            event.accepted = true
+            root.navigateStep(1, 0)
+        } else if (event.key === Qt.Key_Up) {
+            event.accepted = true
+            root.navigateStep(-1, 0)
+        } else if (event.key === Qt.Key_Left) {
+            event.accepted = true
+            root.navigateStep(0, -1)
+        } else if (event.key === Qt.Key_Right) {
+            event.accepted = true
+            root.navigateStep(0, 1)
+        }
+    }
+
+    Keys.onPressed: (event) => root.handleDetailKeyPress(event)
 
     function reloadGame() {
         if (gameId.length > 0) {
@@ -59,19 +294,25 @@ Page {
 
     Component.onCompleted: {
         reloadGame()
-        root.forceActiveFocus()
+        Qt.callLater(() => primaryActionBtn.forceActiveFocus())
     }
     Component.onDestruction: saveAllChanges()
 
     StackView.onStatusChanged: {
         if (StackView.status === StackView.Active) {
-            root.forceActiveFocus()
+            Qt.callLater(() => primaryActionBtn.forceActiveFocus())
         }
     }
 
     Connections {
         target: uiController.gameManager
-        function onGamesChanged() { root.reloadGame() }
+        function onGamesChanged() {
+            if (!root.isSaving) {
+                root.reloadGame()
+            } else if (root.gameId.length > 0) {
+                root.gameData = uiController.gameManager.getGameMap(root.gameId)
+            }
+        }
     }
     Connections {
         target: uiController.launchPipeline
@@ -175,6 +416,7 @@ Page {
             hudVal = root.isNative ? "" : (root.gameData.dxvkHud || "")
         }
 
+        root.isSaving = true
         uiController.gameManager.updateGameDetails(root.gameId, {
             title: (typeof titleField !== "undefined" && titleField && titleField.text.trim().length > 0) ? titleField.text.trim() : (root.gameData.title || ""),
             executablePath: (typeof exePathField !== "undefined" && exePathField && exePathField.text.trim().length > 0) ? exePathField.text.trim() : (root.gameData.executablePath || ""),
@@ -199,16 +441,29 @@ Page {
             environmentVariables: envMap,
             dllOverrides: dllMap
         })
+        root.isSaving = false
+    }
+
+    NumberAnimation {
+        id: detailScrollAnim
+        target: detailScroll.contentItem
+        property: "contentY"
+        duration: 180
+        easing.type: Easing.OutCubic
     }
 
     ScrollView {
+        id: detailScroll
         anchors.fill: parent
         contentWidth: availableWidth
+        contentHeight: detailCol.implicitHeight
         clip: true
 
         ColumnLayout {
+            id: detailCol
             width: parent.width
             spacing: 0
+            Keys.onPressed: (event) => root.handleDetailKeyPress(event)
 
             // ── Hero Banner Header ───────────────────────────────────────────
             Item {
@@ -402,6 +657,7 @@ Page {
                                     leftPadding: 20
                                     rightPadding: 20
                                     focus: true
+                                    activeFocusOnTab: false
                                     z: primaryActionBtn.activeFocus ? 2 : 1
 
                                     Behavior on implicitWidth {
@@ -573,6 +829,7 @@ Page {
                                     height: 44
                                     padding: 0
                                     focus: true
+                                    activeFocusOnTab: false
                                     z: actionsDropdownBtn.activeFocus ? 2 : 1
 
                                     readonly property bool isBtnHovered: (!uiController || !uiController.isKeyboardNavActive) && actionsDropdownBtn.hovered
@@ -660,12 +917,9 @@ Page {
                                         }
                                     }
                                     Keys.onDownPressed: (event) => {
-                                        event.accepted = true
                                         if (actionsPopup.visible) {
+                                            event.accepted = true
                                             actionsPopup.handleDown()
-                                        } else {
-                                            actionsPopup.focusedActionIndex = 0
-                                            actionsPopup.open()
                                         }
                                     }
                                     Keys.onUpPressed: (event) => {
@@ -951,6 +1205,9 @@ Page {
             // ── Material 3 Primary Tabs Bar ─────────────────────────────────
             Item {
                 id: tabsBar
+                focus: true
+                activeFocusOnTab: false
+                readonly property bool isBarFocused: tabsBar.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
                 Layout.fillWidth: true
                 Layout.preferredHeight: 48
                 Layout.leftMargin: 36
@@ -968,7 +1225,9 @@ Page {
 
                 Row {
                     id: tabsRow
-                    anchors.fill: parent
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
                     spacing: 8
 
                     Repeater {
@@ -985,12 +1244,18 @@ Page {
 
                             Rectangle {
                                 anchors.fill: parent
-                                anchors.bottomMargin: 2
+                                anchors.bottomMargin: 4
+                                anchors.topMargin: 2
                                 radius: 8
-                                color: tabItemMA.containsMouse 
-                                    ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)) 
-                                    : "transparent"
+                                color: (tabsBar.isBarFocused && tabItem.isSelected)
+                                    ? Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.14)
+                                    : (tabItemMA.containsMouse
+                                        ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04))
+                                        : "transparent")
+                                border.color: (tabsBar.isBarFocused && tabItem.isSelected) ? appSettings.accentColor : "transparent"
+                                border.width: (tabsBar.isBarFocused && tabItem.isSelected) ? 1.5 : 0
                                 Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on border.color { ColorAnimation { duration: 120 } }
                             }
 
                             Label {
@@ -1015,6 +1280,36 @@ Page {
                                 }
                             }
                         }
+                    }
+                }
+
+                // Right-aligned keyboard/gamepad tab switch prompts with smooth fade (no horizontal shift of tabs)
+                RowLayout {
+                    readonly property bool showPrompts: Boolean(uiController && uiController.isKeyboardNavActive)
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    opacity: showPrompts ? 0.9 : 0.0
+                    visible: opacity > 0.01
+                    Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+
+                    GamepadPrompt {
+                        iconSource: (uiController && uiController.controllerManager) ? uiController.controllerManager.tabLeftIconSource : ""
+                        secondaryIconSource: (uiController && uiController.controllerManager) ? uiController.controllerManager.tabLeftTriggerIconSource : ""
+                        keyName: "["
+                        iconSize: 18
+                        pixelSize: 12
+                        iconColor: tabsBar.isBarFocused ? appSettings.accentColor : appSettings.textSecColor
+                    }
+
+                    GamepadPrompt {
+                        iconSource: (uiController && uiController.controllerManager) ? uiController.controllerManager.tabRightIconSource : ""
+                        secondaryIconSource: (uiController && uiController.controllerManager) ? uiController.controllerManager.tabRightTriggerIconSource : ""
+                        keyName: "]"
+                        suffixText: "Tabs"
+                        iconSize: 18
+                        pixelSize: 12
+                        iconColor: tabsBar.isBarFocused ? appSettings.accentColor : appSettings.textSecColor
                     }
                 }
 
@@ -1121,10 +1416,13 @@ Page {
                                         Item { Layout.preferredHeight: 2 }
                                         M3TextField {
                                             id: titleField
+                                            twoStageFocus: true
                                             Layout.fillWidth: true
                                             text: root.gameData.title || ""
                                             showClearButton: true
                                             onCommit: root.saveAllChanges()
+                                            onMoveUp: root.navigateStep(-1, 0)
+                                            onMoveDown: root.navigateStep(1, 0)
                                         }
                                     }
 
@@ -1139,10 +1437,13 @@ Page {
                                         Item { Layout.preferredHeight: 2 }
                                         M3TextField {
                                             id: argsField
+                                            twoStageFocus: true
                                             Layout.fillWidth: true
                                             text: root.gameData.launchArguments || ""
                                             placeholderText: "-window -novid %command%"
                                             onCommit: root.saveAllChanges()
+                                            onMoveUp: root.navigateStep(-1, 0)
+                                            onMoveDown: root.navigateStep(1, 0)
                                         }
                                     }
                                 }
@@ -1173,11 +1474,15 @@ Page {
                                         spacing: 10
                                         M3TextField {
                                             id: exePathField
+                                            twoStageFocus: true
                                             Layout.fillWidth: true
                                             text: root.gameData.executablePath || ""
                                             onCommit: root.saveAllChanges()
+                                            onMoveUp: root.navigateStep(-1, 0)
+                                            onMoveDown: root.navigateStep(1, 0)
                                         }
                                         M3Button {
+                                            id: exeBrowseBtn
                                             text: "Browse…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                                             buttonType: "tonal"
@@ -1211,11 +1516,15 @@ Page {
                                         spacing: 10
                                         M3TextField {
                                             id: workDirField
+                                            twoStageFocus: true
                                             Layout.fillWidth: true
                                             text: root.gameData.workingDirectory || ""
                                             onCommit: root.saveAllChanges()
+                                            onMoveUp: root.navigateStep(-1, 0)
+                                            onMoveDown: root.navigateStep(1, 0)
                                         }
                                         M3Button {
+                                            id: workDirBrowseBtn
                                             text: "Browse…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                                             buttonType: "tonal"
@@ -1272,6 +1581,7 @@ Page {
                                             id: detailRunnerCombo
                                             Layout.fillWidth: true
                                             openUpward: true
+                                            upDownNavigatesFocus: true
                                             readonly property var runners: uiController.runnerManager.installedRunners
                                             comboModel: {
                                                 let defName = "System Wine"
@@ -1314,6 +1624,7 @@ Page {
                                             id: detailPrefixCombo
                                             Layout.fillWidth: true
                                             openUpward: true
+                                            upDownNavigatesFocus: true
                                             readonly property var pfxs: uiController.prefixManager.prefixes
                                             comboModel: {
                                                 let list = []
@@ -1366,11 +1677,19 @@ Page {
                                 }
 
                                 Rectangle {
+                                    id: nativeEnvWrap
+                                    focus: true
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 120
                                     radius: 12
                                     color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
-                                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                                    border.color: ((nativeEnvWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || nativeEnvVarsArea.activeFocus)
+                                        ? appSettings.accentColor
+                                        : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                    border.width: ((nativeEnvWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || nativeEnvVarsArea.activeFocus) ? 2 : 1
+                                    Keys.onReturnPressed: (event) => { if (!nativeEnvVarsArea.activeFocus) { event.accepted = true; nativeEnvVarsArea.forceActiveFocus() } }
+                                    Keys.onEnterPressed: (event) => { if (!nativeEnvVarsArea.activeFocus) { event.accepted = true; nativeEnvVarsArea.forceActiveFocus() } }
+                                    Keys.onSpacePressed: (event) => { if (!nativeEnvVarsArea.activeFocus) { event.accepted = true; nativeEnvVarsArea.forceActiveFocus() } }
 
                                     ScrollView {
                                         anchors.fill: parent
@@ -1390,6 +1709,11 @@ Page {
                                             }
                                             background: null
                                             onActiveFocusChanged: if (!activeFocus) root.saveAllChanges()
+                                            Keys.onEscapePressed: (event) => {
+                                                event.accepted = true
+                                                root.saveAllChanges()
+                                                nativeEnvWrap.forceActiveFocus()
+                                            }
                                         }
                                     }
                                 }
@@ -1485,6 +1809,7 @@ Page {
                                             Layout.preferredWidth: 220
                                             openUpward: false
                                             forceDownward: true
+                                            upDownNavigatesFocus: true
                                             enabled: hudToggle.checked
                                             opacity: hudToggle.checked ? 1.0 : 0.4
                                             comboModel: ["fps", "devinfo,fps,frametimes", "full"]
@@ -1582,12 +1907,15 @@ Page {
                                         spacing: 12
                                         M3TextField {
                                             id: vdesktopResField
+                                            twoStageFocus: true
                                             implicitWidth: 140
                                             text: root.gameData.virtualDesktopResolution || "1920x1080"
                                             placeholderText: "1920x1080"
                                             enabled: vdesktopCheck.checked
                                             opacity: vdesktopCheck.checked ? 1.0 : 0.4
                                             onCommit: root.saveAllChanges()
+                                            onMoveUp: root.navigateStep(-1, 0)
+                                            onMoveDown: root.navigateStep(1, 0)
                                         }
                                         Toggle {
                                             id: vdesktopCheck
@@ -1632,11 +1960,19 @@ Page {
                                         spacing: 6
                                         Label { text: "DLL Overrides (one per line, e.g. dinput8=n,b)"; color: appSettings.textSecColor; font.pixelSize: 12 }
                                         Rectangle {
+                                            id: dllOverridesWrap
+                                            focus: true
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: 110
                                             radius: 12
                                             color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
-                                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                                            border.color: ((dllOverridesWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || dllOverridesArea.activeFocus)
+                                                ? appSettings.accentColor
+                                                : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                            border.width: ((dllOverridesWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || dllOverridesArea.activeFocus) ? 2 : 1
+                                            Keys.onReturnPressed: (event) => { if (!dllOverridesArea.activeFocus) { event.accepted = true; dllOverridesArea.forceActiveFocus() } }
+                                            Keys.onEnterPressed: (event) => { if (!dllOverridesArea.activeFocus) { event.accepted = true; dllOverridesArea.forceActiveFocus() } }
+                                            Keys.onSpacePressed: (event) => { if (!dllOverridesArea.activeFocus) { event.accepted = true; dllOverridesArea.forceActiveFocus() } }
 
                                             ScrollView {
                                                 anchors.fill: parent
@@ -1656,6 +1992,11 @@ Page {
                                                     }
                                                     background: null
                                                     onActiveFocusChanged: if (!activeFocus) root.saveAllChanges()
+                                                    Keys.onEscapePressed: (event) => {
+                                                        event.accepted = true
+                                                        root.saveAllChanges()
+                                                        dllOverridesWrap.forceActiveFocus()
+                                                    }
                                                 }
                                             }
                                         }
@@ -1668,11 +2009,19 @@ Page {
                                         spacing: 6
                                         Label { text: "Environment Variables (KEY=VALUE)"; color: appSettings.textSecColor; font.pixelSize: 12 }
                                         Rectangle {
+                                            id: envVarsWrap
+                                            focus: true
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: 110
                                             radius: 12
                                             color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
-                                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                                            border.color: ((envVarsWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || envVarsArea.activeFocus)
+                                                ? appSettings.accentColor
+                                                : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                            border.width: ((envVarsWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || envVarsArea.activeFocus) ? 2 : 1
+                                            Keys.onReturnPressed: (event) => { if (!envVarsArea.activeFocus) { event.accepted = true; envVarsArea.forceActiveFocus() } }
+                                            Keys.onEnterPressed: (event) => { if (!envVarsArea.activeFocus) { event.accepted = true; envVarsArea.forceActiveFocus() } }
+                                            Keys.onSpacePressed: (event) => { if (!envVarsArea.activeFocus) { event.accepted = true; envVarsArea.forceActiveFocus() } }
 
                                             ScrollView {
                                                 anchors.fill: parent
@@ -1692,6 +2041,11 @@ Page {
                                                     }
                                                     background: null
                                                     onActiveFocusChanged: if (!activeFocus) root.saveAllChanges()
+                                                    Keys.onEscapePressed: (event) => {
+                                                        event.accepted = true
+                                                        root.saveAllChanges()
+                                                        envVarsWrap.forceActiveFocus()
+                                                    }
                                                 }
                                             }
                                         }
@@ -1783,10 +2137,13 @@ Page {
                                     Item { Layout.fillWidth: true }
                                     M3TextField {
                                         id: affinityField
+                                        twoStageFocus: true
                                         Layout.preferredWidth: 260
                                         text: root.gameData.cpuAffinity || ""
                                         placeholderText: "e.g. 0-7"
                                         onCommit: root.saveAllChanges()
+                                        onMoveUp: root.navigateStep(-1, 0)
+                                        onMoveDown: root.navigateStep(1, 0)
                                     }
                                 }
 
@@ -1805,10 +2162,13 @@ Page {
                                     Item { Layout.fillWidth: true }
                                     M3TextField {
                                         id: priorityField
+                                        twoStageFocus: true
                                         Layout.preferredWidth: 120
                                         text: String(root.gameData.processPriority || 0)
                                         placeholderText: "0"
                                         onCommit: root.saveAllChanges()
+                                        onMoveUp: root.navigateStep(-1, 0)
+                                        onMoveDown: root.navigateStep(1, 0)
                                     }
                                 }
                             }
@@ -1901,12 +2261,16 @@ Page {
                                         spacing: 10
                                         M3TextField {
                                             id: preScriptField
+                                            twoStageFocus: true
                                             Layout.fillWidth: true
                                             text: root.gameData.preLaunchScript || ""
                                             placeholderText: "/path/to/pre.sh"
                                             onCommit: root.saveAllChanges()
+                                            onMoveUp: root.navigateStep(-1, 0)
+                                            onMoveDown: root.navigateStep(1, 0)
                                         }
                                         M3Button {
+                                            id: preScriptBrowseBtn
                                             text: "Browse…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                                             buttonType: "tonal"
@@ -1932,12 +2296,16 @@ Page {
                                         spacing: 10
                                         M3TextField {
                                             id: postScriptField
+                                            twoStageFocus: true
                                             Layout.fillWidth: true
                                             text: root.gameData.postExitScript || ""
                                             placeholderText: "/path/to/post.sh"
                                             onCommit: root.saveAllChanges()
+                                            onMoveUp: root.navigateStep(-1, 0)
+                                            onMoveDown: root.navigateStep(1, 0)
                                         }
                                         M3Button {
+                                            id: postScriptBrowseBtn
                                             text: "Browse…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                                             buttonType: "tonal"
@@ -1986,6 +2354,7 @@ Page {
                                     }
 
                                     M3Button {
+                                        id: autoFetchArtBtn
                                         text: "Auto-Fetch Artwork"
                                         iconSource: "qrc:/tsuki_app/icons/actions/refresh.svg"
                                         buttonType: "tonal"
@@ -2031,12 +2400,14 @@ Page {
                                     RowLayout {
                                         spacing: 8
                                         M3Button {
+                                            id: coverLinkBtn
                                             text: "Link…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
                                             buttonType: "tonal"
                                             onClicked: artworkUrlDialog.openFor(root.gameId, "cover", "Cover Poster")
                                         }
                                         M3Button {
+                                            id: coverBrowseBtn
                                             text: "Browse…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                                             buttonType: "tonal"
@@ -2087,12 +2458,14 @@ Page {
                                     RowLayout {
                                         spacing: 8
                                         M3Button {
+                                            id: bannerLinkBtn
                                             text: "Link…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
                                             buttonType: "tonal"
                                             onClicked: artworkUrlDialog.openFor(root.gameId, "banner", "Hero Banner")
                                         }
                                         M3Button {
+                                            id: bannerBrowseBtn
                                             text: "Browse…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                                             buttonType: "tonal"
@@ -2143,12 +2516,14 @@ Page {
                                     RowLayout {
                                         spacing: 8
                                         M3Button {
+                                            id: logoLinkBtn
                                             text: "Link…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
                                             buttonType: "tonal"
                                             onClicked: artworkUrlDialog.openFor(root.gameId, "logo", "Transparent Logo")
                                         }
                                         M3Button {
+                                            id: logoBrowseBtn
                                             text: "Browse…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                                             buttonType: "tonal"
@@ -2199,12 +2574,14 @@ Page {
                                     RowLayout {
                                         spacing: 8
                                         M3Button {
+                                            id: iconLinkBtn
                                             text: "Link…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
                                             buttonType: "tonal"
                                             onClicked: artworkUrlDialog.openFor(root.gameId, "icon", "Shortcut Icon")
                                         }
                                         M3Button {
+                                            id: iconBrowseBtn
                                             text: "Browse…"
                                             iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
                                             buttonType: "tonal"
@@ -2250,12 +2627,14 @@ Page {
                                         Layout.fillWidth: true
                                     }
                                     M3Button {
+                                        id: exportLogBtn
                                         text: "Export Log"
                                         iconSource: "qrc:/tsuki_app/icons/actions/shortcut.svg"
                                         buttonType: "tonal"
                                         onClicked: uiController.diagnosticsManager.exportGameLog(root.gameId, "")
                                     }
                                     M3Button {
+                                        id: clearLogBtn
                                         text: "Clear"
                                         iconSource: "qrc:/tsuki_app/icons/actions/trash.svg"
                                         buttonType: "destructive"
@@ -2264,18 +2643,38 @@ Page {
                                 }
 
                                 Rectangle {
+                                    id: logAreaWrap
+                                    focus: true
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 320
                                     radius: 12
                                     color: "#08080b"
-                                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)
+                                    readonly property bool kbFocused: logAreaWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+                                    border.color: logAreaWrap.kbFocused ? appSettings.accentColor : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08))
+                                    border.width: logAreaWrap.kbFocused ? 2 : 1
+                                    Keys.onUpPressed: (event) => {
+                                        let lf = logScroll.contentItem
+                                        if (lf && lf.contentY > 2) {
+                                            event.accepted = true
+                                            lf.contentY = Math.max(0, lf.contentY - 60)
+                                        }
+                                    }
+                                    Keys.onDownPressed: (event) => {
+                                        let lf = logScroll.contentItem
+                                        if (lf && lf.contentY < Math.max(0, lf.contentHeight - logScroll.height - 2)) {
+                                            event.accepted = true
+                                            lf.contentY = Math.min(Math.max(0, lf.contentHeight - logScroll.height), lf.contentY + 60)
+                                        }
+                                    }
 
                                     ScrollView {
+                                        id: logScroll
                                         anchors.fill: parent
                                         anchors.margins: 12
                                         clip: true
                                         TextArea {
                                             readOnly: true
+                                            activeFocusOnTab: false
                                             text: uiController.diagnosticsManager.activeGameLog
                                             color: "#e4e4e7"
                                             font.family: "monospace"
@@ -2294,7 +2693,7 @@ Page {
             // Bottom spacer for scroll clearance
             Item {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 36
+                Layout.preferredHeight: 68
             }
         }
     }
@@ -2305,13 +2704,15 @@ Page {
         font.pixelSize: 13
         font.weight: Font.DemiBold
         padding: 0
+        activeFocusOnTab: false
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.leftMargin: 28
         anchors.topMargin: 24
         z: 100
 
-        readonly property bool isBtnActive: backBtn.hovered || backBtn.activeFocus
+        readonly property bool kbFocused: backBtn.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+        readonly property bool isBtnActive: backBtn.hovered || backBtn.kbFocused
         property real expandedWidth: 10 + 18 + 8 + backLabel.implicitWidth + 14
         implicitWidth: isBtnActive ? expandedWidth : 40
         implicitHeight: 40
@@ -2326,7 +2727,7 @@ Page {
             color: backBtn.isBtnActive ? accent : (appSettings.isEffectiveDark ? Qt.rgba(0.08, 0.08, 0.10, 0.70) : Qt.rgba(1, 1, 1, 0.75))
             border.color: backBtn.isBtnActive ? "transparent" : accent
             border.width: backBtn.isBtnActive ? 0 : 1.5
-            scale: backBtn.pressed ? 0.96 : (backBtn.activeFocus ? 1.02 : 1.0)
+            scale: backBtn.pressed ? 0.96 : (backBtn.kbFocused ? 1.02 : 1.0)
             Behavior on color { ColorAnimation { duration: 150 } }
             Behavior on border.color { ColorAnimation { duration: 150 } }
             Behavior on scale { NumberAnimation { duration: 100 } }
@@ -2380,6 +2781,11 @@ Page {
             root.saveAllChanges()
             root.backRequested()
         }
+        Keys.onDownPressed: (event) => { event.accepted = true; root.navigateStep(1, 0) }
+        Keys.onRightPressed: (event) => { event.accepted = true; root.navigateStep(1, 0) }
+        Keys.onReturnPressed: (event) => { event.accepted = true; backBtn.clicked() }
+        Keys.onEnterPressed: (event) => { event.accepted = true; backBtn.clicked() }
+        Keys.onSpacePressed: (event) => { event.accepted = true; backBtn.clicked() }
         HoverHandler { cursorShape: Qt.PointingHandCursor }
     }
 

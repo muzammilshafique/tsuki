@@ -24,7 +24,7 @@ Popup {
         artTypeName = typeName
         urlInput.text = ""
         root.open()
-        Qt.callLater(() => urlInput.activate())
+        Qt.callLater(() => urlInput.forceActiveFocus())
     }
 
     background: Rectangle {
@@ -43,6 +43,17 @@ Popup {
 
     contentItem: ColumnLayout {
         spacing: 0
+        Keys.onBackPressed: (event) => {
+            if (urlInput.isEditing) { urlInput.returnFocusToRow(); event.accepted = true; return }
+            event.accepted = true
+            root.close()
+        }
+        Keys.onPressed: (event) => {
+            if (event.key === Qt.Key_Backspace && !urlInput.isEditing) {
+                event.accepted = true
+                root.close()
+            }
+        }
 
         // ── Dialog Header ────────────────────────────────────────────────────
         Item {
@@ -130,12 +141,20 @@ Popup {
 
                 M3TextField {
                     id: urlInput
+                    twoStageFocus: true
                     Layout.fillWidth: true
                     placeholderText: "https://.../image.jpg"
                     onCommit: (val) => {
                         if (val.trim().length > 0) {
                             uiController.gameManager.setGameArtworkFromUrl(root.gameId, root.artType, val.trim())
                             root.close()
+                        }
+                    }
+                    Keys.onDownPressed: (event) => {
+                        if (!isEditing) {
+                            event.accepted = true
+                            if (downloadBtn.enabled) downloadBtn.forceActiveFocus()
+                            else cancelUrlBtn.forceActiveFocus()
                         }
                     }
                 }
@@ -164,12 +183,16 @@ Popup {
                 Item { Layout.fillWidth: true }
 
                 M3Button {
+                    id: cancelUrlBtn
                     text: "Cancel"
                     buttonType: "tonal"
                     onClicked: root.close()
+                    Keys.onRightPressed: (event) => { if (downloadBtn.enabled) { event.accepted = true; downloadBtn.forceActiveFocus() } }
+                    Keys.onUpPressed: (event) => { event.accepted = true; urlInput.forceActiveFocus() }
                 }
 
                 M3Button {
+                    id: downloadBtn
                     text: "Download & Set"
                     iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
                     buttonType: "filled"
@@ -182,6 +205,8 @@ Popup {
                             root.close()
                         }
                     }
+                    Keys.onLeftPressed: (event) => { event.accepted = true; cancelUrlBtn.forceActiveFocus() }
+                    Keys.onUpPressed: (event) => { event.accepted = true; urlInput.forceActiveFocus() }
                 }
             }
         }

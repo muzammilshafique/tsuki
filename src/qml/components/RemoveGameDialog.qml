@@ -37,6 +37,10 @@ Popup {
         }
 
         root.open()
+        Qt.callLater(() => {
+            if (root.hasDedicatedPrefix) deletePrefixToggle.forceActiveFocus()
+            else cancelBtn.forceActiveFocus()
+        })
     }
 
     background: Rectangle {
@@ -55,6 +59,13 @@ Popup {
 
     contentItem: ColumnLayout {
         spacing: 0
+        Keys.onBackPressed: (event) => { event.accepted = true; root.close() }
+        Keys.onPressed: (event) => {
+            if (event.key === Qt.Key_Backspace) {
+                event.accepted = true
+                root.close()
+            }
+        }
 
         // ── Dialog Header ────────────────────────────────────────────────────
         Item {
@@ -176,6 +187,7 @@ Popup {
                     Toggle {
                         id: deletePrefixToggle
                         checked: false
+                        Keys.onDownPressed: (event) => { event.accepted = true; cancelBtn.forceActiveFocus() }
                     }
                 }
             }
@@ -203,12 +215,16 @@ Popup {
                 Item { Layout.fillWidth: true }
 
                 M3Button {
+                    id: cancelBtn
                     text: "Cancel"
                     buttonType: "tonal"
                     onClicked: root.close()
+                    Keys.onRightPressed: (event) => { event.accepted = true; removeBtn.forceActiveFocus() }
+                    Keys.onUpPressed: (event) => { if (root.hasDedicatedPrefix) { event.accepted = true; deletePrefixToggle.forceActiveFocus() } }
                 }
 
                 M3Button {
+                    id: removeBtn
                     text: "Remove Game"
                     iconSource: "qrc:/tsuki_app/icons/actions/trash.svg"
                     buttonType: "destructive"
@@ -219,6 +235,8 @@ Popup {
                         root.close()
                         root.gameRemoved(gId)
                     }
+                    Keys.onLeftPressed: (event) => { event.accepted = true; cancelBtn.forceActiveFocus() }
+                    Keys.onUpPressed: (event) => { if (root.hasDedicatedPrefix) { event.accepted = true; deletePrefixToggle.forceActiveFocus() } }
                 }
             }
         }

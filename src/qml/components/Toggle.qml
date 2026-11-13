@@ -4,11 +4,13 @@ import QtQuick.Controls
 Item {
     id: toggle
     property bool checked: false
+    readonly property bool kbFocused: toggle.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
     signal toggled(bool c)
 
     implicitWidth: 52
     implicitHeight: 32
     focus: true
+    activeFocusOnTab: false
 
     function toggleIt() {
         toggle.checked = !toggle.checked
@@ -18,18 +20,6 @@ Item {
     Keys.onReturnPressed: (event) => { event.accepted = true; toggleIt() }
     Keys.onEnterPressed: (event) => { event.accepted = true; toggleIt() }
     Keys.onSpacePressed: (event) => { event.accepted = true; toggleIt() }
-    Keys.onLeftPressed: (event) => {
-        if (toggle.checked) {
-            event.accepted = true
-            toggleIt()
-        }
-    }
-    Keys.onRightPressed: (event) => {
-        if (!toggle.checked) {
-            event.accepted = true
-            toggleIt()
-        }
-    }
 
     Rectangle {
         id: track
@@ -38,12 +28,12 @@ Item {
 
         color: toggle.checked
             ? appSettings.accentColor
-            : (toggle.activeFocus
+            : (toggle.kbFocused
                 ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
                 : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)))
 
         border.color: {
-            if (toggle.activeFocus) {
+            if (toggle.kbFocused) {
                 return toggle.checked
                     ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.5) : Qt.rgba(0, 0, 0, 0.2))
                     : appSettings.accentColor
@@ -52,8 +42,8 @@ Item {
                 ? appSettings.accentColor
                 : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(0, 0, 0, 0.24))
         }
-        border.width: toggle.activeFocus ? 2.5 : (toggle.checked ? 0 : 2)
-        scale: toggle.activeFocus ? 1.05 : 1.0
+        border.width: toggle.kbFocused ? 2.5 : (toggle.checked ? 0 : 2)
+        scale: toggle.kbFocused ? 1.05 : 1.0
 
         Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 150 } }
@@ -92,7 +82,7 @@ Item {
                 if (toggle.checked) {
                     return appSettings.isEffectiveDark ? "#111114" : "#ffffff"
                 }
-                if (toggle.activeFocus) return appSettings.accentColor
+                if (toggle.kbFocused) return appSettings.accentColor
                 return appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.70) : Qt.rgba(0, 0, 0, 0.60)
             }
 

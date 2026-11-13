@@ -102,6 +102,9 @@ AppSettings::AppSettings(QObject *parent)
   m_minimizeOnLaunch =
       m_settings.value(QStringLiteral("behavior/minimizeOnLaunch"), false)
           .toBool();
+  m_showNavigationHud =
+      m_settings.value(QStringLiteral("behavior/showNavigationHud"), true)
+          .toBool();
 
   const QString defaultPrefixes = dataDir() + QStringLiteral("/prefixes");
   const QString defaultRunners = dataDir() + QStringLiteral("/runners");
@@ -627,6 +630,14 @@ QColor AppSettings::surfaceColor() const {
           return;
         m_minimizeOnLaunch = m;
         m_settings.setValue(QStringLiteral("behavior/minimizeOnLaunch"), m);
+        emit behaviorChanged();
+      }
+
+      void AppSettings::setShowNavigationHud(bool s) {
+        if (m_showNavigationHud == s)
+          return;
+        m_showNavigationHud = s;
+        m_settings.setValue(QStringLiteral("behavior/showNavigationHud"), s);
         emit behaviorChanged();
       }
 

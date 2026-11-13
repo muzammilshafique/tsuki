@@ -12,6 +12,7 @@
 #include "../services/DiagnosticsManager.h"
 #include "../services/GameManager.h"
 #include <QObject>
+#include <QPoint>
 #include <QVariant>
 
 namespace Tsuki {
@@ -21,6 +22,8 @@ class UiController : public QObject {
 
     // Yoru UI Reference Compatible Properties
     Q_PROPERTY(bool isKeyboardNavActive READ isKeyboardNavActive WRITE setKeyboardNavActive NOTIFY keyboardNavActiveChanged)
+    Q_PROPERTY(QString activeInputType READ activeInputType WRITE setActiveInputType NOTIFY activeInputTypeChanged)
+    Q_PROPERTY(bool isGamepadActive READ isGamepadActive NOTIFY activeInputTypeChanged)
     Q_PROPERTY(Tsuki::GameListModel* searchModel READ searchModel CONSTANT)
     Q_PROPERTY(Tsuki::ControllerManager* gamepad READ gamepad CONSTANT)
 
@@ -48,9 +51,14 @@ public:
                           DiagnosticsManager* diagMgr,
                           GameManager* gameMgr,
                           QObject* parent = nullptr);
+    ~UiController() override;
 
     bool isKeyboardNavActive() const { return m_isKeyboardNavActive; }
     Q_INVOKABLE void setKeyboardNavActive(bool active);
+
+    QString activeInputType() const { return m_activeInputType; }
+    bool isGamepadActive() const { return m_activeInputType == QLatin1String("playstation") || m_activeInputType == QLatin1String("xbox"); }
+    Q_INVOKABLE void setActiveInputType(const QString& inputType);
 
     GameListModel* searchModel() const { return m_gameMgr->model(); }
     ControllerManager* gamepad() const { return m_ctrlMgr; }
@@ -80,8 +88,12 @@ public:
 
 signals:
     void keyboardNavActiveChanged();
+    void activeInputTypeChanged();
     void searchStateChanged(bool loading, const QString& error);
     void toastRequested(const QString& message, bool isError);
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     DatabaseManager* m_db;
@@ -97,6 +109,12 @@ private:
     GameManager* m_gameMgr;
 
     bool m_isKeyboardNavActive = false;
+    bool m_cursorHidden = false;
+    QString m_activeInputType = QStringLiteral("keyboard");
+    QPoint m_lastMousePos;
+    bool m_hasLastMousePos = false;
+
+    void updateCursorVisibility(bool hide);
 };
 
 } // namespace Tsuki

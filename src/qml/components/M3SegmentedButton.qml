@@ -6,11 +6,13 @@ Item {
     id: root
     property var model: []
     property int selectedValue: 0
+    readonly property bool kbFocused: root.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
     signal selectionChanged(var val, int index)
 
     implicitWidth: Math.max(270, (model && model.length) ? model.length * 90 : 270)
     implicitHeight: 40
     focus: true
+    activeFocusOnTab: false
 
     readonly property int selectedIndex: {
         if (!model || model.length === 0) return 0
@@ -88,9 +90,9 @@ Item {
         anchors.fill: parent
         radius: 20
         color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)
-        border.color: root.activeFocus ? appSettings.accentColor : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.10))
-        border.width: root.activeFocus ? 2 : 1
-        scale: root.activeFocus ? 1.02 : 1.0
+        border.color: root.kbFocused ? appSettings.accentColor : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.10))
+        border.width: root.kbFocused ? 2 : 1
+        scale: root.kbFocused ? 1.02 : 1.0
 
         Behavior on color { ColorAnimation { duration: 150 } }
         Behavior on border.color { ColorAnimation { duration: 150 } }

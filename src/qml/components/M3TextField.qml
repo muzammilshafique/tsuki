@@ -10,14 +10,21 @@ Item {
     property string leadingIcon: ""
     property bool isPassword: false
     property bool showClearButton: true
+    property bool twoStageFocus: false
+    readonly property bool isEditing: inputField.activeFocus
+    readonly property bool kbFocused: root.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
     signal editingFinished()
     signal commit(string value)
     signal cleared()
+    signal moveUp()
+    signal moveDown()
 
     implicitWidth: 280
     implicitHeight: 46
     width: implicitWidth
     height: implicitHeight
+    focus: twoStageFocus
+    activeFocusOnTab: false
 
     property alias placeholder: root.placeholderText
 
@@ -32,22 +39,41 @@ Item {
         inputField.selectAll()
     }
 
+    Keys.onReturnPressed: (event) => {
+        if (root.twoStageFocus && !inputField.activeFocus) {
+            event.accepted = true
+            root.activate()
+        }
+    }
+    Keys.onEnterPressed: (event) => {
+        if (root.twoStageFocus && !inputField.activeFocus) {
+            event.accepted = true
+            root.activate()
+        }
+    }
+    Keys.onSpacePressed: (event) => {
+        if (root.twoStageFocus && !inputField.activeFocus) {
+            event.accepted = true
+            root.activate()
+        }
+    }
+
     Rectangle {
         id: container
         anchors.fill: parent
         radius: 12
-        color: inputField.activeFocus
+        color: (inputField.activeFocus || root.kbFocused)
             ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
             : (containerHover.hovered 
                 ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04))
                 : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.02)))
 
-        border.color: inputField.activeFocus
+        border.color: (inputField.activeFocus || root.kbFocused)
             ? appSettings.accentColor
             : (containerHover.hovered
                 ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.18))
                 : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.09)))
-        border.width: inputField.activeFocus ? 2 : 1
+        border.width: (inputField.activeFocus || root.kbFocused) ? 2 : 1
 
         Behavior on border.color { ColorAnimation { duration: 150 } }
         Behavior on color { ColorAnimation { duration: 150 } }
@@ -73,6 +99,7 @@ Item {
                 id: inputField
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                activeFocusOnTab: false
                 text: root.text
                 placeholderText: root.placeholderText
                 placeholderTextColor: appSettings.textTerColor
@@ -115,14 +142,21 @@ Item {
                     event.accepted = true
                     returnFocusToRow()
                     if (typeof settingsPage !== "undefined") settingsPage.focusPrevSettingRow()
+                    else root.moveUp()
                 }
                 Keys.onDownPressed: (event) => {
                     event.accepted = true
                     returnFocusToRow()
                     if (typeof settingsPage !== "undefined") settingsPage.focusNextSettingRow()
+                    else root.moveDown()
                 }
 
                 function returnFocusToRow() {
+                    if (root.twoStageFocus) {
+                        inputField.focus = false
+                        root.forceActiveFocus()
+                        return
+                    }
                     let p = root.parent
                     while (p) {
                         if (p.forwardFocus && typeof p.forwardFocus === "function") {

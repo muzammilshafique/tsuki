@@ -79,6 +79,8 @@ class AppSettings : public QObject {
                  setLeftClickBehavior NOTIFY behaviorChanged)
   Q_PROPERTY(bool minimizeOnLaunch READ minimizeOnLaunch WRITE
                  setMinimizeOnLaunch NOTIFY behaviorChanged)
+  Q_PROPERTY(bool showNavigationHud READ showNavigationHud WRITE
+                 setShowNavigationHud NOTIFY behaviorChanged)
 
   // Global Game Launcher Defaults
   Q_PROPERTY(QString defaultRunnerId READ defaultRunnerId WRITE
@@ -201,6 +203,8 @@ public:
   void setLeftClickBehavior(int b);
   bool minimizeOnLaunch() const { return m_minimizeOnLaunch; }
   void setMinimizeOnLaunch(bool m);
+  bool showNavigationHud() const { return m_showNavigationHud; }
+  void setShowNavigationHud(bool s);
 
   // Launcher Defaults
   QString defaultRunnerId() const { return m_defaultRunnerId; }
@@ -272,6 +276,7 @@ private:
   int m_leftClickBehavior =
       0; // 0: Launch game directly (per spec), 1: Open details
   bool m_minimizeOnLaunch = false;
+  bool m_showNavigationHud = true;
 
   QString m_defaultRunnerId;
   QString m_defaultPrefixLocation;

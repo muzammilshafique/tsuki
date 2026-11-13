@@ -101,9 +101,15 @@ Rectangle {
         event.accepted = true
         sidebar.focusContentRequested()
     }
+    Keys.onPressed: (event) => {
+        if (event.key === Qt.Key_Backspace) {
+            event.accepted = true
+            sidebar.focusContentRequested()
+        }
+    }
 
     Shortcut {
-        sequences: ["Ctrl+B", "["]
+        sequences: ["Ctrl+B"]
         onActivated: appSettings.sidebarCollapsed = !appSettings.sidebarCollapsed
     }
 
@@ -207,9 +213,8 @@ Rectangle {
                     id: navMouse
                     anchors.fill: parent
                     enabled: modelData.name !== "divider"
-                    hoverEnabled: true
+                    hoverEnabled: !sidebar.isKeyboardNavActive
                     cursorShape: Qt.PointingHandCursor
-                    onPositionChanged: { uiController.setKeyboardNavActive(false) }
                     onPressed: { uiController.setKeyboardNavActive(false) }
                     onClicked: {
                         uiController.setKeyboardNavActive(false)
@@ -318,9 +323,8 @@ Rectangle {
             MouseArea {
                 id: bottomNavMouse
                 anchors.fill: parent
-                hoverEnabled: true
+                hoverEnabled: !sidebar.isKeyboardNavActive
                 cursorShape: Qt.PointingHandCursor
-                onPositionChanged: { uiController.setKeyboardNavActive(false) }
                 onPressed: { uiController.setKeyboardNavActive(false) }
                 onClicked: {
                     uiController.setKeyboardNavActive(false)
@@ -384,6 +388,19 @@ Rectangle {
                         visible: opacity > 0
                         Behavior on opacity { NumberAnimation { duration: 150 } }
                         Behavior on color { ColorAnimation { duration: 120 } }
+                    }
+                    GamepadPrompt {
+                        readonly property bool showPrompt: !sidebar.isCollapsed && Boolean(uiController && uiController.isKeyboardNavActive)
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.right: parent.right
+                        anchors.rightMargin: 20
+                        opacity: showPrompt ? 0.9 : 0.0
+                        visible: opacity > 0.01
+                        Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                        iconSource: (uiController && uiController.controllerManager) ? uiController.controllerManager.settingsIconSource : ""
+                        keyName: "Tab"
+                        iconSize: 18
+                        iconColor: bottomSettingsItem.isTvFocused ? appSettings.accentColor : appSettings.sidebarTextSecColor
                     }
                 }
             }
