@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test-arch:
+    name: Arch Linux Build & Test
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build and validation dependencies
+        run: |
+          sed -i 's/^#DisableSandbox/DisableSandbox/' /etc/pacman.conf
+          pacman -Sy --noconfirm archlinux-keyring
+          pacman -Syu --noconfirm \
+            git cmake ninja pkgconf \
+            qt6-base qt6-declarative qt6-svg sdl2 \
+            hicolor-icon-theme tar \
+            desktop-file-utils appstream
+
+      - name: Validate desktop and AppStream metadata
+        run: |
+          desktop-file-validate packaging/desktop/io.github.muzammilshafique.tsuki.desktop
+          appstreamcli validate --no-net packaging/metainfo/io.github.muzammilshafique.tsuki.metainfo.xml
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_INSTALL_LIBDIR=lib
+
+      - name: Build Tsuki and Test Suite
+        run: cmake --build build
+
+      - name: Run Unit Tests
+        run: QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
+
+      - name: Run Engine Smoke Test
+        run: QT_QPA_PLATFORM=offscreen ./build/tsuki --smoke-test
+

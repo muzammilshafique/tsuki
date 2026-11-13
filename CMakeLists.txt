@@ -72,10 +72,13 @@ target_link_libraries(tsuki_core PUBLIC
     PkgConfig::SDL2
 )
 
+set(TSUKI_VERSION "${PROJECT_VERSION}" CACHE STRING "Application display version")
+
 add_executable(tsuki
     src/main.cpp
     resources/resources.qrc
 )
+target_compile_definitions(tsuki PRIVATE TSUKI_VERSION="${TSUKI_VERSION}")
 target_link_libraries(tsuki PRIVATE tsuki_core)
 
 enable_testing()
@@ -84,6 +87,31 @@ add_executable(tsuki_tests
 )
 target_link_libraries(tsuki_tests PRIVATE tsuki_core Qt6::Test)
 add_test(NAME TsukiUnitTests COMMAND tsuki_tests)
+set_tests_properties(TsukiUnitTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-install(TARGETS tsuki RUNTIME DESTINATION bin)
+include(GNUInstallDirs)
+
+install(TARGETS tsuki RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# Desktop launcher and AppStream metadata
+install(FILES packaging/desktop/io.github.muzammilshafique.tsuki.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES packaging/metainfo/io.github.muzammilshafique.tsuki.metainfo.xml
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+
+# Hicolor scalable SVG icon
+install(FILES resources/icons/brand/tsuki.svg
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+        RENAME io.github.muzammilshafique.tsuki.svg)
+
+# udev rules and kernel module autoload for unprivileged controller emulation (/dev/uinput)
+option(INSTALL_UDEV_RULES "Install udev rules for /dev/uinput controller emulation" ON)
+if(INSTALL_UDEV_RULES)
+    set(UDEV_RULES_DIR "lib/udev/rules.d" CACHE PATH "Directory for udev rules installation")
+    install(FILES packaging/udev/70-tsuki-uinput.rules
+            DESTINATION ${UDEV_RULES_DIR})
+    set(MODULES_LOAD_DIR "lib/modules-load.d" CACHE PATH "Directory for modules-load configuration")
+    install(FILES packaging/udev/tsuki-uinput.conf
+            DESTINATION ${MODULES_LOAD_DIR})
+endif()
 

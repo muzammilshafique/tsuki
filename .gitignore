@@ -1,6 +1,12 @@
 .temp/
 build/
 build-*/
+dist/
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
+packaging/**/src/
+packaging/**/pkg/
+packaging/**/*.tar.gz
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake

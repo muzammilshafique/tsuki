@@ -1,0 +1,264 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to test build (e.g. v1.0.0; GitHub Release is only published on tag push)'
+        required: false
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  package-arch:
+    name: Package Arch Linux (.pkg.tar.zst)
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="${{ github.event.inputs.tag || 'v1.0.0' }}"
+          fi
+          RAW_VERSION="${TAG#v}"
+          PKGVER="${RAW_VERSION//-/.}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "raw_version=${RAW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "pkgver=${PKGVER}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare Arch container and install packaging dependencies
+        run: |
+          sed -i 's/^#DisableSandbox/DisableSandbox/' /etc/pacman.conf
+          pacman -Sy --noconfirm archlinux-keyring
+          pacman -Syu --noconfirm \
+            sudo git cmake ninja pkgconf \
+            qt6-base qt6-declarative qt6-svg sdl2 \
+            hicolor-icon-theme tar zstd \
+            desktop-file-utils appstream
+
+      - name: Validate desktop and AppStream metadata
+        run: |
+          desktop-file-validate packaging/desktop/io.github.muzammilshafique.tsuki.desktop
+          appstreamcli validate --no-net packaging/metainfo/io.github.muzammilshafique.tsuki.metainfo.xml
+
+      - name: Setup Non-Root Build User
+        run: |
+          useradd -m -s /bin/bash builduser
+          echo "builduser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builduser:builduser "${GITHUB_WORKSPACE}"
+
+      - name: Build Arch Linux Package
+        run: |
+          su builduser -c "
+            export HOME=/home/builduser
+            export VERSION='${{ steps.vars.outputs.raw_version }}'
+            export MAKEPKG_FLAGS='-sf --noconfirm'
+            cd '${GITHUB_WORKSPACE}'
+            ./packaging/arch/build-arch.sh '${GITHUB_WORKSPACE}/dist'
+          "
+
+      - name: Verify Arch Package & Test Install/Uninstall
+        run: |
+          PKG_FILE=$(find dist -maxdepth 1 -name "*.pkg.tar.zst" ! -name "*-debug-*" | head -n 1)
+          test -n "${PKG_FILE}"
+          echo "Inspecting Arch package: ${PKG_FILE}"
+          pacman -Qip "${PKG_FILE}"
+          pacman -Qlp "${PKG_FILE}"
+
+          # Install and test application execution
+          pacman -U --noconfirm "${PKG_FILE}"
+          QT_QPA_PLATFORM=offscreen tsuki --version
+          QT_QPA_PLATFORM=offscreen tsuki --help
+          QT_QPA_PLATFORM=offscreen tsuki --smoke-test
+
+          # Verify installed desktop integration, icons, udev rules, and license
+          test -f /usr/share/applications/io.github.muzammilshafique.tsuki.desktop
+          test -f /usr/share/metainfo/io.github.muzammilshafique.tsuki.metainfo.xml
+          test -f /usr/share/icons/hicolor/scalable/apps/io.github.muzammilshafique.tsuki.svg
+          test -f /usr/lib/udev/rules.d/70-tsuki-uinput.rules
+          test -f /usr/lib/modules-load.d/tsuki-uinput.conf
+          test -f /usr/share/licenses/tsuki/LICENSE
+
+          # Test clean uninstall
+          pacman -R --noconfirm tsuki
+          hash -r
+          if [[ -e /usr/bin/tsuki ]] || command -v tsuki >/dev/null 2>&1; then
+            echo "Error: tsuki binary still exists after package removal!" >&2
+            exit 1
+          fi
+
+      - name: Generate & Verify AUR tsuki-bin Package Files
+        run: |
+          PKG_FILE=$(find dist -maxdepth 1 -name "*.pkg.tar.zst" ! -name "*-debug-*" | head -n 1)
+          PKG_BASENAME=$(basename "${PKG_FILE}")
+          PKG_SHA256=$(sha256sum "${PKG_FILE}" | awk '{print $1}')
+
+          mkdir -p aur-tsuki-bin
+          cp packaging/aur/tsuki-bin/{PKGBUILD,tsuki.install} aur-tsuki-bin/
+
+          sed -i "s|^pkgver=.*|pkgver=${{ steps.vars.outputs.pkgver }}|" aur-tsuki-bin/PKGBUILD
+          sed -i "s|^_tag=.*|_tag=\"${{ steps.vars.outputs.tag }}\"|" aur-tsuki-bin/PKGBUILD
+          sed -i "s|^pkgrel=.*|pkgrel=1|" aur-tsuki-bin/PKGBUILD
+          sed -i "s|^sha256sums_x86_64=.*|sha256sums_x86_64=('${PKG_SHA256}')|" aur-tsuki-bin/PKGBUILD
+
+          chown -R builduser:builduser aur-tsuki-bin
+          su builduser -c "
+            export HOME=/home/builduser
+            cd '${GITHUB_WORKSPACE}/aur-tsuki-bin'
+            makepkg --printsrcinfo > .SRCINFO
+            cp '${GITHUB_WORKSPACE}/${PKG_FILE}' '${PKG_BASENAME}'
+            makepkg -f
+          "
+
+          BIN_PKG=$(find aur-tsuki-bin -maxdepth 1 -name "tsuki-bin-*.pkg.tar.zst" ! -name "*-debug-*" | head -n 1)
+          test -n "${BIN_PKG}"
+          pacman -Qip "${BIN_PKG}"
+          pacman -Qlp "${BIN_PKG}"
+          pacman -U --noconfirm "${BIN_PKG}"
+          QT_QPA_PLATFORM=offscreen tsuki --smoke-test
+          pacman -R --noconfirm tsuki-bin
+
+          # Keep only the clean AUR source files for upload
+          rm -f aur-tsuki-bin/*.pkg.tar.zst
+
+      - name: Upload Arch Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: dist/*.pkg.tar.zst
+          if-no-files-found: error
+
+      - name: Upload Updated AUR tsuki-bin Files
+        uses: actions/upload-artifact@v4
+        with:
+          name: aur-tsuki-bin
+          path: |
+            aur-tsuki-bin/PKGBUILD
+            aur-tsuki-bin/.SRCINFO
+            aur-tsuki-bin/tsuki.install
+          include-hidden-files: true
+          if-no-files-found: error
+
+  # Ubuntu (.deb) and Fedora (.rpm) packaging jobs will be added here later.
+
+  release:
+    name: GitHub Release & Artifacts
+    needs:
+      - package-arch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine Version
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="${{ github.event.inputs.tag || 'v1.0.0' }}"
+          fi
+          RAW_VERSION="${TAG#v}"
+          PKGVER="${RAW_VERSION//-/.}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "raw_version=${RAW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "pkgver=${PKGVER}" >> "$GITHUB_OUTPUT"
+
+      - name: Download Arch package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: arch-package
+          path: release-artifacts
+
+      - name: Download AUR tsuki-bin artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aur-tsuki-bin
+          path: aur-tsuki-bin
+
+      - name: Verify Package & Generate Checksums
+        run: |
+          ls -la release-artifacts/
+          if ! ls release-artifacts/*.pkg.tar.zst 1>/dev/null 2>&1; then
+            echo "::error::Missing required Arch Linux (.pkg.tar.zst) package!"
+            exit 1
+          fi
+          cd release-artifacts
+          sha256sum *.pkg.tar.zst > SHA256SUMS
+          echo "Generated SHA256SUMS:"
+          cat SHA256SUMS
+
+      - name: Generate Release Notes
+        run: |
+          cat << 'EOF' > RELEASE_NOTES.md
+          ## Tsuki ${{ steps.vars.outputs.tag }}
+
+          Native Linux Game Launcher for Wine, Proton, and native titles.
+
+          ### Arch Linux Installation
+
+          #### Option 1: Direct Pacman Package (`.pkg.tar.zst`)
+          Download `tsuki-${{ steps.vars.outputs.pkgver }}-1-x86_64.pkg.tar.zst` from the assets below and install it with `pacman`:
+          ```bash
+          sudo pacman -U ./tsuki-${{ steps.vars.outputs.pkgver }}-1-x86_64.pkg.tar.zst
+          ```
+
+          #### Option 2: AUR
+          - **Prebuilt binary (`tsuki-bin`)**: `yay -S tsuki-bin` or `paru -S tsuki-bin`
+          - **Latest git (`tsuki-git`)**: `yay -S tsuki-git` or `paru -S tsuki-git`
+
+          > Ubuntu (`.deb`) and Fedora (`.rpm`) packages will be added in a future release.
+
+          ### Controller Emulation (`/dev/uinput`)
+
+          The Arch package automatically installs `/usr/lib/udev/rules.d/70-tsuki-uinput.rules` and `/usr/lib/modules-load.d/tsuki-uinput.conf` to grant active desktop session users access to `/dev/uinput` for virtual Xbox 360 controller emulation via systemd `uaccess` without root privileges.
+
+          ### Integrity Checksums (SHA-256)
+          ```
+          EOF
+          cat release-artifacts/SHA256SUMS >> RELEASE_NOTES.md
+          cat << 'EOF' >> RELEASE_NOTES.md
+          ```
+          EOF
+
+      - name: Write AUR Summary
+        run: |
+          {
+            echo "### Updated AUR \`tsuki-bin\` Files"
+            echo ""
+            echo "Download the \`aur-tsuki-bin\` artifact or run \`./packaging/aur/update-bin.sh ${{ steps.vars.outputs.tag }}\` locally after the release publishes."
+            echo ""
+            echo "#### \`PKGBUILD\`"
+            echo '```bash'
+            cat aur-tsuki-bin/PKGBUILD
+            echo '```'
+            echo ""
+            echo "#### \`.SRCINFO\`"
+            echo '```ini'
+            cat aur-tsuki-bin/.SRCINFO
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: Tsuki ${{ steps.vars.outputs.tag }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            release-artifacts/*.pkg.tar.zst
+            release-artifacts/SHA256SUMS
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+

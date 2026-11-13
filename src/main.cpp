@@ -21,7 +21,25 @@
 #include <QIcon>
 #include <QTimer>
 
+#ifndef TSUKI_VERSION
+#define TSUKI_VERSION "0.0.1"
+#endif
+
 int main(int argc, char* argv[]) {
+    // Allow CLI info flags (--help / --version) to work in headless terminals without a display server
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM") &&
+        qEnvironmentVariableIsEmpty("DISPLAY") &&
+        qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY")) {
+        for (int i = 1; i < argc; ++i) {
+            const QByteArray arg(argv[i]);
+            if (arg == "-h" || arg == "--help" || arg == "--help-all" ||
+                arg == "-v" || arg == "--version") {
+                qputenv("QT_QPA_PLATFORM", "offscreen");
+                break;
+            }
+        }
+    }
+
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 
@@ -29,7 +47,8 @@ int main(int argc, char* argv[]) {
     app.setOrganizationName(QStringLiteral("Tsuki"));
     app.setApplicationName(QStringLiteral("TsukiLauncher"));
     app.setApplicationDisplayName(QStringLiteral("Tsuki"));
-    app.setApplicationVersion(QStringLiteral("1.0.0"));
+    app.setApplicationVersion(QStringLiteral(TSUKI_VERSION));
+    app.setDesktopFileName(QStringLiteral("io.github.muzammilshafique.tsuki"));
     app.setWindowIcon(QIcon(QStringLiteral(":/tsuki_app/icons/brand/tsuki.svg")));
 
     QQuickStyle::setStyle(QStringLiteral("Basic"));
