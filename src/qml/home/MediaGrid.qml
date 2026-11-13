@@ -394,7 +394,7 @@ Item {
                     id: cardMask
                     anchors.fill: parent
                     anchors.margins: 1
-                    radius: root.cardRadius + 2.5
+                    radius: Math.max(0, root.cardRadius - 1)
                     color: "white"
                     antialiasing: true
                     visible: false
@@ -413,6 +413,9 @@ Item {
                         autoPaddingEnabled: false
                         maskEnabled: true
                         maskSource:  cardMask
+                        // MultiEffect defaults (0, 0) hard-clip mask alpha; spread [0, 1] preserves cardMask antialiasing.
+                        maskThresholdMin: 0.5
+                        maskSpreadAtMin: 1.0
                         blurEnabled: cell.isCardBlurred
                         blur: cell.isCardBlurred ? 1.0 : 0.0
                         blurMax: cell.isCardBlurred ? 32 : 0
@@ -530,6 +533,7 @@ Item {
                             source: cell.coverPath
                             sourceSize.width: 320; sourceSize.height: 480
                             fillMode: Image.PreserveAspectCrop; asynchronous: true
+                            smooth: true; mipmap: true
                             visible: status === Image.Ready
                         }
 
@@ -852,7 +856,7 @@ Item {
                 Rectangle {
                     id: actionOverlay
                     anchors.fill: cardContent
-                    radius: root.cardRadius
+                    radius: Math.max(0, root.cardRadius - 1)
                     color: Qt.rgba(0, 0, 0, 0.45)
                     opacity: cell.isMenuOpen ? 1.0 : 0.0
                     visible: opacity > 0
