@@ -18,6 +18,7 @@ A Linux game launcher for Wine, Proton, and native Linux games, written in C++20
 - Virtual Xbox 360 controller emulation over `/dev/uinput` (with udev rule included)
 - Optional MangoHud and Feral GameMode integration
 - System diagnostics and per-game launch logs
+- Proper Gamepad navigation support for the app (supports PS and Xbox gamepad)
 
 ## Installation
 
