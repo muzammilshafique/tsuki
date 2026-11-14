@@ -1,7 +1,7 @@
 # Maintainer: Muzammil Shafique <muzu@duck.com>
 _pkgname=tsuki
 pkgname="${_pkgname}-bin"
-pkgver=0.1.0
+pkgver=0.1.1
 _tag="v${pkgver}"
 _upstream_pkgrel=1
 pkgrel=1

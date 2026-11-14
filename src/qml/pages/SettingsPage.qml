@@ -736,7 +736,7 @@ Page {
                     { name: "Blue",   color: "#5b9cf6" },
                     { name: "Purple", color: "#9c27b0" },
                     { name: "Pink",   color: "#ec4899" },
-                    { name: "Red",    color: "#ef4444" },
+                    { name: "Red",    color: "#d71920" },
                     { name: "Orange", color: "#f97316" },
                     { name: "Green",  color: "#10b981" },
                     { name: "Slate",  color: "#94a3b8" }

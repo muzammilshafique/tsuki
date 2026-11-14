@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to test build (e.g. v0.1.0; GitHub Release is only published on tag push)'
+        description: 'Release tag to test build (e.g. v0.1.1; GitHub Release is only published on tag push)'
         required: false
-        default: 'v0.1.0'
+        default: 'v0.1.1'
 
 permissions:
   contents: write
@@ -20,24 +20,13 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
+    outputs:
+      tag: ${{ steps.vars.outputs.tag }}
+      raw_version: ${{ steps.vars.outputs.raw_version }}
+      pkgver: ${{ steps.vars.outputs.pkgver }}
+      upstream_pkgrel: ${{ steps.vars.outputs.upstream_pkgrel }}
+      git_pkgver: ${{ steps.vars.outputs.git_pkgver }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Determine Version
-        id: vars
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            TAG="${{ github.ref_name }}"
-          else
-            TAG="${{ github.event.inputs.tag || 'v0.1.0' }}"
-          fi
-          RAW_VERSION="${TAG#v}"
-          PKGVER="${RAW_VERSION//-/.}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "raw_version=${RAW_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "pkgver=${PKGVER}" >> "$GITHUB_OUTPUT"
-
       - name: Prepare Arch container and install packaging dependencies
         run: |
           sed -i 's/^#DisableSandbox/DisableSandbox/' /etc/pacman.conf
@@ -47,6 +36,35 @@ jobs:
             qt6-base qt6-declarative qt6-svg sdl2 \
             hicolor-icon-theme tar zstd \
             desktop-file-utils appstream
+          # Host workspace is bind-mounted as the runner user (UID 1001), while container steps run as root/builduser
+          git config --system --add safe.directory '*'
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine Version
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="${{ github.event.inputs.tag || 'v0.1.1' }}"
+          fi
+          RAW_VERSION="${TAG#v}"
+          PKGVER="${RAW_VERSION//-/.}"
+          UPSTREAM_PKGREL="$(grep '^pkgrel=' packaging/arch/PKGBUILD | head -n 1 | cut -d= -f2)"
+          UPSTREAM_PKGREL="${UPSTREAM_PKGREL:-1}"
+          GIT_PKGVER="$(git describe --long --abbrev=7 --tags --match "${TAG}" 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' || true)"
+          if [[ -z "${GIT_PKGVER}" ]]; then
+            GIT_PKGVER="${PKGVER}.r0.g$(git rev-parse --short=7 HEAD)"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "raw_version=${RAW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "pkgver=${PKGVER}" >> "$GITHUB_OUTPUT"
+          echo "upstream_pkgrel=${UPSTREAM_PKGREL}" >> "$GITHUB_OUTPUT"
+          echo "git_pkgver=${GIT_PKGVER}" >> "$GITHUB_OUTPUT"
 
       - name: Validate desktop and AppStream metadata
         run: |
@@ -110,8 +128,11 @@ jobs:
 
           sed -i "s|^pkgver=.*|pkgver=${{ steps.vars.outputs.pkgver }}|" aur-tsuki-bin/PKGBUILD
           sed -i "s|^_tag=.*|_tag=\"${{ steps.vars.outputs.tag }}\"|" aur-tsuki-bin/PKGBUILD
+          sed -i "s|^_upstream_pkgrel=.*|_upstream_pkgrel=${{ steps.vars.outputs.upstream_pkgrel }}|" aur-tsuki-bin/PKGBUILD
           sed -i "s|^pkgrel=.*|pkgrel=1|" aur-tsuki-bin/PKGBUILD
           sed -i "s|^sha256sums_x86_64=.*|sha256sums_x86_64=('${PKG_SHA256}')|" aur-tsuki-bin/PKGBUILD
+
+          bash -n aur-tsuki-bin/PKGBUILD
 
           chown -R builduser:builduser aur-tsuki-bin
           su builduser -c "
@@ -133,6 +154,26 @@ jobs:
           # Keep only the clean AUR source files for upload
           rm -f aur-tsuki-bin/*.pkg.tar.zst
 
+      - name: Generate & Verify AUR tsuki-git Package Files
+        run: |
+          mkdir -p aur-tsuki-git
+          cp packaging/aur/tsuki-git/{PKGBUILD,tsuki.install} aur-tsuki-git/
+
+          sed -i "s|^pkgver=.*|pkgver=${{ steps.vars.outputs.git_pkgver }}|" aur-tsuki-git/PKGBUILD
+          sed -i "s|^pkgrel=.*|pkgrel=1|" aur-tsuki-git/PKGBUILD
+
+          bash -n aur-tsuki-git/PKGBUILD
+
+          chown -R builduser:builduser aur-tsuki-git
+          su builduser -c "
+            export HOME=/home/builduser
+            cd '${GITHUB_WORKSPACE}/aur-tsuki-git'
+            makepkg --printsrcinfo > .SRCINFO
+          "
+
+          grep -qxF "pkgbase = tsuki-git" aur-tsuki-git/.SRCINFO
+          grep -qxF $'\tpkgver = '"${{ steps.vars.outputs.git_pkgver }}" aur-tsuki-git/.SRCINFO
+
       - name: Upload Arch Package
         uses: actions/upload-artifact@v4
         with:
@@ -151,6 +192,17 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
+      - name: Upload Updated AUR tsuki-git Files
+        uses: actions/upload-artifact@v4
+        with:
+          name: aur-tsuki-git
+          path: |
+            aur-tsuki-git/PKGBUILD
+            aur-tsuki-git/.SRCINFO
+            aur-tsuki-git/tsuki.install
+          include-hidden-files: true
+          if-no-files-found: error
+
   # Ubuntu (.deb) and Fedora (.rpm) packaging jobs will be added here later.
 
   release:
@@ -159,20 +211,6 @@ jobs:
       - package-arch
     runs-on: ubuntu-latest
     steps:
-      - name: Determine Version
-        id: vars
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            TAG="${{ github.ref_name }}"
-          else
-            TAG="${{ github.event.inputs.tag || 'v0.1.0' }}"
-          fi
-          RAW_VERSION="${TAG#v}"
-          PKGVER="${RAW_VERSION//-/.}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "raw_version=${RAW_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "pkgver=${PKGVER}" >> "$GITHUB_OUTPUT"
-
       - name: Download Arch package artifact
         uses: actions/download-artifact@v4
         with:
@@ -184,6 +222,12 @@ jobs:
         with:
           name: aur-tsuki-bin
           path: aur-tsuki-bin
+
+      - name: Download AUR tsuki-git artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aur-tsuki-git
+          path: aur-tsuki-git
 
       - name: Verify Package & Generate Checksums
         run: |
@@ -200,16 +244,16 @@ jobs:
       - name: Generate Release Notes
         run: |
           cat << 'EOF' > RELEASE_NOTES.md
-          ## Tsuki ${{ steps.vars.outputs.tag }}
+          ## Tsuki ${{ needs.package-arch.outputs.tag }}
 
           Native Linux Game Launcher for Wine, Proton, and native titles.
 
           ### Arch Linux Installation
 
           #### Option 1: Direct Pacman Package (`.pkg.tar.zst`)
-          Download `tsuki-${{ steps.vars.outputs.pkgver }}-1-x86_64.pkg.tar.zst` from the assets below and install it with `pacman`:
+          Download `tsuki-${{ needs.package-arch.outputs.pkgver }}-${{ needs.package-arch.outputs.upstream_pkgrel }}-x86_64.pkg.tar.zst` from the assets below and install it with `pacman`:
           ```bash
-          sudo pacman -U ./tsuki-${{ steps.vars.outputs.pkgver }}-1-x86_64.pkg.tar.zst
+          sudo pacman -U ./tsuki-${{ needs.package-arch.outputs.pkgver }}-${{ needs.package-arch.outputs.upstream_pkgrel }}-x86_64.pkg.tar.zst
           ```
 
           #### Option 2: AUR
@@ -233,18 +277,30 @@ jobs:
       - name: Write AUR Summary
         run: |
           {
-            echo "### Updated AUR \`tsuki-bin\` Files"
+            echo "### Generated AUR \`tsuki-bin\` Files"
             echo ""
-            echo "Download the \`aur-tsuki-bin\` artifact or run \`./packaging/aur/update-bin.sh ${{ steps.vars.outputs.tag }}\` locally after the release publishes."
+            echo "On \`v*\` tag pushes, \`publish-aur\` automatically publishes both \`tsuki-bin\` and \`tsuki-git\` to the AUR after the GitHub Release is created."
             echo ""
-            echo "#### \`PKGBUILD\`"
+            echo "#### \`tsuki-bin/PKGBUILD\`"
             echo '```bash'
             cat aur-tsuki-bin/PKGBUILD
             echo '```'
             echo ""
-            echo "#### \`.SRCINFO\`"
+            echo "#### \`tsuki-bin/.SRCINFO\`"
             echo '```ini'
             cat aur-tsuki-bin/.SRCINFO
+            echo '```'
+            echo ""
+            echo "### Generated AUR \`tsuki-git\` Files"
+            echo ""
+            echo "#### \`tsuki-git/PKGBUILD\`"
+            echo '```bash'
+            cat aur-tsuki-git/PKGBUILD
+            echo '```'
+            echo ""
+            echo "#### \`tsuki-git/.SRCINFO\`"
+            echo '```ini'
+            cat aur-tsuki-git/.SRCINFO
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -252,8 +308,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.vars.outputs.tag }}
-          name: Tsuki ${{ steps.vars.outputs.tag }}
+          tag_name: ${{ needs.package-arch.outputs.tag }}
+          name: Tsuki ${{ needs.package-arch.outputs.tag }}
           body_path: RELEASE_NOTES.md
           files: |
             release-artifacts/*.pkg.tar.zst
@@ -261,4 +317,125 @@ jobs:
           fail_on_unmatched_files: true
           draft: false
           prerelease: false
+
+  publish-aur:
+    name: Publish to AUR (tsuki-bin & tsuki-git)
+    needs:
+      - package-arch
+      - release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Verify AUR SSH secret is configured
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [[ -z "${AUR_SSH_PRIVATE_KEY}" ]]; then
+            echo "::error::Missing repository secret AUR_SSH_PRIVATE_KEY. Add your AUR SSH private key in GitHub Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+      - name: Install git, OpenSSH, and curl
+        run: |
+          sed -i 's/^#DisableSandbox/DisableSandbox/' /etc/pacman.conf
+          pacman -Sy --noconfirm archlinux-keyring
+          pacman -Syu --noconfirm git openssh curl
+          # Host workspace is bind-mounted as the runner user (UID 1001), while container steps run as root
+          git config --system --add safe.directory '*'
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Non-Root Build User
+        run: |
+          useradd -m -s /bin/bash builduser
+
+      - name: Download AUR tsuki-bin artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aur-tsuki-bin
+          path: aur-tsuki-bin
+
+      - name: Download AUR tsuki-git artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aur-tsuki-git
+          path: aur-tsuki-git
+
+      - name: Verify published GitHub Release asset for tsuki-bin
+        run: |
+          ASSET_URL=$(awk -F' = ' '/^\tsource_x86_64 = /{print $2; exit}' aur-tsuki-bin/.SRCINFO | sed 's/^[^:]*:://')
+          EXPECTED_SHA=$(awk -F' = ' '/^\tsha256sums_x86_64 = /{print $2; exit}' aur-tsuki-bin/.SRCINFO)
+          test -n "${ASSET_URL}"
+          test -n "${EXPECTED_SHA}"
+
+          TMP_ASSET=$(mktemp)
+          trap 'rm -f "${TMP_ASSET}"' EXIT
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors "${ASSET_URL}" -o "${TMP_ASSET}"
+          ACTUAL_SHA=$(sha256sum "${TMP_ASSET}" | awk '{print $1}')
+          if [[ "${ACTUAL_SHA}" != "${EXPECTED_SHA}" ]]; then
+            echo "::error::Release asset checksum mismatch: expected ${EXPECTED_SHA}, got ${ACTUAL_SHA}"
+            exit 1
+          fi
+          echo "Verified live release asset ${ASSET_URL} (sha256=${ACTUAL_SHA})"
+
+      - name: Configure AUR SSH authentication
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p /root/.ssh
+          chmod 700 /root/.ssh
+
+          clean_key="${AUR_SSH_PRIVATE_KEY//$'\r'/}"
+          printf '%s\n' "${clean_key%$'\n'}" > /root/.ssh/aur
+          chmod 600 /root/.ssh/aur
+
+          # Official aur.archlinux.org SSH host public keys
+          cat << 'EOF' > /root/.ssh/known_hosts
+          aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN
+          aur.archlinux.org ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBLMiLrP8pVi5BFX2i3vepSUnpedeiewE5XptnUnau+ZoeUOPkpoCgZZuYfpaIQfhhJJI5qgnjJmr4hyJbe/zxow=
+          aur.archlinux.org ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDKF9vAFWdgm9Bi8uc+tYRBmXASBb5cB5iZsB7LOWWFeBrLp3r14w0/9S2vozjgqY5sJLDPONWoTTaVTbhe3vwO8CBKZTEt1AcWxuXNlRnk9FliR1/eNB9uz/7y1R0+c1Md+P98AJJSJWKN12nqIDIhjl2S1vOUvm7FNY43fU2knIhEbHybhwWeg+0wxpKwcAd/JeL5i92Uv03MYftOToUijd1pqyVFdJvQFhqD4v3M157jxS5FTOBrccAEjT+zYmFyD8WvKUa9vUclRddNllmBJdy4NyLB8SvVZULUPrP3QOlmzemeKracTlVOUG1wsDbxknF1BwSCU7CmU6UFP90kpWIyz66bP0bl67QAvlIc52Yix7pKJPbw85+zykvnfl2mdROsaT8p8R9nwCdFsBc9IiD0NhPEHcyHRwB8fokXTajk2QnGhL+zP5KnkmXnyQYOCUYo3EKMXIlVOVbPDgRYYT/XqvBuzq5S9rrU70KoI/S5lDnFfx/+lPLdtcnnEPk=
+          EOF
+          chmod 644 /root/.ssh/known_hosts
+
+      - name: Publish tsuki-bin and tsuki-git to AUR
+        env:
+          GIT_SSH_COMMAND: ssh -F /dev/null -i /root/.ssh/aur -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile=/root/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes
+          AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME || 'Muzammil Shafique' }}
+          AUR_GIT_EMAIL: ${{ vars.AUR_GIT_EMAIL || 'muzu@duck.com' }}
+        run: |
+          chmod +x packaging/aur/publish.sh
+
+          bin_status="failed"
+          git_status="failed"
+          rc=0
+
+          if ./packaging/aur/publish.sh tsuki-bin aur-tsuki-bin; then
+            bin_status="success"
+          else
+            rc=1
+          fi
+
+          if ./packaging/aur/publish.sh tsuki-git aur-tsuki-git; then
+            git_status="success"
+          else
+            rc=1
+          fi
+
+          {
+            echo "### AUR Publish Results (\`${{ needs.package-arch.outputs.tag }}\`)"
+            echo ""
+            echo "| Package | Status | Target Version |"
+            echo "| --- | --- | --- |"
+            echo "| \`tsuki-bin\` | ${bin_status} | \`${{ needs.package-arch.outputs.pkgver }}\` |"
+            echo "| \`tsuki-git\` | ${git_status} | \`${{ needs.package-arch.outputs.git_pkgver }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "${rc}"
+
+      - name: Clean up SSH credentials
+        if: always()
+        run: rm -rf /root/.ssh
 

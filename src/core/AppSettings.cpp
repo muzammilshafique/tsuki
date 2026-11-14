@@ -34,10 +34,10 @@ AppSettings::AppSettings(QObject *parent)
           .toBool();
   m_accentColor = QColor(m_settings
                              .value(QStringLiteral("appearance/accentColor"),
-                                    QStringLiteral("#5b9cf6"))
+                                    QStringLiteral("#d71920"))
                              .toString());
   if (!m_accentColor.isValid()) {
-    m_accentColor = QColor(QStringLiteral("#5b9cf6"));
+    m_accentColor = QColor(QStringLiteral("#d71920"));
   }
   m_tagColorLinux =
       QColor(m_settings
