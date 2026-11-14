@@ -6,6 +6,7 @@ Item {
     id: root
     property string text: ""
     property string iconSource: ""
+    property string iconSymbol: ""
     property string buttonType: "tonal" // "tonal", "outlined", "filled", "destructive"
     property alias buttonStyle: root.buttonType
     property bool isSuccess: false
@@ -32,6 +33,16 @@ Item {
     }
 
     Rectangle {
+        anchors.fill: btnBg
+        anchors.margins: -3
+        radius: (btnBg.height / 2) + 3
+        color: Qt.rgba(0, 0, 0, 0)
+        border.width: 2
+        border.color: appSettings.accentColor
+        visible: root.kbFocused
+    }
+
+    Rectangle {
         id: btnBg
         anchors.fill: parent
         radius: height / 2
@@ -39,40 +50,70 @@ Item {
         readonly property bool isHovered: btnMa.containsMouse || root.kbFocused
         readonly property bool isPressed: btnMa.pressed
 
+        readonly property color contentColor: {
+            if (root.isSuccess) return "#22c55e"
+            if (root.buttonType === "destructive") return isHovered ? "#ffffff" : "#ef4444"
+            if (root.buttonType === "filled") return appSettings.onPrimary
+            if (root.buttonType === "outlined") return appSettings.textColor
+            return appSettings.onSecondaryContainer
+        }
+
         color: {
             if (root.isSuccess) {
-                return Qt.rgba(0.13, 0.77, 0.36, isHovered ? 0.25 : 0.15)
+                return Qt.rgba(0.13, 0.77, 0.36, isHovered ? 0.25 : 0.16)
             }
             if (root.buttonType === "destructive") {
-                return isHovered ? "#ef4444" : (appSettings.isEffectiveDark ? Qt.rgba(0.93, 0.27, 0.27, 0.12) : Qt.rgba(0.93, 0.27, 0.27, 0.08))
+                return isHovered ? "#ef4444" : Qt.rgba(0.93, 0.27, 0.27, appSettings.isEffectiveDark ? 0.14 : 0.10)
             }
             if (root.buttonType === "filled") {
                 return appSettings.accentColor
             }
             if (root.buttonType === "outlined") {
-                return isHovered
-                    ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
-                    : "transparent"
+                return Qt.rgba(appSettings.surfaceContainerHigh.r, appSettings.surfaceContainerHigh.g, appSettings.surfaceContainerHigh.b, 0.0)
             }
             // default tonal
-            return isHovered
-                ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
-                : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(0, 0, 0, 0.05))
+            return appSettings.secondaryContainer
         }
 
         border.color: {
-            if (root.kbFocused) return appSettings.accentColor
             if (root.isSuccess) return "#22c55e"
-            if (root.buttonType === "destructive") return isHovered ? "#ef4444" : Qt.rgba(0.93, 0.27, 0.27, 0.3)
-            if (root.buttonType === "outlined") return appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.15)
-            return "transparent"
+            if (root.buttonType === "outlined") {
+                return isHovered
+                    ? appSettings.accentColor
+                    : Qt.rgba(appSettings.textColor.r, appSettings.textColor.g, appSettings.textColor.b, appSettings.isEffectiveDark ? 0.22 : 0.18)
+            }
+            return Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.0)
         }
-        border.width: root.kbFocused ? 2 : (root.buttonType === "outlined" || root.isSuccess ? 1 : 0)
+        border.width: (root.buttonType === "outlined" || root.isSuccess) ? 1 : 0
         scale: isPressed ? 0.97 : (root.kbFocused ? 1.02 : 1.0)
 
         Behavior on color { ColorAnimation { duration: 150 } }
         Behavior on border.color { ColorAnimation { duration: 150 } }
         Behavior on scale { NumberAnimation { duration: 120 } }
+
+        // Outlined hover container fill (opacity-only so it never interpolates through #00000000)
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: appSettings.surfaceContainerHigh
+            opacity: (!root.isSuccess && root.buttonType === "outlined" && btnBg.isHovered) ? 1.0 : 0.0
+            Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        }
+
+        // Subtle tonal state layer on hover / press for filled and tonal variants
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: {
+                if (root.buttonType === "filled") return appSettings.onPrimary
+                if (appSettings.isEffectiveDark) return "#ffffff"
+                return appSettings.accentColor
+            }
+            opacity: (!root.isSuccess && root.buttonType !== "destructive" && root.buttonType !== "outlined")
+                ? (btnBg.isPressed ? 0.14 : (btnBg.isHovered ? (root.buttonType === "filled" ? 0.12 : 0.09) : 0.0))
+                : 0.0
+            Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        }
 
         Row {
             id: buttonRow
@@ -80,31 +121,23 @@ Item {
             spacing: 8
 
             YIcon {
-                size: 16
-                source: root.isSuccess ? "qrc:/tsuki_app/icons/actions/check.svg" : (root.iconSource || "")
-                visible: root.isSuccess || (root.iconSource || "") !== ""
+                size: 18
+                symbol: root.isSuccess ? "check" : (root.iconSymbol || "")
+                source: (root.isSuccess || (root.iconSymbol || "") !== "") ? "" : (root.iconSource || "")
+                visible: root.isSuccess || (root.iconSymbol || "") !== "" || (root.iconSource || "") !== ""
                 anchors.verticalCenter: parent.verticalCenter
-                color: {
-                    if (root.isSuccess) return "#22c55e"
-                    if (root.buttonType === "destructive") return btnBg.isHovered ? "#ffffff" : "#ef4444"
-                    if (root.buttonType === "filled") return appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff"
-                    return appSettings.textColor
-                }
+                color: btnBg.contentColor
                 Behavior on color { ColorAnimation { duration: 150 } }
             }
 
             Label {
                 text: root.isSuccess ? root.successText : root.text
-                font.pixelSize: 13
-                font.weight: Font.DemiBold
+                font.family: "Rubik"
+                font.pixelSize: 14
+                font.weight: Font.Medium
                 renderType: Text.QtRendering
                 anchors.verticalCenter: parent.verticalCenter
-                color: {
-                    if (root.isSuccess) return "#22c55e"
-                    if (root.buttonType === "destructive") return btnBg.isHovered ? "#ffffff" : "#ef4444"
-                    if (root.buttonType === "filled") return appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff"
-                    return appSettings.textColor
-                }
+                color: btnBg.contentColor
                 Behavior on color { ColorAnimation { duration: 150 } }
             }
         }

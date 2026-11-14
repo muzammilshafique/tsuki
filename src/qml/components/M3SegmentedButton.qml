@@ -139,11 +139,15 @@ Item {
                     width: container.segmentWidth
                     height: parent.height
                     radius: 16
-                    color: (!isSelected && segHover.hovered)
-                        ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                        : "transparent"
+                    color: Qt.rgba(0, 0, 0, 0)
 
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 16
+                        color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                        opacity: (!isSelected && segHover.hovered) ? 1.0 : 0.0
+                        Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                    }
 
                     Row {
                         anchors.centerIn: parent
@@ -154,7 +158,7 @@ Item {
                             source: (typeof modelData === "object" && modelData && modelData.iconSource) ? modelData.iconSource : ""
                             visible: (typeof modelData === "object" && modelData && Boolean(modelData.iconSource))
                             color: isSelected
-                                ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+                                ? appSettings.onPrimary
                                 : (segHover.hovered ? appSettings.textColor : appSettings.textSecColor)
                             anchors.verticalCenter: parent.verticalCenter
                             Behavior on color { ColorAnimation { duration: 150 } }
@@ -167,7 +171,7 @@ Item {
                             font.pixelSize: 13
                             font.weight: isSelected ? Font.DemiBold : Font.Normal
                             color: isSelected
-                                ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+                                ? appSettings.onPrimary
                                 : (segHover.hovered ? appSettings.textColor : appSettings.textSecColor)
                             anchors.verticalCenter: parent.verticalCenter
                             renderType: Text.QtRendering

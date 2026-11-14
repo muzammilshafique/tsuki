@@ -71,7 +71,7 @@ Item {
                 else root.moveDown()
             }
 
-            // Material 3 Track (16dp height, fully rounded radius 8dp, signature handle gap)
+            // Material 3 Medium Slider Track (16dp height, pill outer ends, 2dp inner handle corners, 6dp gap + end stop dot)
             background: Item {
                 id: trackContainer
                 x: slider.leftPadding
@@ -80,43 +80,66 @@ Item {
                 height: 16
 
                 readonly property real handleCenter: slider.visualPosition * (slider.availableWidth - sliderHandle.width) + sliderHandle.width / 2
-                readonly property real gapSize: 6
+                readonly property real gapHalfSpan: sliderHandle.width / 2 + 6
 
                 // Inactive track segment (right of handle)
                 Rectangle {
-                    x: Math.min(parent.width, trackContainer.handleCenter + trackContainer.gapSize)
+                    id: inactiveTrack
+                    x: Math.min(parent.width, trackContainer.handleCenter + trackContainer.gapHalfSpan)
                     y: 0
                     width: Math.max(0, parent.width - x)
                     height: parent.height
-                    radius: 4
-                    color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.08)
+                    visible: width > 1
+                    topLeftRadius: 2
+                    bottomLeftRadius: 2
+                    topRightRadius: 8
+                    bottomRightRadius: 8
+                    color: appSettings.secondaryContainer
                     Behavior on color { ColorAnimation { duration: 150 } }
+
+                    // End-stop indicator dot inside inactive cap
+                    Rectangle {
+                        width: 4
+                        height: 4
+                        radius: 2
+                        anchors.right: parent.right
+                        anchors.rightMargin: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: appSettings.onSecondaryContainer
+                        opacity: inactiveTrack.width >= 14 ? 0.85 : 0.0
+                        visible: opacity > 0.01
+                        Behavior on opacity { NumberAnimation { duration: 100 } }
+                        Behavior on color { ColorAnimation { duration: 150 } }
+                    }
                 }
 
-                // Active track segment (left of handle) - Bar side with reduced radius
+                // Active track segment (left of handle)
                 Rectangle {
                     x: 0
                     y: 0
-                    width: Math.max(0, Math.min(parent.width, trackContainer.handleCenter - trackContainer.gapSize))
+                    width: Math.max(0, Math.min(parent.width, trackContainer.handleCenter - trackContainer.gapHalfSpan))
                     height: parent.height
-                    radius: 3
+                    visible: width > 1
+                    topLeftRadius: 8
+                    bottomLeftRadius: 8
+                    topRightRadius: 2
+                    bottomRightRadius: 2
                     color: appSettings.accentColor
                     Behavior on color { ColorAnimation { duration: 150 } }
                 }
             }
 
-            // Material 3 Vertical Pill Handle (44dp height, 4dp/6dp width, radius 2dp/3dp)
+            // Material 3 Medium Vertical Handle (44dp height, 4dp/5dp width, full pill radius)
             handle: Rectangle {
                 id: sliderHandle
                 x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
                 y: slider.topPadding + slider.availableHeight / 2 - height / 2
-                implicitWidth: (slider.pressed || slider.kbFocused || sliderHover.hovered) ? 6 : 4
+                implicitWidth: slider.pressed ? 3 : ((slider.kbFocused || sliderHover.hovered) ? 5 : 4)
                 implicitHeight: 44
-                radius: (slider.pressed || slider.kbFocused || sliderHover.hovered) ? 3 : 2
+                radius: implicitWidth / 2
                 color: appSettings.accentColor
 
                 Behavior on implicitWidth { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                Behavior on radius { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                 Behavior on color { ColorAnimation { duration: 150 } }
 
                 HoverHandler {
@@ -126,25 +149,23 @@ Item {
             }
         }
 
-        // Material 3 Value Badge (Pill container with DemiBold readout)
+        // Material 3 Value Badge (Tonal Pill container with DemiBold readout)
         Rectangle {
             id: valueBadge
             width: Math.max(56, valLabel.implicitWidth + 20)
             height: 30
             radius: 15
             anchors.verticalCenter: parent.verticalCenter
-            color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05)
-            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
-            border.width: 1
+            color: appSettings.surfaceContainerHigh
 
             Behavior on color { ColorAnimation { duration: 150 } }
-            Behavior on border.color { ColorAnimation { duration: 150 } }
 
             Label {
                 id: valLabel
                 anchors.centerIn: parent
                 text: (root.decimals > 0 ? Number(slider.value).toFixed(root.decimals) : Math.round(slider.value)) + root.suffix
                 color: appSettings.textColor
+                font.family: "Rubik"
                 font.pixelSize: 12
                 font.weight: Font.DemiBold
                 renderType: Text.QtRendering

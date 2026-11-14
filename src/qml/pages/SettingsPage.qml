@@ -306,8 +306,8 @@ Page {
                 background: Rectangle {
                     property color accent: appSettings.accentColor
                     radius: 20
-                    color: backBtn.isBtnActive ? accent : "transparent"
-                    border.color: backBtn.isBtnActive ? "transparent" : accent
+                    color: Qt.rgba(accent.r, accent.g, accent.b, backBtn.isBtnActive ? 1.0 : 0.0)
+                    border.color: Qt.rgba(accent.r, accent.g, accent.b, backBtn.isBtnActive ? 0.0 : 1.0)
                     border.width: backBtn.isBtnActive ? 0 : 1.5
                     Behavior on color { ColorAnimation { duration: 150 } }
                     Behavior on border.color { ColorAnimation { duration: 150 } }
@@ -600,21 +600,23 @@ Page {
                             spacing: 3
                             boundsBehavior: Flickable.StopAtBounds
 
-                            delegate: Rectangle {
+                            delegate: Item {
                                 id: sResRow
                                 required property var modelData
                                 required property int index
                                 width: ListView.view.width
                                 height: 46
-                                radius: 10
                                 readonly property bool isRowFocused: sResMA.containsMouse || settingsPage.focusedResultIndex === index
-                                color: isRowFocused
-                                    ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                                    : "transparent"
-                                border.color: isRowFocused ? appSettings.accentColor : "transparent"
-                                border.width: isRowFocused ? 1 : 0
-                                Behavior on color { ColorAnimation { duration: 120 } }
-                                Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: 10
+                                    color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                                    border.color: appSettings.accentColor
+                                    border.width: 1
+                                    opacity: sResRow.isRowFocused ? 1.0 : 0.0
+                                    Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                }
 
                                 RowLayout {
                                     anchors.fill: parent

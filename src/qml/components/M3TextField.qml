@@ -61,21 +61,14 @@ Item {
     Rectangle {
         id: container
         anchors.fill: parent
-        radius: 12
-        color: (inputField.activeFocus || root.kbFocused)
-            ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
-            : (containerHover.hovered 
-                ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04))
-                : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.02)))
+        radius: 14
+        color: containerHover.hovered && !(inputField.activeFocus || root.kbFocused)
+            ? appSettings.surfaceContainerHighest
+            : appSettings.surfaceContainerHigh
 
-        border.color: (inputField.activeFocus || root.kbFocused)
-            ? appSettings.accentColor
-            : (containerHover.hovered
-                ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.18))
-                : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.09)))
-        border.width: (inputField.activeFocus || root.kbFocused) ? 2 : 1
+        border.color: appSettings.accentColor
+        border.width: (inputField.activeFocus || root.kbFocused) ? 2 : 0
 
-        Behavior on border.color { ColorAnimation { duration: 150 } }
         Behavior on color { ColorAnimation { duration: 150 } }
 
         RowLayout {
@@ -104,6 +97,7 @@ Item {
                 placeholderText: root.placeholderText
                 placeholderTextColor: appSettings.textTerColor
                 color: appSettings.textColor
+                font.family: "Rubik"
                 font.pixelSize: 14
                 font.weight: Font.Normal
                 padding: 0
@@ -186,8 +180,8 @@ Item {
 
                 YIcon {
                     anchors.centerIn: parent
-                    size: 14
-                    source: "qrc:/tsuki_app/icons/actions/close.svg"
+                    size: 16
+                    symbol: "close"
                     color: clearBtnHover.containsMouse ? appSettings.textColor : appSettings.textSecColor
                     Behavior on color { ColorAnimation { duration: 120 } }
                 }

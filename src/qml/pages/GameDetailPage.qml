@@ -363,7 +363,7 @@ Page {
         function onRunningGamesChanged() { root.reloadGame() }
     }
 
-    background: Rectangle { color: appSettings.bgColor }
+    background: Rectangle { color: appSettings.surfaceContainerLowest }
 
     function saveAllChanges() {
         if (!root.gameId || root.gameId.length === 0) return
@@ -536,8 +536,8 @@ Page {
                     gradient: Gradient {
                         GradientStop { position: 0.0; color: Qt.rgba(13/255, 13/255, 17/255, 0.40) }
                         GradientStop { position: 0.35; color: "transparent" }
-                        GradientStop { position: 0.65; color: Qt.rgba(13/255, 13/255, 17/255, 0.55) }
-                        GradientStop { position: 1.0; color: appSettings.bgColor }
+                        GradientStop { position: 0.65; color: Qt.rgba(appSettings.surfaceContainerLowest.r, appSettings.surfaceContainerLowest.g, appSettings.surfaceContainerLowest.b, 0.55) }
+                        GradientStop { position: 1.0; color: appSettings.surfaceContainerLowest }
                     }
                 }
 
@@ -632,7 +632,7 @@ Page {
                                 if (!root.isNative) {
                                     items.push({
                                         name: "Winetricks",
-                                        icon: "qrc:/tsuki_app/icons/actions/wrench.svg",
+                                        symbol: "build",
                                         destructive: false,
                                         action: function() {
                                             root.winetricksRequested(root.gameData.prefixId || "default-prefix", root.gameData.title || "")
@@ -641,7 +641,7 @@ Page {
                                 }
                                 items.push({
                                     name: "Shortcut",
-                                    icon: "qrc:/tsuki_app/icons/actions/shortcut.svg",
+                                    symbol: "shortcut",
                                     destructive: false,
                                     action: function() {
                                         uiController.gameManager.createDesktopShortcut(root.gameId, true)
@@ -649,7 +649,7 @@ Page {
                                 })
                                 items.push({
                                     name: "Game Folder",
-                                    icon: "qrc:/tsuki_app/icons/actions/folder.svg",
+                                    symbol: "folder_open",
                                     destructive: false,
                                     action: function() {
                                         uiController.gameManager.openGameDirectory(root.gameId)
@@ -658,7 +658,7 @@ Page {
                                 if (!root.isNative && Boolean(root.gameData.prefixId && root.gameData.prefixId.length > 0)) {
                                     items.push({
                                         name: "Prefix Folder",
-                                        icon: "qrc:/tsuki_app/icons/actions/folder.svg",
+                                        symbol: "folder_open",
                                         destructive: false,
                                         action: function() {
                                             if (root.gameData.prefixId) {
@@ -669,7 +669,7 @@ Page {
                                 }
                                 items.push({
                                     name: "Remove",
-                                    icon: "qrc:/tsuki_app/icons/actions/trash.svg",
+                                    symbol: "delete",
                                     destructive: true,
                                     action: function() {
                                         removeGameDialog.openDialog(root.gameId, root.gameData.title, root.gameData.prefixId)
@@ -716,7 +716,8 @@ Page {
 
                                     readonly property bool isBtnHovered: (!uiController || !uiController.isKeyboardNavActive) && primaryActionBtn.hovered
                                     readonly property color effectiveColor: root.gameData.isRunning ? "#ef4444" : appSettings.accentColor
-                                    readonly property color onEffectiveColor: root.gameData.isRunning ? "#ffffff" : (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+                                    // Avoid "on<Property>" prefix next to effectiveColor so QML does not parse it as a signal handler.
+                                    readonly property color foregroundColor: root.gameData.isRunning ? "#ffffff" : appSettings.onPrimary
 
                                     scale: down ? 0.96 : (isBtnHovered ? 1.01 : 1.0)
                                     Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
@@ -750,7 +751,7 @@ Page {
                                                 radius: 0
                                                 x: centerX - radius
                                                 y: centerY - radius
-                                                color: primaryActionBtn.onEffectiveColor
+                                                color: primaryActionBtn.foregroundColor
                                                 opacity: 0
 
                                                 NumberAnimation {
@@ -779,7 +780,7 @@ Page {
                                             bottomLeftRadius: 25
                                             topRightRadius: 7
                                             bottomRightRadius: 7
-                                            color: "transparent"
+                                            color: Qt.rgba(0, 0, 0, 0)
                                             border.color: primaryActionBtn.effectiveColor
                                             border.width: 2
                                             visible: Boolean(uiController && uiController.isKeyboardNavActive && primaryActionBtn.activeFocus)
@@ -797,15 +798,16 @@ Page {
                                             spacing: 8
 
                                             YIcon {
-                                                size: 18
-                                                source: root.gameData.isRunning ? "qrc:/tsuki_app/icons/actions/stop.svg" : "qrc:/tsuki_app/icons/actions/play.svg"
-                                                color: primaryActionBtn.onEffectiveColor
+                                                size: 20
+                                                symbol: root.gameData.isRunning ? "stop" : "play_arrow"
+                                                filled: true
+                                                color: primaryActionBtn.foregroundColor
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
                                             Label {
                                                 id: playLabel
                                                 text: primaryActionBtn.text
-                                                color: primaryActionBtn.onEffectiveColor
+                                                color: primaryActionBtn.foregroundColor
                                                 font: primaryActionBtn.font
                                                 renderType: Text.QtRendering
                                                 anchors.verticalCenter: parent.verticalCenter
@@ -930,9 +932,9 @@ Page {
 
                                         YIcon {
                                             id: chevronIcon
-                                            size: 18
-                                            source: "qrc:/tsuki_app/icons/actions/chevron_down.svg"
-                                            color: primaryActionBtn.onEffectiveColor
+                                            size: 20
+                                            symbol: "keyboard_arrow_down"
+                                            color: primaryActionBtn.foregroundColor
                                             anchors.centerIn: parent
                                             rotation: actionsPopup.visible ? 180 : 0
                                             Behavior on rotation {
@@ -1075,10 +1077,9 @@ Page {
 
                                 background: Rectangle {
                                     id: popupCardBg
-                                    color: appSettings.surfaceColor
-                                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)
-                                    border.width: 1
-                                    radius: 14
+                                    color: appSettings.surfaceContainer
+                                    border.width: 0
+                                    radius: 16
 
                                     layer.enabled: true
                                     layer.effect: MultiEffect {
@@ -1131,24 +1132,25 @@ Page {
                                                         readonly property bool isHovered: aRowMA.containsMouse || (Boolean(uiController && uiController.isKeyboardNavActive) && isFocusedAction)
                                                         readonly property bool isDestructive: Boolean(aCol.modelData.destructive)
 
+                                                        // Hover container highlight (opacity-only eliminates dark #00000000 transition flash)
                                                         Rectangle {
                                                             anchors.fill: parent
-                                                            radius: 10
-                                                            color: {
-                                                                if (aRow.isHovered) {
-                                                                    if (aRow.isDestructive) {
-                                                                        return appSettings.isEffectiveDark ? Qt.rgba(0.93, 0.27, 0.27, 0.18) : Qt.rgba(0.93, 0.27, 0.27, 0.12)
-                                                                    }
-                                                                    return appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
-                                                                }
-                                                                return "transparent"
-                                                            }
-                                                            border.color: (Boolean(uiController && uiController.isKeyboardNavActive) && aRow.isFocusedAction)
-                                                                ? (aRow.isDestructive ? "#ef4444" : appSettings.accentColor)
-                                                                : "transparent"
-                                                            border.width: (Boolean(uiController && uiController.isKeyboardNavActive) && aRow.isFocusedAction) ? 1.5 : 0
+                                                            radius: 19
+                                                            color: aRow.isDestructive
+                                                                ? (appSettings.isEffectiveDark ? Qt.rgba(0.93, 0.27, 0.27, 0.18) : Qt.rgba(0.93, 0.27, 0.27, 0.12))
+                                                                : appSettings.secondaryContainer
+                                                            opacity: aRow.isHovered ? 1.0 : 0.0
+                                                            Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                                        }
 
-                                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                                        Rectangle {
+                                                            anchors.fill: parent
+                                                            radius: 19
+                                                            color: Qt.rgba(0, 0, 0, 0)
+                                                            border.color: aRow.isDestructive ? "#ef4444" : appSettings.accentColor
+                                                            border.width: 1.5
+                                                            opacity: (Boolean(uiController && uiController.isKeyboardNavActive) && aRow.isFocusedAction) ? 1.0 : 0.0
+                                                            Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
                                                         }
 
                                                         RowLayout {
@@ -1158,11 +1160,11 @@ Page {
                                                             spacing: 10
 
                                                             YIcon {
-                                                                size: 16
-                                                                source: aCol.modelData.icon || ""
+                                                                size: 18
+                                                                symbol: aCol.modelData.symbol || ""
                                                                 color: aRow.isDestructive
                                                                     ? "#ef4444"
-                                                                    : (aRow.isHovered ? appSettings.accentColor : appSettings.textSecColor)
+                                                                    : (aRow.isHovered ? appSettings.onSecondaryContainer : appSettings.textSecColor)
                                                                 Layout.alignment: Qt.AlignVCenter
                                                                 Behavior on color { ColorAnimation { duration: 120 } }
                                                             }
@@ -1171,7 +1173,10 @@ Page {
                                                                 Layout.fillWidth: true
                                                                 verticalAlignment: Text.AlignVCenter
                                                                 text: aCol.modelData.name || ""
-                                                                color: aRow.isDestructive ? "#ef4444" : appSettings.textColor
+                                                                color: aRow.isDestructive
+                                                                    ? "#ef4444"
+                                                                    : (aRow.isHovered ? appSettings.onSecondaryContainer : appSettings.textColor)
+                                                                font.family: "Rubik"
                                                                 font.pixelSize: 13
                                                                 font.weight: aRow.isHovered ? Font.Medium : Font.Normal
                                                                 renderType: Text.QtRendering
@@ -1206,7 +1211,7 @@ Page {
 
                             Rectangle {
                                 id: rTagRect
-                                radius: 6
+                                radius: 12
                                 height: 24
                                 implicitHeight: 24
                                 implicitWidth: rTagLbl.implicitWidth + 20
@@ -1216,15 +1221,19 @@ Page {
                                 readonly property color effectiveTagColor: root.gameData.isRunning
                                     ? "#22c55e"
                                     : (root.isNative ? appSettings.tagColorLinux : appSettings.accentColor)
-                                color: Qt.rgba(effectiveTagColor.r, effectiveTagColor.g, effectiveTagColor.b, 0.2)
-                                border.color: effectiveTagColor
-                                border.width: 1
+                                color: (root.gameData.isRunning || root.isNative)
+                                    ? Qt.rgba(effectiveTagColor.r, effectiveTagColor.g, effectiveTagColor.b, 0.16)
+                                    : appSettings.secondaryContainer
+                                border.width: 0
 
                                 Label {
                                     id: rTagLbl
                                     anchors.centerIn: parent
                                     text: root.gameData.isRunning ? "RUNNING" : (root.gameData.runnerTag || (root.isNative ? "LINUX" : "WINE"))
-                                    color: rTagRect.effectiveTagColor
+                                    color: (root.gameData.isRunning || root.isNative)
+                                        ? rTagRect.effectiveTagColor
+                                        : appSettings.onSecondaryContainer
+                                    font.family: "Rubik"
                                     font.pixelSize: 11
                                     font.weight: Font.Bold
                                     renderType: Text.QtRendering
@@ -1248,32 +1257,100 @@ Page {
                 }
             }
 
-            // ── Material 3 Primary Tabs Bar ─────────────────────────────────
+            // ── Material 3 Expressive Sliding Pill Tabs Bar ─────────────────
             Item {
                 id: tabsBar
                 focus: true
                 activeFocusOnTab: false
                 readonly property bool isBarFocused: tabsBar.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+                property real activePillX: 0
+                property real activePillW: 0
+                property bool pillInitialized: false
+
+                function syncActiveTabPill(animate) {
+                    let target = null
+                    for (let i = 0; i < tabRepeater.count; ++i) {
+                        const item = tabRepeater.itemAt(i)
+                        if (item && item.modelData && item.modelData.stackIndex === root.activeTab) {
+                            target = item
+                            break
+                        }
+                    }
+                    if (!target || target.width <= 0) return
+                    const shouldAnimate = Boolean(animate && pillInitialized)
+                    pillXBehavior.enabled = shouldAnimate
+                    pillWBehavior.enabled = shouldAnimate
+                    activePillX = tabsRow.x + target.x
+                    activePillW = target.width
+                    if (!pillInitialized) {
+                        pillInitialized = true
+                    }
+                }
+
+                Connections {
+                    target: root
+                    function onActiveTabChanged() {
+                        tabsBar.syncActiveTabPill(true)
+                    }
+                    function onTabListChanged() {
+                        tabsBar.pillInitialized = false
+                        Qt.callLater(() => tabsBar.syncActiveTabPill(false))
+                    }
+                }
+
                 Layout.fillWidth: true
-                Layout.preferredHeight: 48
+                Layout.maximumWidth: 1020
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredHeight: 46
                 Layout.leftMargin: 36
                 Layout.rightMargin: 36
                 Layout.topMargin: 4
 
-                // Bottom full-width line
+                // Sliding active indicator behind tabsRow
                 Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    height: 1
-                    color: appSettings.borderColor
+                    id: activeTabPill
+                    visible: tabsBar.activePillW > 0
+                    x: tabsBar.activePillX
+                    y: tabsRow.y
+                    width: tabsBar.activePillW
+                    height: 38
+                    radius: 19
+                    color: appSettings.secondaryContainer
+
+                    Behavior on x {
+                        id: pillXBehavior
+                        enabled: false
+                        NumberAnimation {
+                            duration: 240
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+                    Behavior on width {
+                        id: pillWBehavior
+                        enabled: false
+                        NumberAnimation {
+                            duration: 240
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+                    Behavior on color { ColorAnimation { duration: 150 } }
+
+                    // Keyboard focus outline ring
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: Qt.rgba(0, 0, 0, 0)
+                        border.color: appSettings.accentColor
+                        border.width: 1.5
+                        opacity: tabsBar.isBarFocused ? 1.0 : 0.0
+                        Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                    }
                 }
 
                 Row {
                     id: tabsRow
                     anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
+                    anchors.verticalCenter: parent.verticalCenter
                     spacing: 8
 
                     Repeater {
@@ -1285,34 +1362,36 @@ Page {
                             required property int index
                             required property var modelData
                             readonly property bool isSelected: root.activeTab === tabItem.modelData.stackIndex
-                            height: parent.height
+                            height: 38
                             width: tabItemLbl.implicitWidth + 32
+                            scale: tabItemMA.pressed ? 0.96 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
 
+                            onXChanged: if (isSelected) tabsBar.syncActiveTabPill(tabsBar.pillInitialized)
+                            onWidthChanged: if (isSelected) tabsBar.syncActiveTabPill(tabsBar.pillInitialized)
+                            Component.onCompleted: if (isSelected) Qt.callLater(() => tabsBar.syncActiveTabPill(false))
+
+                            // Opacity-only hover highlight prevents #00000000 dark hover flash
                             Rectangle {
                                 anchors.fill: parent
-                                anchors.bottomMargin: 4
-                                anchors.topMargin: 2
-                                radius: 8
-                                color: (tabsBar.isBarFocused && tabItem.isSelected)
-                                    ? Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.14)
-                                    : (tabItemMA.containsMouse
-                                        ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04))
-                                        : "transparent")
-                                border.color: (tabsBar.isBarFocused && tabItem.isSelected) ? appSettings.accentColor : "transparent"
-                                border.width: (tabsBar.isBarFocused && tabItem.isSelected) ? 1.5 : 0
-                                Behavior on color { ColorAnimation { duration: 120 } }
-                                Behavior on border.color { ColorAnimation { duration: 120 } }
+                                radius: 19
+                                color: appSettings.surfaceContainerHigh
+                                opacity: (!tabItem.isSelected && tabItemMA.containsMouse) ? 1.0 : 0.0
+                                Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                             }
 
                             Label {
                                 id: tabItemLbl
                                 anchors.centerIn: parent
                                 text: tabItem.modelData.label
-                                color: tabItem.isSelected ? appSettings.accentColor : (tabItemMA.containsMouse ? appSettings.textColor : appSettings.textSecColor)
+                                color: tabItem.isSelected
+                                    ? appSettings.onSecondaryContainer
+                                    : (tabItemMA.containsMouse ? appSettings.textColor : appSettings.textSecColor)
+                                font.family: "Rubik"
                                 font.pixelSize: 14
-                                font.weight: tabItem.isSelected ? Font.DemiBold : Font.Normal
+                                font.weight: tabItem.isSelected ? Font.DemiBold : Font.Medium
                                 renderType: Text.QtRendering
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 150 } }
                             }
 
                             MouseArea {
@@ -1358,43 +1437,52 @@ Page {
                         iconColor: tabsBar.isBarFocused ? appSettings.accentColor : appSettings.textSecColor
                     }
                 }
-
-                // Material 3 Active Indicator (3dp height, smooth animation)
-                Rectangle {
-                    id: tabActiveIndicator
-                    height: 3
-                    radius: 1.5
-                    color: appSettings.accentColor
-                    anchors.bottom: parent.bottom
-
-                    property var currentItem: {
-                        let _tab = root.activeTab
-                        let _nat = root.isNative
-                        for (let i = 0; i < tabRepeater.count; i++) {
-                            let it = tabRepeater.itemAt(i)
-                            if (it && it.modelData && it.modelData.stackIndex === _tab) {
-                                return it
-                            }
-                        }
-                        return tabRepeater.count > 0 ? tabRepeater.itemAt(0) : null
-                    }
-                    x: currentItem ? currentItem.x + 12 : 0
-                    width: currentItem ? currentItem.width - 24 : 0
-
-                    Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                    Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                    Behavior on color { ColorAnimation { duration: 150 } }
-                }
             }
 
             // ── Tab Content Area ─────────────────────────────────────────────
             Item {
                 id: tabContentCard
                 Layout.fillWidth: true
+                Layout.maximumWidth: 1020
+                Layout.alignment: Qt.AlignHCenter
                 Layout.leftMargin: 36
                 Layout.rightMargin: 36
                 Layout.topMargin: 12
                 Layout.bottomMargin: 24
+
+                property int prevTab: 0
+                property int slideDir: 1
+                property real tabOffsetX: 0
+                property real tabOpacity: 1.0
+
+                Connections {
+                    target: root
+                    function onActiveTabChanged() {
+                        tabContentCard.slideDir = (root.activeTab >= tabContentCard.prevTab) ? 1 : -1
+                        tabContentCard.prevTab = root.activeTab
+                        tabSwitchAnim.restart()
+                    }
+                }
+
+                ParallelAnimation {
+                    id: tabSwitchAnim
+                    NumberAnimation {
+                        target: tabContentCard
+                        property: "tabOffsetX"
+                        from: 18 * tabContentCard.slideDir
+                        to: 0
+                        duration: 240
+                        easing.type: Easing.OutCubic
+                    }
+                    NumberAnimation {
+                        target: tabContentCard
+                        property: "tabOpacity"
+                        from: 0.0
+                        to: 1.0
+                        duration: 200
+                        easing.type: Easing.OutCubic
+                    }
+                }
 
                 readonly property real activeTabHeight: {
                     switch (root.activeTab) {
@@ -1408,6 +1496,9 @@ Page {
                 }
 
                 implicitHeight: activeTabHeight + 24
+                Behavior on implicitHeight {
+                    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+                }
 
                 StackLayout {
                     id: tabStack
@@ -1416,6 +1507,8 @@ Page {
                     anchors.top: parent.top
                     height: tabContentCard.activeTabHeight
                     currentIndex: root.activeTab
+                    opacity: tabContentCard.tabOpacity
+                    transform: Translate { x: tabContentCard.tabOffsetX }
 
                     // TAB 0: General & Paths
                     ColumnLayout {
@@ -1427,23 +1520,22 @@ Page {
                         // Card 1: Executable & Launch Configuration
                         Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: generalCol1.implicitHeight + 40
-                            radius: 16
-                            color: appSettings.surfaceColor
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                            implicitHeight: generalCol1.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
 
                             ColumnLayout {
                                 id: generalCol1
                                 anchors.fill: parent
-                                anchors.margins: 20
-                                spacing: 14
+                                anchors.margins: 24
+                                spacing: 18
 
                                 Label {
-                                    text: "EXECUTABLE & LAUNCH CONFIGURATION"
+                                    text: "Executable & Launch Configuration"
                                     color: appSettings.accentColor
-                                    font.pixelSize: 11
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
                                     font.weight: Font.DemiBold
-                                    font.letterSpacing: 0.8
                                 }
 
                                 // Row 1: 2 Columns for Title & Custom Launch Arguments
@@ -1494,7 +1586,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 2: Executable Path (Full width with Browse button)
                                 ColumnLayout {
@@ -1530,7 +1621,7 @@ Page {
                                         M3Button {
                                             id: exeBrowseBtn
                                             text: "Browse…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            iconSymbol: "folder_open"
                                             buttonType: "tonal"
                                             onClicked: {
                                                 let prompt = root.isNative ? "Select Linux Game Executable" : "Select Game Executable"
@@ -1547,7 +1638,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 3: Working Directory (Full width with Browse button)
                                 ColumnLayout {
@@ -1572,7 +1662,7 @@ Page {
                                         M3Button {
                                             id: workDirBrowseBtn
                                             text: "Browse…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            iconSymbol: "folder_open"
                                             buttonType: "tonal"
                                             onClicked: {
                                                 let p = uiController.selectFolder("Select Working Directory", workDirField.text)
@@ -1591,23 +1681,22 @@ Page {
                         Rectangle {
                             visible: !root.isNative
                             Layout.fillWidth: true
-                            implicitHeight: generalCol2.implicitHeight + 40
-                            radius: 16
-                            color: appSettings.surfaceColor
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                            implicitHeight: generalCol2.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
 
                             ColumnLayout {
                                 id: generalCol2
                                 anchors.fill: parent
-                                anchors.margins: 20
-                                spacing: 14
+                                anchors.margins: 24
+                                spacing: 18
 
                                 Label {
-                                    text: "RUNNER & PREFIX ENVIRONMENT"
+                                    text: "Runner & Prefix Environment"
                                     color: appSettings.accentColor
-                                    font.pixelSize: 11
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
                                     font.weight: Font.DemiBold
-                                    font.letterSpacing: 0.8
                                 }
 
                                 RowLayout {
@@ -1697,23 +1786,22 @@ Page {
                         Rectangle {
                             visible: root.isNative
                             Layout.fillWidth: true
-                            implicitHeight: generalNativeEnvCol.implicitHeight + 40
-                            radius: 16
-                            color: appSettings.surfaceColor
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                            implicitHeight: generalNativeEnvCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
 
                             ColumnLayout {
                                 id: generalNativeEnvCol
                                 anchors.fill: parent
-                                anchors.margins: 20
-                                spacing: 10
+                                anchors.margins: 24
+                                spacing: 18
 
                                 Label {
-                                    text: "ENVIRONMENT VARIABLES"
+                                    text: "Environment Variables"
                                     color: appSettings.tagColorLinux
-                                    font.pixelSize: 11
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
                                     font.weight: Font.DemiBold
-                                    font.letterSpacing: 0.8
                                 }
 
                                 Label {
@@ -1727,12 +1815,10 @@ Page {
                                     focus: true
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 120
-                                    radius: 12
-                                    color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
-                                    border.color: ((nativeEnvWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || nativeEnvVarsArea.activeFocus)
-                                        ? appSettings.accentColor
-                                        : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                                    border.width: ((nativeEnvWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || nativeEnvVarsArea.activeFocus) ? 2 : 1
+                                    radius: 14
+                                    color: appSettings.surfaceContainerHigh
+                                    border.color: appSettings.accentColor
+                                    border.width: ((nativeEnvWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || nativeEnvVarsArea.activeFocus) ? 2 : 0
                                     Keys.onReturnPressed: (event) => { if (!nativeEnvVarsArea.activeFocus) { event.accepted = true; nativeEnvVarsArea.forceActiveFocus() } }
                                     Keys.onEnterPressed: (event) => { if (!nativeEnvVarsArea.activeFocus) { event.accepted = true; nativeEnvVarsArea.forceActiveFocus() } }
                                     Keys.onSpacePressed: (event) => { if (!nativeEnvVarsArea.activeFocus) { event.accepted = true; nativeEnvVarsArea.forceActiveFocus() } }
@@ -1743,8 +1829,8 @@ Page {
                                         TextArea {
                                             id: nativeEnvVarsArea
                                             color: appSettings.textColor
-                                            font.family: "monospace"
-                                            font.pixelSize: 12
+                                            font.family: "JetBrains Mono NF"
+                                            font.pixelSize: 13
                                             placeholderText: "SDL_VIDEODRIVER=wayland\n__GL_THREADED_OPTIMIZATIONS=1\nENABLE_VKBASALT=1"
                                             placeholderTextColor: appSettings.textTerColor
                                             text: {
@@ -1778,23 +1864,22 @@ Page {
                         // Card 1: Direct3D Translators
                         Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: d3dCol.implicitHeight + 40
-                            radius: 16
-                            color: appSettings.surfaceColor
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                            implicitHeight: d3dCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
 
                             ColumnLayout {
                                 id: d3dCol
                                 anchors.fill: parent
-                                anchors.margins: 20
-                                spacing: 14
+                                anchors.margins: 24
+                                spacing: 18
 
                                 Label {
-                                    text: "DIRECT3D TRANSLATORS"
+                                    text: "Direct3D Translators"
                                     color: appSettings.accentColor
-                                    font.pixelSize: 11
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
                                     font.weight: Font.DemiBold
-                                    font.letterSpacing: 0.8
                                 }
 
                                 // Row 1: DXVK (Toggle)
@@ -1815,7 +1900,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 2: VKD3D-Proton (Toggle)
                                 RowLayout {
@@ -1835,7 +1919,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 3: DXVK HUD Statistics
                                 RowLayout {
@@ -1879,23 +1962,22 @@ Page {
                         // Card 2: Kernel Synchronization & Display
                         Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: syncCol.implicitHeight + 40
-                            radius: 16
-                            color: appSettings.surfaceColor
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                            implicitHeight: syncCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
 
                             ColumnLayout {
                                 id: syncCol
                                 anchors.fill: parent
-                                anchors.margins: 20
-                                spacing: 14
+                                anchors.margins: 24
+                                spacing: 18
 
                                 Label {
-                                    text: "KERNEL SYNCHRONIZATION & DISPLAY"
+                                    text: "Kernel Synchronization & Display"
                                     color: appSettings.accentColor
-                                    font.pixelSize: 11
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
                                     font.weight: Font.DemiBold
-                                    font.letterSpacing: 0.8
                                 }
 
                                 // Row 1: Esync (Toggle)
@@ -1916,7 +1998,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 2: Fsync (Toggle)
                                 RowLayout {
@@ -1936,7 +2017,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 3: Virtual Desktop
                                 RowLayout {
@@ -1976,23 +2056,22 @@ Page {
                         // Card 3: Overrides & Environment Variables (2 Columns)
                         Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: overridesCol.implicitHeight + 40
-                            radius: 16
-                            color: appSettings.surfaceColor
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                            implicitHeight: overridesCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
 
                             ColumnLayout {
                                 id: overridesCol
                                 anchors.fill: parent
-                                anchors.margins: 20
-                                spacing: 14
+                                anchors.margins: 24
+                                spacing: 18
 
                                 Label {
-                                    text: "OVERRIDES & ENVIRONMENT VARIABLES"
+                                    text: "Overrides & Environment Variables"
                                     color: appSettings.accentColor
-                                    font.pixelSize: 11
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
                                     font.weight: Font.DemiBold
-                                    font.letterSpacing: 0.8
                                 }
 
                                 RowLayout {
@@ -2010,12 +2089,10 @@ Page {
                                             focus: true
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: 110
-                                            radius: 12
-                                            color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
-                                            border.color: ((dllOverridesWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || dllOverridesArea.activeFocus)
-                                                ? appSettings.accentColor
-                                                : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                                            border.width: ((dllOverridesWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || dllOverridesArea.activeFocus) ? 2 : 1
+                                            radius: 14
+                                            color: appSettings.surfaceContainerHigh
+                                            border.color: appSettings.accentColor
+                                            border.width: ((dllOverridesWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || dllOverridesArea.activeFocus) ? 2 : 0
                                             Keys.onReturnPressed: (event) => { if (!dllOverridesArea.activeFocus) { event.accepted = true; dllOverridesArea.forceActiveFocus() } }
                                             Keys.onEnterPressed: (event) => { if (!dllOverridesArea.activeFocus) { event.accepted = true; dllOverridesArea.forceActiveFocus() } }
                                             Keys.onSpacePressed: (event) => { if (!dllOverridesArea.activeFocus) { event.accepted = true; dllOverridesArea.forceActiveFocus() } }
@@ -2026,8 +2103,8 @@ Page {
                                                 TextArea {
                                                     id: dllOverridesArea
                                                     color: appSettings.textColor
-                                                    font.family: "monospace"
-                                                    font.pixelSize: 12
+                                                    font.family: "JetBrains Mono NF"
+                                                    font.pixelSize: 13
                                                     placeholderText: "dinput8=n,b\nwinmm=n,b"
                                                     placeholderTextColor: appSettings.textTerColor
                                                     text: {
@@ -2059,12 +2136,10 @@ Page {
                                             focus: true
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: 110
-                                            radius: 12
-                                            color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
-                                            border.color: ((envVarsWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || envVarsArea.activeFocus)
-                                                ? appSettings.accentColor
-                                                : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                                            border.width: ((envVarsWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || envVarsArea.activeFocus) ? 2 : 1
+                                            radius: 14
+                                            color: appSettings.surfaceContainerHigh
+                                            border.color: appSettings.accentColor
+                                            border.width: ((envVarsWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) || envVarsArea.activeFocus) ? 2 : 0
                                             Keys.onReturnPressed: (event) => { if (!envVarsArea.activeFocus) { event.accepted = true; envVarsArea.forceActiveFocus() } }
                                             Keys.onEnterPressed: (event) => { if (!envVarsArea.activeFocus) { event.accepted = true; envVarsArea.forceActiveFocus() } }
                                             Keys.onSpacePressed: (event) => { if (!envVarsArea.activeFocus) { event.accepted = true; envVarsArea.forceActiveFocus() } }
@@ -2075,8 +2150,8 @@ Page {
                                                 TextArea {
                                                     id: envVarsArea
                                                     color: appSettings.textColor
-                                                    font.family: "monospace"
-                                                    font.pixelSize: 12
+                                                    font.family: "JetBrains Mono NF"
+                                                    font.pixelSize: 13
                                                     placeholderText: "DXVK_ASYNC=1\nPROTON_ENABLE_NVAPI=1"
                                                     placeholderTextColor: appSettings.textTerColor
                                                     text: {
@@ -2111,23 +2186,22 @@ Page {
                         // Card 1: Performance Enhancements
                         Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: perfCol1.implicitHeight + 40
-                            radius: 16
-                            color: appSettings.surfaceColor
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                            implicitHeight: perfCol1.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
 
                             ColumnLayout {
                                 id: perfCol1
                                 anchors.fill: parent
-                                anchors.margins: 20
-                                spacing: 14
+                                anchors.margins: 24
+                                spacing: 18
 
                                 Label {
-                                    text: "PERFORMANCE ENHANCEMENTS"
+                                    text: "Performance Enhancements"
                                     color: appSettings.accentColor
-                                    font.pixelSize: 11
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
                                     font.weight: Font.DemiBold
-                                    font.letterSpacing: 0.8
                                 }
 
                                 // Row 1: MangoHud (Toggle)
@@ -2148,7 +2222,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 2: Feral GameMode (Toggle)
                                 RowLayout {
@@ -2168,7 +2241,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 3: Gamescope Micro-Compositor (Customize Button + Toggle)
                                 RowLayout {
@@ -2215,7 +2287,7 @@ Page {
                                             objectName: "gamescopeCustomizeBtn"
                                             visible: gamescopeToggle.checked
                                             text: "Customize…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/settings.svg"
+                                            iconSymbol: "tune"
                                             buttonType: "tonal"
                                             onClicked: {
                                                 gamescopeDialog.openWithConfig(root.gamescopeDraft, {
@@ -2238,7 +2310,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 3: CPU Core Affinity
                                 RowLayout {
@@ -2263,7 +2334,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 4: Process Priority
                                 RowLayout {
@@ -2293,23 +2363,22 @@ Page {
                         // Card 2: Controller & Gamepad
                         Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: ctrlCol.implicitHeight + 40
-                            radius: 16
-                            color: appSettings.surfaceColor
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                            implicitHeight: ctrlCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
 
                             ColumnLayout {
                                 id: ctrlCol
                                 anchors.fill: parent
-                                anchors.margins: 20
-                                spacing: 14
+                                anchors.margins: 24
+                                spacing: 18
 
                                 Label {
-                                    text: "CONTROLLER & GAMEPAD"
+                                    text: "Controller & Gamepad"
                                     color: appSettings.accentColor
-                                    font.pixelSize: 11
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
                                     font.weight: Font.DemiBold
-                                    font.letterSpacing: 0.8
                                 }
 
                                 // Xbox Controller Emulation ON/OFF Toggle
@@ -2346,23 +2415,22 @@ Page {
                         // Card 3: Automation Scripts
                         Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: autoCol.implicitHeight + 40
-                            radius: 16
-                            color: appSettings.surfaceColor
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                            implicitHeight: autoCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
 
                             ColumnLayout {
                                 id: autoCol
                                 anchors.fill: parent
-                                anchors.margins: 20
-                                spacing: 14
+                                anchors.margins: 24
+                                spacing: 18
 
                                 Label {
-                                    text: "AUTOMATION SCRIPTS"
+                                    text: "Automation Scripts"
                                     color: appSettings.accentColor
-                                    font.pixelSize: 11
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
                                     font.weight: Font.DemiBold
-                                    font.letterSpacing: 0.8
                                 }
 
                                 // Pre-launch Script
@@ -2388,7 +2456,7 @@ Page {
                                         M3Button {
                                             id: preScriptBrowseBtn
                                             text: "Browse…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            iconSymbol: "folder_open"
                                             buttonType: "tonal"
                                             onClicked: {
                                                 let p = uiController.selectFile("Select Pre-Launch Script", "Shell Scripts (*.sh *.bash);;All Files (*)", preScriptField.text)
@@ -2398,7 +2466,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Post-exit Script
                                 ColumnLayout {
@@ -2423,7 +2490,7 @@ Page {
                                         M3Button {
                                             id: postScriptBrowseBtn
                                             text: "Browse…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            iconSymbol: "folder_open"
                                             buttonType: "tonal"
                                             onClicked: {
                                                 let p = uiController.selectFile("Select Post-Exit Script", "Shell Scripts (*.sh *.bash);;All Files (*)", postScriptField.text)
@@ -2445,34 +2512,33 @@ Page {
 
                         Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: artCol.implicitHeight + 40
-                            radius: 16
-                            color: appSettings.surfaceColor
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                            implicitHeight: artCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
 
                             ColumnLayout {
                                 id: artCol
                                 anchors.fill: parent
-                                anchors.margins: 20
-                                spacing: 14
+                                anchors.margins: 24
+                                spacing: 18
 
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Layout.bottomMargin: 2
 
                                     Label {
-                                        text: "STEAMGRIDDB AUTOMATIC ARTWORK & MANUAL OVERRIDES"
+                                        text: "SteamGridDB Automatic Artwork & Manual Overrides"
                                         color: appSettings.accentColor
-                                        font.pixelSize: 11
+                                        font.family: "Rubik"
+                                        font.pixelSize: 17
                                         font.weight: Font.DemiBold
-                                        font.letterSpacing: 0.8
                                         Layout.fillWidth: true
                                     }
 
                                     M3Button {
                                         id: autoFetchArtBtn
                                         text: "Auto-Fetch Artwork"
-                                        iconSource: "qrc:/tsuki_app/icons/actions/refresh.svg"
+                                        iconSymbol: "refresh"
                                         buttonType: "tonal"
                                         implicitHeight: 36
                                         onClicked: uiController.gameManager.refreshArtworkFromSteamGridDb(root.gameId)
@@ -2489,8 +2555,7 @@ Page {
                                         Layout.preferredWidth: 44
                                         Layout.preferredHeight: 64
                                         radius: 8
-                                        color: Qt.rgba(1, 1, 1, 0.05)
-                                        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+                                        color: appSettings.surfaceContainerHigh
                                         clip: true
 
                                         Image {
@@ -2518,14 +2583,14 @@ Page {
                                         M3Button {
                                             id: coverLinkBtn
                                             text: "Link…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
+                                            iconSymbol: "download"
                                             buttonType: "tonal"
                                             onClicked: artworkUrlDialog.openFor(root.gameId, "cover", "Cover Poster")
                                         }
                                         M3Button {
                                             id: coverBrowseBtn
                                             text: "Browse…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            iconSymbol: "folder_open"
                                             buttonType: "tonal"
                                             onClicked: {
                                                 let p = uiController.selectFile("Select Poster Image", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
@@ -2535,7 +2600,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 2: Hero Banner (1920×620)
                                 RowLayout {
@@ -2547,8 +2611,7 @@ Page {
                                         Layout.preferredWidth: 84
                                         Layout.preferredHeight: 38
                                         radius: 8
-                                        color: Qt.rgba(1, 1, 1, 0.05)
-                                        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+                                        color: appSettings.surfaceContainerHigh
                                         clip: true
 
                                         Image {
@@ -2576,14 +2639,14 @@ Page {
                                         M3Button {
                                             id: bannerLinkBtn
                                             text: "Link…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
+                                            iconSymbol: "download"
                                             buttonType: "tonal"
                                             onClicked: artworkUrlDialog.openFor(root.gameId, "banner", "Hero Banner")
                                         }
                                         M3Button {
                                             id: bannerBrowseBtn
                                             text: "Browse…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            iconSymbol: "folder_open"
                                             buttonType: "tonal"
                                             onClicked: {
                                                 let p = uiController.selectFile("Select Hero Banner", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
@@ -2593,7 +2656,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 3: Transparent Logo
                                 RowLayout {
@@ -2605,8 +2667,7 @@ Page {
                                         Layout.preferredWidth: 70
                                         Layout.preferredHeight: 38
                                         radius: 8
-                                        color: Qt.rgba(1, 1, 1, 0.05)
-                                        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+                                        color: appSettings.surfaceContainerHigh
                                         clip: true
 
                                         Image {
@@ -2634,14 +2695,14 @@ Page {
                                         M3Button {
                                             id: logoLinkBtn
                                             text: "Link…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
+                                            iconSymbol: "download"
                                             buttonType: "tonal"
                                             onClicked: artworkUrlDialog.openFor(root.gameId, "logo", "Transparent Logo")
                                         }
                                         M3Button {
                                             id: logoBrowseBtn
                                             text: "Browse…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            iconSymbol: "folder_open"
                                             buttonType: "tonal"
                                             onClicked: {
                                                 let p = uiController.selectFile("Select Logo Image", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
@@ -2651,7 +2712,6 @@ Page {
                                     }
                                 }
 
-                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
                                 // Row 4: Shortcut Icon
                                 RowLayout {
@@ -2663,8 +2723,7 @@ Page {
                                         Layout.preferredWidth: 44
                                         Layout.preferredHeight: 44
                                         radius: 8
-                                        color: Qt.rgba(1, 1, 1, 0.05)
-                                        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+                                        color: appSettings.surfaceContainerHigh
                                         clip: true
 
                                         Image {
@@ -2692,14 +2751,14 @@ Page {
                                         M3Button {
                                             id: iconLinkBtn
                                             text: "Link…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
+                                            iconSymbol: "download"
                                             buttonType: "tonal"
                                             onClicked: artworkUrlDialog.openFor(root.gameId, "icon", "Shortcut Icon")
                                         }
                                         M3Button {
                                             id: iconBrowseBtn
                                             text: "Browse…"
-                                            iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                            iconSymbol: "folder_open"
                                             buttonType: "tonal"
                                             onClicked: {
                                                 let p = uiController.selectFile("Select Icon Image", "Images (*.png *.jpg *.jpeg *.webp *.svg *.ico);;All Files (*)")
@@ -2721,38 +2780,37 @@ Page {
 
                         Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: logCol.implicitHeight + 40
-                            radius: 16
-                            color: appSettings.surfaceColor
-                            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                            implicitHeight: logCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
 
                             ColumnLayout {
                                 id: logCol
                                 anchors.fill: parent
-                                anchors.margins: 20
-                                spacing: 14
+                                anchors.margins: 24
+                                spacing: 18
 
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Label {
-                                        text: "EXECUTION CONSOLE LOG (" + (root.gameData.title || "").toUpperCase() + ")"
+                                        text: "Execution Console Log" + ((root.gameData.title && root.gameData.title.length > 0) ? (" — " + root.gameData.title) : "")
                                         color: appSettings.accentColor
-                                        font.pixelSize: 11
+                                        font.family: "Rubik"
+                                        font.pixelSize: 17
                                         font.weight: Font.DemiBold
-                                        font.letterSpacing: 0.8
                                         Layout.fillWidth: true
                                     }
                                     M3Button {
                                         id: exportLogBtn
                                         text: "Export Log"
-                                        iconSource: "qrc:/tsuki_app/icons/actions/shortcut.svg"
+                                        iconSymbol: "shortcut"
                                         buttonType: "tonal"
                                         onClicked: uiController.diagnosticsManager.exportGameLog(root.gameId, "")
                                     }
                                     M3Button {
                                         id: clearLogBtn
                                         text: "Clear"
-                                        iconSource: "qrc:/tsuki_app/icons/actions/trash.svg"
+                                        iconSymbol: "delete"
                                         buttonType: "destructive"
                                         onClicked: uiController.diagnosticsManager.clearGameLog(root.gameId)
                                     }
@@ -2763,11 +2821,11 @@ Page {
                                     focus: true
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 320
-                                    radius: 12
+                                    radius: 14
                                     color: "#08080b"
                                     readonly property bool kbFocused: logAreaWrap.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
-                                    border.color: logAreaWrap.kbFocused ? appSettings.accentColor : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08))
-                                    border.width: logAreaWrap.kbFocused ? 2 : 1
+                                    border.color: appSettings.accentColor
+                                    border.width: logAreaWrap.kbFocused ? 2 : 0
                                     Keys.onUpPressed: (event) => {
                                         let lf = logScroll.contentItem
                                         if (lf && lf.contentY > 2) {
@@ -2793,7 +2851,7 @@ Page {
                                             activeFocusOnTab: false
                                             text: uiController.diagnosticsManager.activeGameLog
                                             color: "#e4e4e7"
-                                            font.family: "monospace"
+                                            font.family: "JetBrains Mono NF"
                                             font.pixelSize: 12
                                             wrapMode: TextEdit.Wrap
                                             background: null
@@ -2840,12 +2898,10 @@ Page {
         background: Rectangle {
             property color accent: appSettings.accentColor
             radius: 20
-            color: backBtn.isBtnActive ? accent : (appSettings.isEffectiveDark ? Qt.rgba(0.08, 0.08, 0.10, 0.70) : Qt.rgba(1, 1, 1, 0.75))
-            border.color: backBtn.isBtnActive ? "transparent" : accent
-            border.width: backBtn.isBtnActive ? 0 : 1.5
+            color: backBtn.isBtnActive ? accent : appSettings.surfaceContainerHigh
+            border.width: 0
             scale: backBtn.pressed ? 0.96 : (backBtn.kbFocused ? 1.02 : 1.0)
             Behavior on color { ColorAnimation { duration: 150 } }
-            Behavior on border.color { ColorAnimation { duration: 150 } }
             Behavior on scale { NumberAnimation { duration: 100 } }
 
             layer.enabled: true
@@ -2874,9 +2930,9 @@ Page {
                     height: parent.height
                     YIcon {
                         anchors.centerIn: parent
-                        size: 18
-                        source: "qrc:/tsuki_app/icons/actions/back.svg"
-                        color: backBtn.isBtnActive ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff") : appSettings.accentColor
+                        size: 20
+                        symbol: "arrow_back"
+                        color: backBtn.isBtnActive ? appSettings.onPrimary : appSettings.accentColor
                     }
                 }
 
@@ -2884,7 +2940,7 @@ Page {
                     id: backLabel
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Back"
-                    color: backBtn.isBtnActive ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff") : appSettings.accentColor
+                    color: backBtn.isBtnActive ? appSettings.onPrimary : appSettings.accentColor
                     font: backBtn.font
                     renderType: Text.QtRendering
                     opacity: backBtn.isBtnActive ? 1.0 : 0.0

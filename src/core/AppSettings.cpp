@@ -1,10 +1,16 @@
 #include "AppSettings.h"
 #include "DatabaseManager.h"
 #include "Models.h"
+#include <QDir>
+#include <QFileInfo>
+#include <QFont>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStyleHints>
+#include <algorithm>
+#include <cmath>
 
 namespace Tsuki {
 
@@ -428,103 +434,229 @@ QColor AppSettings::sidebarHoverColor() const {
   return QColor(255, 255, 255, 14);
 }
 
-QColor AppSettings::surfaceColor() const {
-    QColor bg = bgColor();
-    if (!isEffectiveDark()) {
-      if (m_customBgColor.isEmpty())
-        return QColor(QStringLiteral("#ffffff"));
-      if (bg.lightnessF() > 0.95f)
-        return QColor(QStringLiteral("#ffffff"));
-      float h = 0.0f, s = 0.0f, l = 0.0f;
-      bg.getHslF(&h, &s, &l);
-      if (h < 0.0f) {
-        h = 0.0f;
-        s = 0.0f;
+namespace {
+
+double srgbChannelLuminance(int channel255) {
+  const double c = static_cast<double>(channel255) / 255.0;
+  return (c <= 0.03928) ? (c / 12.92) : std::pow((c + 0.055) / 1.055, 2.4);
+}
+
+double relativeLuminance(const QColor &color) {
+  return 0.2126 * srgbChannelLuminance(color.red()) +
+         0.7152 * srgbChannelLuminance(color.green()) +
+         0.0722 * srgbChannelLuminance(color.blue());
+}
+
+} // namespace
+
+void AppSettings::registerApplicationFonts() {
+  static bool fontsRegistered = false;
+  if (!fontsRegistered) {
+    fontsRegistered = true;
+    struct FontSpec {
+      const char *systemPaths[4];
+      const char *bundledPath;
+      const char *aliasTarget;
+    };
+    const FontSpec specs[] = {
+        {{"/usr/share/fonts/TTF/Rubik-Regular.ttf",
+          "/usr/share/fonts/google-rubik/Rubik-Regular.ttf",
+          "/usr/share/fonts/rubik/Rubik-Regular.ttf",
+          "/usr/share/fonts/truetype/rubik/Rubik-Regular.ttf"},
+         ":/tsuki_app/fonts/Rubik-Regular.ttf",
+         nullptr},
+        {{"/usr/share/fonts/TTF/Rubik-Medium.ttf",
+          "/usr/share/fonts/google-rubik/Rubik-Medium.ttf",
+          "/usr/share/fonts/rubik/Rubik-Medium.ttf",
+          "/usr/share/fonts/truetype/rubik/Rubik-Medium.ttf"},
+         ":/tsuki_app/fonts/Rubik-Medium.ttf",
+         nullptr},
+        {{"/usr/share/fonts/TTF/Rubik-SemiBold.ttf",
+          "/usr/share/fonts/google-rubik/Rubik-SemiBold.ttf",
+          "/usr/share/fonts/rubik/Rubik-SemiBold.ttf",
+          "/usr/share/fonts/truetype/rubik/Rubik-SemiBold.ttf"},
+         ":/tsuki_app/fonts/Rubik-SemiBold.ttf",
+         nullptr},
+        {{"/usr/share/fonts/TTF/Rubik-Bold.ttf",
+          "/usr/share/fonts/google-rubik/Rubik-Bold.ttf",
+          "/usr/share/fonts/rubik/Rubik-Bold.ttf",
+          "/usr/share/fonts/truetype/rubik/Rubik-Bold.ttf"},
+         ":/tsuki_app/fonts/Rubik-Bold.ttf",
+         nullptr},
+        {{"/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf",
+          "/usr/share/fonts/nerd-fonts/JetBrainsMonoNerdFont-Regular.ttf",
+          nullptr, nullptr},
+         ":/tsuki_app/fonts/JetBrainsMonoNerdFont-Regular.ttf",
+         "JetBrains Mono NF"},
+        {{"/usr/share/fonts/TTF/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf",
+          "/usr/share/fonts/material-symbols/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf",
+          "/usr/share/fonts/TTF/MaterialSymbolsRounded.ttf", nullptr},
+         ":/tsuki_app/fonts/MaterialSymbolsRounded.ttf",
+         nullptr},
+    };
+
+    for (const auto &spec : specs) {
+      int fontId = -1;
+      for (const char *sysPath : spec.systemPaths) {
+        if (sysPath == nullptr) {
+          continue;
+        }
+        const QString candidate = QString::fromLatin1(sysPath);
+        if (QFileInfo::exists(candidate)) {
+          fontId = QFontDatabase::addApplicationFont(candidate);
+          if (fontId >= 0) {
+            break;
+          }
+        }
       }
-      return QColor::fromHslF(h, qMax(0.0f, s * 0.7f), qMin(1.0f, l + 0.04f));
+      if (fontId < 0 && spec.bundledPath != nullptr) {
+        fontId = QFontDatabase::addApplicationFont(
+            QString::fromLatin1(spec.bundledPath));
+      }
+      if (fontId >= 0 && spec.aliasTarget != nullptr) {
+        const QStringList families =
+            QFontDatabase::applicationFontFamilies(fontId);
+        if (!families.isEmpty()) {
+          const QString target = QString::fromLatin1(spec.aliasTarget);
+          if (!families.contains(target)) {
+            QFont::insertSubstitution(target, families.first());
+          }
+        }
+      }
     }
+  }
 
-    if (m_themeMode == 3 || bg == QColor(QStringLiteral("#000000"))) {
-      return QColor(QStringLiteral("#0d0d10"));
+  if (QGuiApplication::instance() != nullptr) {
+    QFont defaultFont = QGuiApplication::font();
+    defaultFont.setFamily(QStringLiteral("Rubik"));
+    QGuiApplication::setFont(defaultFont);
+  }
+}
+
+QColor AppSettings::tonalSurfaceColor(int tier) const {
+  const int idx = qBound(0, tier, 4);
+  const QColor bg = bgColor();
+  const bool dark = isEffectiveDark();
+
+  // Compute subtle tonal unit tint vector from accent color
+  const int ar = m_accentColor.red();
+  const int ag = m_accentColor.green();
+  const int ab = m_accentColor.blue();
+  const int amax = std::max({ar, ag, ab});
+  const int amin = std::min({ar, ag, ab});
+  const int aspan = amax - amin;
+  float ah = 0.0f, asat = 0.0f, al = 0.0f;
+  m_accentColor.getHslF(&ah, &asat, &al);
+  const float satScale =
+      (aspan == 0 || asat < 0.05f) ? 0.0f : qBound(0.45f, asat / 0.65f, 1.0f);
+  const double uR = (aspan > 0) ? (static_cast<double>(ar - amin) / aspan) * satScale : 0.0;
+  const double uG = (aspan > 0) ? (static_cast<double>(ag - amin) / aspan) * satScale : 0.0;
+  const double uB = (aspan > 0) ? (static_cast<double>(ab - amin) / aspan) * satScale : 0.0;
+
+  if (!m_customBgColor.isEmpty() && bg.isValid()) {
+    if (idx == 0) {
+      return bg;
     }
-
-    if (m_customBgColor.isEmpty()) {
-      return QColor(QStringLiteral("#16161d"));
-    }
-
     float h = 0.0f, s = 0.0f, l = 0.0f;
     bg.getHslF(&h, &s, &l);
     if (h < 0.0f) {
-      h = 0.0f;
+      h = (ah >= 0.0f) ? ah : 0.0f;
       s = 0.0f;
     }
-    float targetL = qMin(0.35f, qMax(0.07f, l + 0.055f));
+    static constexpr float darkSteps[5] = {0.0f, 0.035f, 0.068f, 0.105f, 0.145f};
+    static constexpr float lightSteps[5] = {0.0f, -0.035f, -0.065f, -0.095f, -0.125f};
+    const float targetL = dark ? qMin(0.40f, l + darkSteps[idx])
+                               : qMax(0.75f, l + lightSteps[idx]);
     return QColor::fromHslF(h, s, targetL);
   }
 
-  QColor AppSettings::surfaceAltColor() const {
-      QColor bg = bgColor();
-      if (!isEffectiveDark()) {
-        if (m_customBgColor.isEmpty())
-          return QColor(QStringLiteral("#f1f5f9"));
-        float h = 0.0f, s = 0.0f, l = 0.0f;
-        bg.getHslF(&h, &s, &l);
-        if (h < 0.0f) {
-          h = 0.0f;
-          s = 0.0f;
-        }
-        return QColor::fromHslF(h, s, qMax(0.0f, l - 0.05f));
-      }
-
-      if (m_themeMode == 3 || bg == QColor(QStringLiteral("#000000"))) {
-        return QColor(QStringLiteral("#16161b"));
-      }
-
-      if (m_customBgColor.isEmpty()) {
-        return QColor(QStringLiteral("#1f1f29"));
-      }
-
-      float h = 0.0f, s = 0.0f, l = 0.0f;
-      bg.getHslF(&h, &s, &l);
-      if (h < 0.0f) {
-        h = 0.0f;
-        s = 0.0f;
-      }
-      float targetL = qMin(0.45f, qMax(0.10f, l + 0.095f));
-      return QColor::fromHslF(h, s, targetL);
+  if (dark && (m_themeMode == 3 || bg == QColor(QStringLiteral("#000000")))) {
+    if (idx == 0) {
+      return QColor(0, 0, 0);
     }
+    static constexpr int amoledBase[5] = {0, 10, 17, 25, 34};
+    static constexpr int amoledChroma[5] = {0, 2, 4, 6, 8};
+    return QColor(qBound(0, qRound(amoledBase[idx] + amoledChroma[idx] * uR), 255),
+                  qBound(0, qRound(amoledBase[idx] + amoledChroma[idx] * uG), 255),
+                  qBound(0, qRound(amoledBase[idx] + amoledChroma[idx] * uB), 255));
+  }
 
-    QColor AppSettings::inputColor() const {
-        QColor bg = bgColor();
-        if (!isEffectiveDark()) {
-          if (m_customBgColor.isEmpty())
-            return QColor(QStringLiteral("#e2e8f0"));
-          float h = 0.0f, s = 0.0f, l = 0.0f;
-          bg.getHslF(&h, &s, &l);
-          if (h < 0.0f) {
-            h = 0.0f;
-            s = 0.0f;
-          }
-          return QColor::fromHslF(h, s, qMax(0.0f, l - 0.08f));
-        }
+  if (dark) {
+    static constexpr int darkBase[5] = {12, 20, 26, 35, 44};
+    static constexpr int darkChroma[5] = {2, 4, 6, 8, 10};
+    return QColor(qBound(0, qRound(darkBase[idx] + darkChroma[idx] * uR), 255),
+                  qBound(0, qRound(darkBase[idx] + darkChroma[idx] * uG), 255),
+                  qBound(0, qRound(darkBase[idx] + darkChroma[idx] * uB), 255));
+  }
 
-        if (m_themeMode == 3 || bg == QColor(QStringLiteral("#000000"))) {
-          return QColor(QStringLiteral("#141417"));
-        }
+  static constexpr int lightBase[5] = {255, 242, 236, 229, 222};
+  static constexpr int lightChroma[5] = {0, 5, 5, 6, 6};
+  return QColor(qBound(0, qRound(lightBase[idx] + lightChroma[idx] * uR), 255),
+                qBound(0, qRound(lightBase[idx] + lightChroma[idx] * uG), 255),
+                qBound(0, qRound(lightBase[idx] + lightChroma[idx] * uB), 255));
+}
 
-        if (m_customBgColor.isEmpty()) {
-          return QColor(QStringLiteral("#191922"));
-        }
+QColor AppSettings::surfaceContainerLowest() const {
+  return tonalSurfaceColor(0);
+}
 
-        float h = 0.0f, s = 0.0f, l = 0.0f;
-        bg.getHslF(&h, &s, &l);
-        if (h < 0.0f) {
-          h = 0.0f;
-          s = 0.0f;
-        }
-        float targetL = qMin(0.35f, qMax(0.06f, l + 0.035f));
-        return QColor::fromHslF(h, s, targetL);
-      }
+QColor AppSettings::surfaceContainerLow() const {
+  return tonalSurfaceColor(1);
+}
+
+QColor AppSettings::surfaceContainer() const { return tonalSurfaceColor(2); }
+
+QColor AppSettings::surfaceContainerHigh() const {
+  return tonalSurfaceColor(3);
+}
+
+QColor AppSettings::surfaceContainerHighest() const {
+  return tonalSurfaceColor(4);
+}
+
+QColor AppSettings::secondaryContainer() const {
+  float h = 0.0f, s = 0.0f, l = 0.0f;
+  m_accentColor.getHslF(&h, &s, &l);
+  const bool achromatic = (h < 0.0f || s < 0.05f);
+  if (isEffectiveDark()) {
+    const float targetL = (m_themeMode == 3) ? 0.17f : 0.22f;
+    return achromatic
+               ? QColor::fromHslF(0.0f, 0.0f, targetL)
+               : QColor::fromHslF(h, qBound(0.18f, s * 0.45f, 0.40f), targetL);
+  }
+  return achromatic ? QColor::fromHslF(0.0f, 0.0f, 0.90f)
+                    : QColor::fromHslF(h, qBound(0.32f, s * 0.65f, 0.72f), 0.91f);
+}
+
+QColor AppSettings::onSecondaryContainer() const {
+  float h = 0.0f, s = 0.0f, l = 0.0f;
+  m_accentColor.getHslF(&h, &s, &l);
+  const bool achromatic = (h < 0.0f || s < 0.05f);
+  if (isEffectiveDark()) {
+    return achromatic ? QColor(QStringLiteral("#f1f1f4"))
+                      : QColor::fromHslF(h, qBound(0.25f, s * 0.70f, 0.85f), 0.90f);
+  }
+  return achromatic ? QColor(QStringLiteral("#1c1c21"))
+                    : QColor::fromHslF(h, qBound(0.30f, s * 0.75f, 0.80f), 0.18f);
+}
+
+QColor AppSettings::onPrimary() const {
+  if (relativeLuminance(m_accentColor) > 0.35) {
+    float h = 0.0f, s = 0.0f, l = 0.0f;
+    m_accentColor.getHslF(&h, &s, &l);
+    if (h < 0.0f || s < 0.05f) {
+      return QColor(QStringLiteral("#111114"));
+    }
+    return QColor::fromHslF(h, qMin(s, 0.45f), 0.10f);
+  }
+  return QColor(QStringLiteral("#ffffff"));
+}
+
+QColor AppSettings::surfaceColor() const { return surfaceContainerLow(); }
+
+QColor AppSettings::surfaceAltColor() const { return surfaceContainer(); }
+
+QColor AppSettings::inputColor() const { return surfaceContainerHigh(); }
 
       QColor AppSettings::borderColor() const {
         if (!isEffectiveDark()) {

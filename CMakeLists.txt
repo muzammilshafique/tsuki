@@ -75,6 +75,7 @@ set(TSUKI_VERSION "${PROJECT_VERSION}" CACHE STRING "Application display version
 add_executable(tsuki
     src/main.cpp
     resources/resources.qrc
+    resources/fonts.qrc
 )
 target_compile_definitions(tsuki PRIVATE TSUKI_VERSION="${TSUKI_VERSION}")
 target_link_libraries(tsuki PRIVATE tsuki_core)
@@ -82,6 +83,7 @@ target_link_libraries(tsuki PRIVATE tsuki_core)
 enable_testing()
 add_executable(tsuki_tests
     tests/test_tsuki.cpp
+    resources/fonts.qrc
 )
 target_compile_definitions(tsuki_tests PRIVATE TSUKI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(tsuki_tests PRIVATE tsuki_core Qt6::Test)

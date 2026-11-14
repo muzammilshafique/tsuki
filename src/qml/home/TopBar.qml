@@ -203,8 +203,9 @@ Rectangle {
 
                 background: Rectangle {
                     radius: 14
-                    color: parent.hovered ? appSettings.surfaceAltColor : "transparent"
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                    color: appSettings.surfaceAltColor
+                    opacity: parent.hovered ? 1.0 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                 }
 
                 contentItem: YIcon {
@@ -222,14 +223,14 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
 
-        // Top-Right Sort Dropdown Squircle Button (First)
+        // Top-Right M3 Pill Sort Dropdown (First)
         Button {
             id: sortBtn
             padding: 0
             activeFocusOnTab: false
             Layout.alignment: Qt.AlignVCenter
             implicitHeight: 40
-            implicitWidth: sortInner.implicitWidth + 28
+            implicitWidth: Math.max(112, sortInner.implicitWidth + 32)
 
             property int focusedPopupIndex: 0
             function handlePopupDown() {
@@ -324,18 +325,16 @@ Rectangle {
             readonly property bool isKeyboardFocused: sortBtn.activeFocus && (uiController ? uiController.isKeyboardNavActive : false)
             readonly property bool isHighlighted: sortPopup.visible || isBtnHovered || isKeyboardFocused
 
+            // Material 3 Pill Dropdown Trigger (matching StyledCombo)
             background: Rectangle {
-                radius: 10
-                color: sortBtn.isHighlighted
-                    ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
-                    : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04))
-                border.color: sortBtn.isHighlighted
-                    ? appSettings.accentColor
-                    : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
-                border.width: (sortPopup.visible || sortBtn.isKeyboardFocused) ? 1.5 : 1
+                radius: height / 2
+                color: (sortBtn.isBtnHovered || sortPopup.visible)
+                    ? appSettings.surfaceContainerHighest
+                    : appSettings.surfaceContainerHigh
+                border.color: appSettings.accentColor
+                border.width: (sortPopup.visible || sortBtn.isKeyboardFocused) ? 2 : 0
                 scale: sortBtn.pressed ? 0.96 : (sortBtn.isKeyboardFocused ? 1.02 : 1.0)
                 Behavior on color { ColorAnimation { duration: 120 } }
-                Behavior on border.color { ColorAnimation { duration: 120 } }
                 Behavior on scale { NumberAnimation { duration: 100 } }
             }
 
@@ -350,15 +349,17 @@ Rectangle {
 
                     YIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        size: 16
-                        source: "qrc:/tsuki_app/icons/actions/sort.svg"
+                        size: 17
+                        symbol: "sort"
                         color: sortBtn.isHighlighted ? appSettings.accentColor : appSettings.textSecColor
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
 
                     Label {
                         anchors.verticalCenter: parent.verticalCenter
                         text: topBar.currentSortName()
                         color: appSettings.textColor
+                        font.family: "Rubik"
                         font.pixelSize: 13
                         font.weight: Font.Medium
                         renderType: Text.QtRendering
@@ -366,11 +367,12 @@ Rectangle {
 
                     YIcon {
                         anchors.verticalCenter: parent.verticalCenter
-                        size: 12
-                        source: "qrc:/tsuki_app/icons/actions/chevron_down.svg"
+                        size: 18
+                        symbol: "keyboard_arrow_down"
                         color: sortBtn.isHighlighted ? appSettings.accentColor : appSettings.textSecColor
                         rotation: sortPopup.visible ? 180 : 0
-                        Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                        Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
                 }
             }
@@ -393,7 +395,7 @@ Rectangle {
                 id: sortPopup
                 y: sortBtn.height + 4
                 x: sortBtn.width - width
-                width: 220
+                width: Math.max(sortBtn.width, 240)
                 padding: 6
                 dim: false
                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnPressOutsideParent
@@ -426,10 +428,9 @@ Rectangle {
                 height: implicitHeight
 
                 background: Rectangle {
-                    color: appSettings.surfaceColor
-                    radius: 14
-                    border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)
-                    border.width: 1
+                    color: appSettings.surfaceContainer
+                    border.width: 0
+                    radius: 16
                     layer.enabled: true
                     layer.effect: MultiEffect {
                         shadowEnabled: true
@@ -463,29 +464,50 @@ Rectangle {
                                     width: sortCol.width
                                     height: 36
                                     readonly property bool isSelected: uiController.searchModel.sortMode === modelData.mode
-                                    readonly property bool isHovered: sortItemMA.containsMouse || sortBtn.focusedPopupIndex === index
+                                    readonly property bool isHovered: sortItemMA.containsMouse || (Boolean(uiController && uiController.isKeyboardNavActive) && sortBtn.focusedPopupIndex === index)
 
+                                    // Hover highlight (opacity-only prevents #00000000 -> color dark flash)
                                     Rectangle {
                                         anchors.fill: parent
-                                        radius: 10
-                                        color: sortRow.isSelected
-                                            ? appSettings.accentColor
-                                            : (sortRow.isHovered ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : "transparent")
-                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        radius: 18
+                                        color: appSettings.surfaceContainerHighest
+                                        opacity: (!sortRow.isSelected && sortRow.isHovered) ? 1.0 : 0.0
+                                        Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                    }
+
+                                    // Selected container highlight
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 18
+                                        color: appSettings.secondaryContainer
+                                        opacity: sortRow.isSelected ? 1.0 : 0.0
+                                        Behavior on opacity { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+                                    }
+
+                                    // Keyboard focus ring
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 18
+                                        color: Qt.rgba(0, 0, 0, 0)
+                                        border.color: appSettings.accentColor
+                                        border.width: 1.5
+                                        opacity: (sortBtn.focusedPopupIndex === index && !sortRow.isSelected && Boolean(uiController && uiController.isKeyboardNavActive)) ? 1.0 : 0.0
+                                        Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
                                     }
 
                                     RowLayout {
                                         anchors.fill: parent
-                                        anchors.leftMargin: 12
-                                        anchors.rightMargin: 12
+                                        anchors.leftMargin: 14
+                                        anchors.rightMargin: 14
                                         spacing: 8
 
                                         Text {
                                             Layout.fillWidth: true
                                             text: String(sortRow.modelData.label)
                                             color: sortRow.isSelected
-                                                ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
+                                                ? appSettings.onSecondaryContainer
                                                 : appSettings.textColor
+                                            font.family: "Rubik"
                                             font.pixelSize: 13
                                             font.weight: sortRow.isSelected ? Font.DemiBold : Font.Normal
                                             renderType: Text.QtRendering
@@ -494,11 +516,9 @@ Rectangle {
                                         }
 
                                         YIcon {
-                                            size: 14
-                                            source: "qrc:/tsuki_app/icons/actions/check.svg"
-                                            color: sortRow.isSelected
-                                                ? (appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff")
-                                                : appSettings.accentColor
+                                            size: 16
+                                            symbol: "check"
+                                            color: appSettings.onSecondaryContainer
                                             visible: sortRow.isSelected
                                         }
                                     }

@@ -13,6 +13,9 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QFontDatabase>
+#include <QFontInfo>
+#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QQmlComponent>
@@ -1394,6 +1397,9 @@ private slots:
 
   void testThemeColorsAndAmoledCustomization() {
     AppSettings settings;
+    settings.resetBgColor();
+    settings.resetSidebarColor();
+    settings.setAccentColor(QColor(QStringLiteral("#d71920")));
 
     // 1. Test AMOLED Theme Mode (mode 3)
     settings.setThemeMode(3);
@@ -1401,15 +1407,25 @@ private slots:
     QVERIFY(settings.isEffectiveDark());
     QCOMPARE(settings.bgColor(), QColor("#000000"));
     QCOMPARE(settings.sidebarColor(), QColor("#000000"));
-    QCOMPARE(settings.surfaceColor(), QColor("#0d0d10"));
-    QCOMPARE(settings.inputColor(), QColor("#141417"));
+    QCOMPARE(settings.surfaceContainerLowest(), QColor("#000000"));
+    QCOMPARE(settings.surfaceColor(), settings.surfaceContainerLow());
+    QCOMPARE(settings.surfaceAltColor(), settings.surfaceContainer());
+    QCOMPARE(settings.inputColor(), settings.surfaceContainerHigh());
+    QVERIFY(settings.surfaceContainerLow().lightness() >
+            settings.surfaceContainerLowest().lightness());
+    QVERIFY(settings.surfaceContainer().lightness() >
+            settings.surfaceContainerLow().lightness());
+    QVERIFY(settings.surfaceContainerHigh().lightness() >
+            settings.surfaceContainer().lightness());
+    QVERIFY(settings.surfaceContainerHighest().lightness() >
+            settings.surfaceContainerHigh().lightness());
 
-    // 2. Test Custom Background Color
     // 2. Test Custom Background Color & Container Harmonization
     settings.setThemeMode(0); // Dark mode
     settings.setCustomBgColor("#123456");
     QCOMPARE(settings.customBgColor(), QString("#123456"));
     QCOMPARE(settings.bgColor(), QColor("#123456"));
+    QCOMPARE(settings.surfaceContainerLowest(), QColor("#123456"));
     // Container colors harmonize with selected background color
     QCOMPARE(settings.surfaceColor().hue(), QColor("#123456").hue());
     QVERIFY(settings.surfaceColor().lightness() >
@@ -1417,11 +1433,31 @@ private slots:
     QVERIFY(settings.surfaceAltColor().lightness() >
             settings.surfaceColor().lightness());
 
-    // Reset Background Color
+    // Reset Background Color & verify M3 Dark 5-tier tonal ramp
     settings.resetBgColor();
     QVERIFY(settings.customBgColor().isEmpty());
     QCOMPARE(settings.bgColor(), QColor("#0d0d11"));
-    QCOMPARE(settings.surfaceColor(), QColor("#16161d"));
+    QCOMPARE(settings.surfaceContainerLowest(), QColor("#0e0c0c"));
+    QCOMPARE(settings.surfaceContainerLow(), QColor("#181414"));
+    QCOMPARE(settings.surfaceContainer(), QColor("#201a1a"));
+    QCOMPARE(settings.surfaceContainerHigh(), QColor("#2b2323"));
+    QCOMPARE(settings.surfaceContainerHighest(), QColor("#362c2c"));
+    QCOMPARE(settings.surfaceColor(), settings.surfaceContainerLow());
+    QCOMPARE(settings.surfaceAltColor(), settings.surfaceContainer());
+    QCOMPARE(settings.inputColor(), settings.surfaceContainerHigh());
+
+    // Verify M3 Light 5-tier tonal ramp
+    settings.setThemeMode(1); // Light mode
+    QVERIFY(!settings.isEffectiveDark());
+    QCOMPARE(settings.surfaceContainerLowest(), QColor("#ffffff"));
+    QCOMPARE(settings.surfaceContainerLow(), QColor("#f7f2f2"));
+    QCOMPARE(settings.surfaceContainer(), QColor("#f1ecec"));
+    QCOMPARE(settings.surfaceContainerHigh(), QColor("#ebe5e5"));
+    QCOMPARE(settings.surfaceContainerHighest(), QColor("#e4dede"));
+    QCOMPARE(settings.surfaceColor(), settings.surfaceContainerLow());
+    QCOMPARE(settings.surfaceAltColor(), settings.surfaceContainer());
+    QCOMPARE(settings.inputColor(), settings.surfaceContainerHigh());
+    settings.setThemeMode(0);
 
     // 3. Test Sidebar Sync
     settings.setCustomBgColor("#000000");
@@ -1442,7 +1478,17 @@ private slots:
     QVERIFY(settings.customSidebarColor().isEmpty());
     QCOMPARE(settings.sidebarColor(), QColor("#111116"));
 
-    // 5. Test Accent Color invokable
+    // 5. Test Accent Color invokable & onPrimary / secondaryContainer
+    settings.setAccentColor(QColor("#d71920"));
+    QCOMPARE(settings.onPrimary(), QColor("#ffffff"));
+    QVERIFY(settings.secondaryContainer().isValid());
+    QVERIFY(settings.onSecondaryContainer().lightnessF() >
+            settings.secondaryContainer().lightnessF());
+
+    settings.setAccentColor(QColor("#38bdf8"));
+    QCOMPARE(settings.accentColor(), QColor("#38bdf8"));
+    QVERIFY(settings.onPrimary().lightnessF() < 0.25f);
+
     settings.setAccentColor(QColor("#ec4899"));
     QCOMPARE(settings.accentColor(), QColor("#ec4899"));
 
@@ -1450,6 +1496,7 @@ private slots:
     settings.resetBgColor();
     settings.resetSidebarColor();
     settings.setSyncSidebarColor(false);
+    settings.setAccentColor(QColor(QStringLiteral("#d71920")));
     settings.setThemeMode(0);
   }
 
@@ -2395,6 +2442,97 @@ private slots:
     savedOpt = db.getGame(gameId);
     QVERIFY(savedOpt.has_value());
     QCOMPARE(savedOpt->gamescope.hdrEnabled, true);
+  }
+
+  void testM3FontsSymbolsAndComponents() {
+    for (const char *resPath :
+         {":/tsuki_app/fonts/Rubik-Regular.ttf",
+          ":/tsuki_app/fonts/Rubik-Medium.ttf",
+          ":/tsuki_app/fonts/Rubik-SemiBold.ttf",
+          ":/tsuki_app/fonts/Rubik-Bold.ttf",
+          ":/tsuki_app/fonts/JetBrainsMonoNerdFont-Regular.ttf",
+          ":/tsuki_app/fonts/MaterialSymbolsRounded.ttf"}) {
+      QVERIFY2(QFile::exists(QString::fromLatin1(resPath)), resPath);
+    }
+
+    AppSettings::registerApplicationFonts();
+    QCOMPARE(QGuiApplication::font().family(), QStringLiteral("Rubik"));
+
+    const QStringList families = QFontDatabase::families();
+    QVERIFY2(families.contains(QStringLiteral("Rubik")),
+             "Bundled Rubik font family must be registered");
+    QVERIFY2(families.contains(QStringLiteral("Material Symbols Rounded")),
+             "Bundled Material Symbols Rounded font family must be registered");
+    QVERIFY2(families.contains(QStringLiteral("JetBrains Mono NF")) ||
+                 families.contains(QStringLiteral("JetBrainsMono Nerd Font")),
+             "JetBrains Mono NF font family must be registered");
+    QFontInfo jbInfo(QFont(QStringLiteral("JetBrains Mono NF")));
+    QVERIFY2(jbInfo.family().contains(QStringLiteral("JetBrains"),
+                                      Qt::CaseInsensitive),
+             qPrintable(QStringLiteral("Resolved JetBrains font: ") +
+                        jbInfo.family()));
+
+    AppSettings settings;
+    settings.setAccentColor(QColor(QStringLiteral("#d71920")));
+    settings.setThemeMode(0); // Dark mode
+    QVERIFY(settings.isEffectiveDark());
+    QVERIFY(settings.secondaryContainer().saturation() > 0);
+    QVERIFY(settings.onSecondaryContainer().lightness() >
+            settings.secondaryContainer().lightness());
+
+    settings.setThemeMode(1); // Light mode
+    QVERIFY(!settings.isEffectiveDark());
+    QVERIFY(settings.onSecondaryContainer().lightness() <
+            settings.secondaryContainer().lightness());
+    settings.setThemeMode(0);
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
+                                             &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
+                                             QVariant());
+
+    const QString componentsDir =
+        QStringLiteral(TSUKI_SOURCE_DIR) + QStringLiteral("/src/qml/components/");
+
+    // Verify YIcon renders Material Symbols ligature text when symbol is set
+    QQmlComponent yiconComp(&engine, QUrl::fromLocalFile(componentsDir + QStringLiteral("YIcon.qml")));
+    QVERIFY2(yiconComp.errorString().isEmpty(),
+             qPrintable(yiconComp.errorString()));
+    std::unique_ptr<QObject> yicon(yiconComp.create());
+    QVERIFY(yicon != nullptr);
+    yicon->setProperty("symbol", QStringLiteral("play_arrow"));
+    QCoreApplication::processEvents();
+    auto *symbolText = yicon->findChild<QQuickItem *>();
+    Q_UNUSED(symbolText);
+    bool foundVisibleSymbolText = false;
+    for (QObject *child : yicon->children()) {
+      if (child->inherits("QQuickText")) {
+        QCOMPARE(child->property("text").toString(), QStringLiteral("play_arrow"));
+        QCOMPARE(child->property("visible").toBool(), true);
+        foundVisibleSymbolText = true;
+      }
+    }
+    QVERIFY(foundVisibleSymbolText);
+
+    // Verify M3Button, Toggle, StyledCombo, and M3TextField compile and apply M3 tokens
+    for (const QString &file :
+         {QStringLiteral("M3Button.qml"), QStringLiteral("Toggle.qml"),
+          QStringLiteral("StyledCombo.qml"), QStringLiteral("M3TextField.qml")}) {
+      QQmlComponent comp(&engine, QUrl::fromLocalFile(componentsDir + file));
+      QVERIFY2(comp.errorString().isEmpty(), qPrintable(comp.errorString()));
+      std::unique_ptr<QObject> obj(comp.create());
+      QVERIFY(obj != nullptr);
+      if (file == QStringLiteral("StyledCombo.qml")) {
+        QCOMPARE(obj->property("implicitHeight").toInt(), 40);
+      } else if (file == QStringLiteral("Toggle.qml")) {
+        QCOMPARE(obj->property("implicitWidth").toInt(), 52);
+        QCOMPARE(obj->property("implicitHeight").toInt(), 32);
+      } else if (file == QStringLiteral("M3Button.qml")) {
+        obj->setProperty("iconSymbol", QStringLiteral("tune"));
+        QCOMPARE(obj->property("iconSymbol").toString(), QStringLiteral("tune"));
+      }
+    }
   }
 };
 

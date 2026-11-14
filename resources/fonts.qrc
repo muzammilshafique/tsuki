@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/tsuki_app">
+        <file alias="fonts/Rubik-Regular.ttf">fonts/Rubik-Regular.ttf</file>
+        <file alias="fonts/Rubik-Medium.ttf">fonts/Rubik-Medium.ttf</file>
+        <file alias="fonts/Rubik-SemiBold.ttf">fonts/Rubik-SemiBold.ttf</file>
+        <file alias="fonts/Rubik-Bold.ttf">fonts/Rubik-Bold.ttf</file>
+        <file alias="fonts/JetBrainsMonoNerdFont-Regular.ttf">fonts/JetBrainsMonoNerdFont-Regular.ttf</file>
+        <file alias="fonts/MaterialSymbolsRounded.ttf">fonts/MaterialSymbolsRounded.ttf</file>
+    </qresource>
+</RCC>
+

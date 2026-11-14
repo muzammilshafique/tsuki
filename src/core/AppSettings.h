@@ -37,6 +37,20 @@ class AppSettings : public QObject {
   Q_PROPERTY(QColor surfaceColor READ surfaceColor NOTIFY themeChanged)
   Q_PROPERTY(QColor surfaceAltColor READ surfaceAltColor NOTIFY themeChanged)
   Q_PROPERTY(QColor inputColor READ inputColor NOTIFY themeChanged)
+  Q_PROPERTY(QColor surfaceContainerLowest READ surfaceContainerLowest NOTIFY
+                 themeChanged)
+  Q_PROPERTY(
+      QColor surfaceContainerLow READ surfaceContainerLow NOTIFY themeChanged)
+  Q_PROPERTY(QColor surfaceContainer READ surfaceContainer NOTIFY themeChanged)
+  Q_PROPERTY(
+      QColor surfaceContainerHigh READ surfaceContainerHigh NOTIFY themeChanged)
+  Q_PROPERTY(QColor surfaceContainerHighest READ surfaceContainerHighest NOTIFY
+                 themeChanged)
+  Q_PROPERTY(
+      QColor secondaryContainer READ secondaryContainer NOTIFY themeChanged)
+  Q_PROPERTY(
+      QColor onSecondaryContainer READ onSecondaryContainer NOTIFY themeChanged)
+  Q_PROPERTY(QColor onPrimary READ onPrimary NOTIFY themeChanged)
   Q_PROPERTY(QColor borderColor READ borderColor NOTIFY themeChanged)
   Q_PROPERTY(QColor textColor READ textColor NOTIFY themeChanged)
   Q_PROPERTY(QColor textSecColor READ textSecColor NOTIFY themeChanged)
@@ -162,11 +176,26 @@ public:
   QColor sidebarDividerColor() const;
   QColor sidebarTextSecColor() const;
   QColor sidebarHoverColor() const;
+  static void registerApplicationFonts();
+
   QColor accentColor() const { return m_accentColor; }
   Q_INVOKABLE void setAccentColor(const QColor &c);
   QColor surfaceColor() const;
   QColor surfaceAltColor() const;
   QColor inputColor() const;
+  QColor surfaceContainerLowest() const;
+  QColor surfaceContainerLow() const;
+  QColor surfaceContainer() const;
+  QColor surfaceContainerHigh() const;
+  QColor surfaceContainerHighest() const;
+  QColor secondaryContainer() const;
+  QColor onSecondaryContainer() const;
+  QColor onPrimary() const;
+
+private:
+  QColor tonalSurfaceColor(int tier) const;
+
+public:
   QColor borderColor() const;
   QColor textColor() const;
   QColor textSecColor() const;

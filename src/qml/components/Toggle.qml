@@ -22,27 +22,23 @@ Item {
     Keys.onSpacePressed: (event) => { event.accepted = true; toggleIt() }
 
     Rectangle {
+        anchors.fill: track
+        anchors.margins: -3
+        radius: 19
+        color: "transparent"
+        border.width: 2
+        border.color: appSettings.accentColor
+        visible: toggle.kbFocused
+    }
+
+    Rectangle {
         id: track
         anchors.fill: parent
         radius: 16
 
-        color: toggle.checked
-            ? appSettings.accentColor
-            : (toggle.kbFocused
-                ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
-                : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)))
-
-        border.color: {
-            if (toggle.kbFocused) {
-                return toggle.checked
-                    ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.5) : Qt.rgba(0, 0, 0, 0.2))
-                    : appSettings.accentColor
-            }
-            return toggle.checked
-                ? appSettings.accentColor
-                : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(0, 0, 0, 0.24))
-        }
-        border.width: toggle.kbFocused ? 2.5 : (toggle.checked ? 0 : 2)
+        color: toggle.checked ? appSettings.accentColor : appSettings.surfaceContainerHighest
+        border.color: toggle.checked ? "transparent" : appSettings.textTerColor
+        border.width: toggle.checked ? 0 : 1.5
         scale: toggle.kbFocused ? 1.05 : 1.0
 
         Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
@@ -80,10 +76,10 @@ Item {
 
             color: {
                 if (toggle.checked) {
-                    return appSettings.isEffectiveDark ? "#111114" : "#ffffff"
+                    return appSettings.onPrimary
                 }
                 if (toggle.kbFocused) return appSettings.accentColor
-                return appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.70) : Qt.rgba(0, 0, 0, 0.60)
+                return appSettings.textSecColor
             }
 
             Behavior on width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
@@ -93,11 +89,11 @@ Item {
             Behavior on color { ColorAnimation { duration: 150 } }
 
             // Checkmark icon inside selected thumb
-            Image {
+            YIcon {
                 anchors.centerIn: parent
-                width: 14
-                height: 14
-                source: "qrc:/tsuki_app/icons/actions/check.svg"
+                size: 16
+                symbol: "check"
+                color: appSettings.accentColor
                 visible: opacity > 0.01
                 opacity: toggle.checked && !thumb.isPressed ? 1.0 : 0.0
                 scale: toggle.checked ? 1.0 : 0.4
