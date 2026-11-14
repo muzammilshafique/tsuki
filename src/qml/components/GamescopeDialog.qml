@@ -576,6 +576,8 @@ Popup {
                     Layout.fillWidth: true
                     spacing: 8
                     Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
                         text: "QUICK PRESETS"
                         color: appSettings.accentColor
                         font.pixelSize: 11
@@ -589,6 +591,8 @@ Popup {
                             id: presetBorderlessBtn
                             objectName: "gamescopePresetBorderlessBtn"
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredWidth: 120
                             text: "Borderless Fix"
                             buttonType: "tonal"
                             onClicked: root.applyPreset("borderless")
@@ -597,6 +601,8 @@ Popup {
                         M3Button {
                             id: presetFsr720Btn
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredWidth: 120
                             text: "720p → 1080p FSR"
                             buttonType: "tonal"
                             onClicked: root.applyPreset("fsr720")
@@ -605,6 +611,8 @@ Popup {
                         M3Button {
                             id: presetFsr1440Btn
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredWidth: 120
                             text: "1080p → 1440p FSR"
                             buttonType: "tonal"
                             onClicked: root.applyPreset("fsr1080")
@@ -613,6 +621,8 @@ Popup {
                         M3Button {
                             id: presetPixelBtn
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredWidth: 120
                             text: "Pixel Integer"
                             buttonType: "tonal"
                             onClicked: root.applyPreset("pixel")
@@ -625,6 +635,8 @@ Popup {
 
                 // ── Display & Resolution ─────────────────────────────────────
                 Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
                     text: "DISPLAY & RESOLUTION"
                     color: appSettings.accentColor
                     font.pixelSize: 11
@@ -636,8 +648,8 @@ Popup {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 6
-                    Label { text: "Window Mode"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
-                    Label { text: "Fullscreen (-f), Borderless (-b), or Windowed inside a nested desktop container"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                    Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Window Mode"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                    Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Fullscreen (-f), Borderless (-b), or Windowed inside a nested desktop container"; color: appSettings.textSecColor; font.pixelSize: 12 }
                     M3SegmentedButton {
                         id: windowModeSeg
                         objectName: "gamescopeWindowModeSeg"
@@ -821,6 +833,8 @@ Popup {
 
                 // ── Upscaling & Scaling Filter ───────────────────────────────
                 Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
                     text: "UPSCALING & FILTER"
                     color: appSettings.accentColor
                     font.pixelSize: 11
@@ -909,6 +923,8 @@ Popup {
 
                 // ── Frame Pacing & Sync ──────────────────────────────────────
                 Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
                     text: "FRAME PACING & VRR"
                     color: appSettings.accentColor
                     font.pixelSize: 11
@@ -1028,6 +1044,8 @@ Popup {
 
                 // ── Color, Input & Overlay ───────────────────────────────────
                 Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
                     text: "HDR, INPUT & OVERLAY"
                     color: appSettings.accentColor
                     font.pixelSize: 11
@@ -1118,6 +1136,8 @@ Popup {
 
                 // ── Advanced ─────────────────────────────────────────────────
                 Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
                     text: "ADVANCED"
                     color: appSettings.accentColor
                     font.pixelSize: 11
@@ -1171,7 +1191,7 @@ Popup {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 6
-                    Label { text: "Extra Gamescope Arguments (Optional)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                    Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "Extra Gamescope Arguments (Optional)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
                     M3TextField {
                         id: extraArgsField
                         twoStageFocus: true
@@ -1253,6 +1273,7 @@ Popup {
                 spacing: 12
                 readonly property var ctrlMgr: uiController ? uiController.controllerManager : null
                 readonly property bool controllerConnected: Boolean(ctrlMgr && ctrlMgr.isConnected)
+                readonly property bool showGamepadIcons: controllerConnected && Boolean(uiController && uiController.isKeyboardNavActive && uiController.isGamepadActive)
                 Keys.onPressed: (event) => root.handleDialogKeyPress(event)
 
                 M3Button {
@@ -1296,7 +1317,7 @@ Popup {
                     id: cancelBtn
                     objectName: "gamescopeCancelBtn"
                     text: "Cancel"
-                    iconSource: footerRow.controllerConnected && footerRow.ctrlMgr ? footerRow.ctrlMgr.cancelIconSource : ""
+                    iconSource: footerRow.showGamepadIcons && footerRow.ctrlMgr ? footerRow.ctrlMgr.cancelIconSource : ""
                     buttonType: "tonal"
                     onClicked: root.close()
                 }
@@ -1305,7 +1326,7 @@ Popup {
                     id: saveBtn
                     objectName: "gamescopeSaveBtn"
                     text: "Save"
-                    iconSource: footerRow.controllerConnected && footerRow.ctrlMgr
+                    iconSource: footerRow.showGamepadIcons && footerRow.ctrlMgr
                         ? footerRow.ctrlMgr.searchIconSource
                         : "qrc:/tsuki_app/icons/actions/check.svg"
                     buttonType: "filled"

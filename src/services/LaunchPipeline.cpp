@@ -44,6 +44,7 @@ QList<qint64> collectDescendantPids(qint64 rootPid) {
 
         const QList<QByteArray> fields = data.mid(rparen + 1).trimmed().split(' ');
         if (fields.size() < 2) continue;
+        if (fields.at(0) == "Z" || fields.at(0) == "X") continue;
         bool ppidOk = false;
         const qint64 ppid = fields.at(1).toLongLong(&ppidOk);
         if (ppidOk && ppid > 1) {

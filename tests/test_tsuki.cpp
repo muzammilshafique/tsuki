@@ -1083,7 +1083,20 @@ private slots:
         ::kill(static_cast<pid_t>(childPid), SIGKILL);
       }
     });
-    QCOMPARE(::kill(static_cast<pid_t>(childPid), 0), 0);
+    auto isProcessAliveNonZombie = [](qint64 pid) -> bool {
+      if (pid <= 1) return false;
+      if (::kill(static_cast<pid_t>(pid), 0) != 0) return false;
+      QFile statFile(QStringLiteral("/proc/%1/stat").arg(pid));
+      if (!statFile.open(QIODevice::ReadOnly)) return false;
+      const QByteArray data = statFile.readAll();
+      const int rparen = data.lastIndexOf(')');
+      if (rparen < 0) return false;
+      const QList<QByteArray> fields = data.mid(rparen + 1).trimmed().split(' ');
+      if (fields.isEmpty()) return false;
+      const QByteArray state = fields.at(0);
+      return state != "Z" && state != "X";
+    };
+    QVERIFY(isProcessAliveNonZombie(childPid));
 
     QElapsedTimer stopTimer;
     stopTimer.start();
@@ -1091,7 +1104,7 @@ private slots:
     QVERIFY(stopTimer.elapsed() < 500);
 
     QTRY_VERIFY_WITH_TIMEOUT(!pipeline.isGameRunning("detached-game"), 2000);
-    QTRY_VERIFY_WITH_TIMEOUT(::kill(static_cast<pid_t>(childPid), 0) != 0, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(!isProcessAliveNonZombie(childPid), 2000);
   }
 
   void testControllerDisconnectNeutralization() {
@@ -2194,12 +2207,10 @@ private slots:
     QVERIFY(saveBtn != nullptr);
 
     const bool initiallyConnected = ctrlMgr.isConnected();
-    QCOMPARE(cancelBtn->property("iconSource").toString(),
-             initiallyConnected ? QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-right.svg")
-                                : QString());
+    QVERIFY(!uiCtrl.isGamepadActive());
+    QCOMPARE(cancelBtn->property("iconSource").toString(), QString());
     QCOMPARE(saveBtn->property("iconSource").toString(),
-             initiallyConnected ? QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-up.svg")
-                                : QStringLiteral("qrc:/tsuki_app/icons/actions/check.svg"));
+             QStringLiteral("qrc:/tsuki_app/icons/actions/check.svg"));
 
     const int virtualJoyIdx = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, 2, 11, 1);
     bool virtualAttached = (virtualJoyIdx >= 0);
@@ -2214,10 +2225,51 @@ private slots:
       ctrlMgr.refreshControllers();
       QCoreApplication::processEvents();
       QVERIFY(ctrlMgr.isConnected());
+
+      // Keyboard navigation with controller plugged in must still hide gamepad button icons
+      QVERIFY(uiCtrl.isKeyboardNavActive());
+      QVERIFY(!uiCtrl.isGamepadActive());
+      QCOMPARE(cancelBtn->property("iconSource").toString(), QString());
+      QCOMPARE(saveBtn->property("iconSource").toString(),
+               QStringLiteral("qrc:/tsuki_app/icons/actions/check.svg"));
+
+      // Switching to gamepad navigation shows gamepad icons on Cancel and Save
+      uiCtrl.setActiveInputType(QStringLiteral("xbox"));
+      uiCtrl.setKeyboardNavActive(true);
+      QCoreApplication::processEvents();
+      QVERIFY(uiCtrl.isGamepadActive());
       QCOMPARE(cancelBtn->property("iconSource").toString(),
                QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-right.svg"));
       QCOMPARE(saveBtn->property("iconSource").toString(),
                QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-up.svg"));
+
+      // Mouse navigation hides gamepad icons even while controller stays connected
+      QMouseEvent mouseMove(QEvent::MouseMove, QPointF(240, 240), QPointF(240, 240),
+                            Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+      QCoreApplication::sendEvent(&win, &mouseMove);
+      QCoreApplication::processEvents();
+      QVERIFY(!uiCtrl.isKeyboardNavActive());
+      QVERIFY(!uiCtrl.isGamepadActive());
+      QCOMPARE(cancelBtn->property("iconSource").toString(), QString());
+      QCOMPARE(saveBtn->property("iconSource").toString(),
+               QStringLiteral("qrc:/tsuki_app/icons/actions/check.svg"));
+
+      // Switching back to gamepad restores icons, then keyboard press hides them again
+      uiCtrl.setActiveInputType(QStringLiteral("playstation"));
+      uiCtrl.setKeyboardNavActive(true);
+      QCoreApplication::processEvents();
+      QCOMPARE(cancelBtn->property("iconSource").toString(),
+               QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-right.svg"));
+      QCOMPARE(saveBtn->property("iconSource").toString(),
+               QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-up.svg"));
+
+      QTest::keyClick(&win, Qt::Key_Up);
+      QCoreApplication::processEvents();
+      QVERIFY(uiCtrl.isKeyboardNavActive());
+      QVERIFY(!uiCtrl.isGamepadActive());
+      QCOMPARE(cancelBtn->property("iconSource").toString(), QString());
+      QCOMPARE(saveBtn->property("iconSource").toString(),
+               QStringLiteral("qrc:/tsuki_app/icons/actions/check.svg"));
 
       if (!initiallyConnected) {
         SDL_JoystickDetachVirtual(virtualJoyIdx);
@@ -2236,9 +2288,9 @@ private slots:
       auto *row = ctrl ? ctrl->parentItem() : nullptr;
       auto *col = row ? row->parentItem() : nullptr;
       QVERIFY2(row != nullptr && col != nullptr, name);
-      QVERIFY2(col->width() > 300.0, name);
-      QVERIFY2(qAbs(row->width() - col->width()) < 1.0, name);
-      QVERIFY2(qAbs((ctrl->x() + ctrl->width()) - row->width()) < 1.0, name);
+      QTRY_VERIFY2(col->width() > 300.0, name);
+      QTRY_VERIFY2(qAbs(row->width() - col->width()) < 1.0, name);
+      QTRY_VERIFY2(qAbs((ctrl->x() + ctrl->width()) - row->width()) < 1.0, name);
     };
     verifyRightAlignedInCol(outCombo, "gamescopeOutputResCombo");
     verifyRightAlignedInCol(adaptiveToggle, "gamescopeAdaptiveSyncToggle");

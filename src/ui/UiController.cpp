@@ -149,6 +149,7 @@ bool UiController::eventFilter(QObject* watched, QEvent* event) {
             }
         }
     } else if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::Wheel) {
+        setActiveInputType(QStringLiteral("keyboard"));
         setKeyboardNavActive(false);
     } else if (event->type() == QEvent::MouseMove) {
         auto* me = static_cast<QMouseEvent*>(event);
@@ -156,6 +157,7 @@ bool UiController::eventFilter(QObject* watched, QEvent* event) {
         if (!m_hasLastMousePos || (pos - m_lastMousePos).manhattanLength() >= 2) {
             m_lastMousePos = pos;
             m_hasLastMousePos = true;
+            setActiveInputType(QStringLiteral("keyboard"));
             setKeyboardNavActive(false);
         }
     } else if (event->type() == QEvent::ApplicationDeactivate || event->type() == QEvent::WindowDeactivate) {
