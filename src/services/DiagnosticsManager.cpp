@@ -222,16 +222,24 @@ void DiagnosticsManager::runSystemDiagnostics() {
              hasWt ? QStringLiteral("Winetricks available") : QStringLiteral("Will auto-download on demand"),
              QStringLiteral("Tools"));
 
-    // 6. MangoHud & GameMode
-    const bool hasMango = !QStandardPaths::findExecutable(QStringLiteral("mangohud")).isEmpty();
-    const bool hasGamemode = !QStandardPaths::findExecutable(QStringLiteral("gamemoderun")).isEmpty();
+    // 6. MangoHud, GameMode & Gamescope
+    const QString mangoBin = QStandardPaths::findExecutable(QStringLiteral("mangohud"));
+    const QString gmBin = QStandardPaths::findExecutable(QStringLiteral("gamemoderun"));
+    const QString gsBin = QStandardPaths::findExecutable(QStringLiteral("gamescope"));
+    const bool hasMango = !mangoBin.isEmpty();
+    const bool hasGamemode = !gmBin.isEmpty();
+    m_gamescopeAvailable = !gsBin.isEmpty();
     addCheck(QStringLiteral("MangoHud Overlay"),
              hasMango,
-             hasMango ? QStringLiteral("/usr/bin/mangohud ready") : QStringLiteral("Not installed"),
+             hasMango ? QStringLiteral("%1 ready").arg(mangoBin) : QStringLiteral("Not installed"),
              QStringLiteral("Performance"));
     addCheck(QStringLiteral("Feral GameMode"),
              hasGamemode,
-             hasGamemode ? QStringLiteral("/usr/bin/gamemoderun ready") : QStringLiteral("Not installed"),
+             hasGamemode ? QStringLiteral("%1 ready").arg(gmBin) : QStringLiteral("Not installed"),
+             QStringLiteral("Performance"));
+    addCheck(QStringLiteral("Gamescope Micro-Compositor"),
+             m_gamescopeAvailable,
+             m_gamescopeAvailable ? QStringLiteral("%1 ready").arg(gsBin) : QStringLiteral("Not installed"),
              QStringLiteral("Performance"));
 
     // 7. uinput Xbox Controller Emulation

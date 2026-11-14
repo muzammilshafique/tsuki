@@ -12,11 +12,20 @@ Item {
     property alias stepSize: slider.stepSize
     property alias snapMode: slider.snapMode
     property string suffix: " px"
+    property int decimals: 0
     property bool showStops: false
     property alias slider: slider
+    signal moveUp()
+    signal moveDown()
+
+    function normalizeValue(v) {
+        if (root.decimals <= 0) return v
+        const factor = Math.pow(10, root.decimals)
+        return Math.round(v * factor) / factor
+    }
 
     function adjustLeft() {
-        const next = Math.max(slider.from, slider.value - (slider.stepSize || 1))
+        const next = normalizeValue(Math.max(slider.from, slider.value - (slider.stepSize || 1)))
         if (next !== slider.value) {
             slider.value = next
             slider.moved()
@@ -24,7 +33,7 @@ Item {
     }
 
     function adjustRight() {
-        const next = Math.min(slider.to, slider.value + (slider.stepSize || 1))
+        const next = normalizeValue(Math.min(slider.to, slider.value + (slider.stepSize || 1)))
         if (next !== slider.value) {
             slider.value = next
             slider.moved()
@@ -54,10 +63,12 @@ Item {
             Keys.onUpPressed: (event) => {
                 event.accepted = true
                 if (typeof settingsPage !== "undefined") settingsPage.focusPrevSettingRow()
+                else root.moveUp()
             }
             Keys.onDownPressed: (event) => {
                 event.accepted = true
                 if (typeof settingsPage !== "undefined") settingsPage.focusNextSettingRow()
+                else root.moveDown()
             }
 
             // Material 3 Track (16dp height, fully rounded radius 8dp, signature handle gap)
@@ -132,7 +143,7 @@ Item {
             Label {
                 id: valLabel
                 anchors.centerIn: parent
-                text: Math.round(slider.value) + root.suffix
+                text: (root.decimals > 0 ? Number(slider.value).toFixed(root.decimals) : Math.round(slider.value)) + root.suffix
                 color: appSettings.textColor
                 font.pixelSize: 12
                 font.weight: Font.DemiBold

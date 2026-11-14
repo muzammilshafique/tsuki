@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to test build (e.g. v1.0.0; GitHub Release is only published on tag push)'
+        description: 'Release tag to test build (e.g. v0.1.0; GitHub Release is only published on tag push)'
         required: false
-        default: 'v1.0.0'
+        default: 'v0.1.0'
 
 permissions:
   contents: write
@@ -30,7 +30,7 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG="${{ github.ref_name }}"
           else
-            TAG="${{ github.event.inputs.tag || 'v1.0.0' }}"
+            TAG="${{ github.event.inputs.tag || 'v0.1.0' }}"
           fi
           RAW_VERSION="${TAG#v}"
           PKGVER="${RAW_VERSION//-/.}"
@@ -165,7 +165,7 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG="${{ github.ref_name }}"
           else
-            TAG="${{ github.event.inputs.tag || 'v1.0.0' }}"
+            TAG="${{ github.event.inputs.tag || 'v0.1.0' }}"
           fi
           RAW_VERSION="${TAG#v}"
           PKGVER="${RAW_VERSION//-/.}"

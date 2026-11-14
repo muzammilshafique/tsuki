@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RAW_VERSION="${VERSION:-$(git -C "${ROOT_DIR}" describe --tags --abbrev=0 2>/dev/null || echo '1.0.0')}"
+RAW_VERSION="${VERSION:-$(git -C "${ROOT_DIR}" describe --tags --abbrev=0 2>/dev/null || echo '0.1.0')}"
 RAW_VERSION="${RAW_VERSION#v}"
 PKGVER="${RAW_VERSION//-/.}"
 OUTPUT_DIR="${1:-${ROOT_DIR}/dist}"

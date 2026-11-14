@@ -10,6 +10,9 @@
 #include "../src/services/SteamGridDbService.h"
 #include "../src/services/WinetricksManager.h"
 #include "../src/ui/UiController.h"
+#include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QQmlComponent>
@@ -17,20 +20,41 @@
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QSqlDatabase>
 #include <QSqlQuery>
+#include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QUrl>
 #include <QWheelEvent>
 #include <QtTest>
 #include <SDL2/SDL.h>
 #include <cerrno>
+#include <csignal>
 #include <linux/input-event-codes.h>
 #include <linux/uinput.h>
 
 using namespace Tsuki;
 
 namespace {
+
+/// Resolve a QML file from the source tree even under -ffile-prefix-map builds.
+QUrl resolveQmlUrl(const QString &relativePath) {
+  QStringList candidates;
+#ifdef TSUKI_SOURCE_DIR
+  candidates << QStringLiteral(TSUKI_SOURCE_DIR) + QLatin1Char('/') + relativePath;
+#endif
+  candidates << QDir::currentPath() + QLatin1Char('/') + relativePath
+             << QCoreApplication::applicationDirPath() + QStringLiteral("/../") + relativePath
+             << QFileInfo(QString::fromUtf8(__FILE__)).absolutePath() + QStringLiteral("/../") + relativePath;
+  for (const QString &path : candidates) {
+    if (QFileInfo::exists(path)) {
+      return QUrl::fromLocalFile(QFileInfo(path).canonicalFilePath());
+    }
+  }
+  return QUrl::fromLocalFile(candidates.constFirst());
+}
 
 class MockUinputBackend : public IUinputBackend {
 public:
@@ -998,6 +1022,78 @@ private slots:
     QVERIFY(!ctrlMgr.isEmulationActive());
   }
 
+  void testStopGameKillsDetachedSessionAndSdlNoSignalHandlers() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    DatabaseManager db(tmpDir.filePath("test_detached.db"));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    ControllerManager ctrlMgr(&db, &settings,
+                              std::make_unique<MockUinputBackend>());
+    QCOMPARE(QByteArray(SDL_GetHint(SDL_HINT_NO_SIGNAL_HANDLERS)),
+             QByteArray("1"));
+
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
+
+    const QString pidFile = tmpDir.filePath("detached.pid");
+    const QString scriptPath = tmpDir.filePath("spawn_detached.sh");
+    QFile f(scriptPath);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    const QByteArray script =
+        QByteArray("#!/bin/sh\n"
+                   "setsid sleep 30 >/dev/null 2>&1 &\n"
+                   "CPID=$!\n"
+                   "echo \"$CPID\" > \"") +
+        pidFile.toUtf8() +
+        QByteArray(".tmp\"\n"
+                   "mv \"") +
+        pidFile.toUtf8() +
+        QByteArray(".tmp\" \"") +
+        pidFile.toUtf8() +
+        QByteArray("\"\n"
+                   "wait \"$CPID\"\n");
+    f.write(script);
+    f.close();
+    f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                     QFileDevice::ExeOwner);
+
+    GameRecord g;
+    g.id = "detached-game";
+    g.title = "Detached Child Game";
+    g.executablePath = scriptPath;
+    g.platform = "linux";
+    g.gamescopeState = 0;
+    db.saveGame(g);
+
+    QVERIFY(pipeline.launchGame("detached-game"));
+    QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(pidFile), 2000);
+
+    QFile pf(pidFile);
+    QVERIFY(pf.open(QIODevice::ReadOnly));
+    bool ok = false;
+    const qint64 childPid = pf.readAll().trimmed().toLongLong(&ok);
+    QVERIFY(ok && childPid > 1);
+    auto cleanupChild = qScopeGuard([&]() {
+      if (childPid > 1) {
+        ::kill(static_cast<pid_t>(childPid), SIGKILL);
+      }
+    });
+    QCOMPARE(::kill(static_cast<pid_t>(childPid), 0), 0);
+
+    QElapsedTimer stopTimer;
+    stopTimer.start();
+    pipeline.stopGame("detached-game");
+    QVERIFY(stopTimer.elapsed() < 500);
+
+    QTRY_VERIFY_WITH_TIMEOUT(!pipeline.isGameRunning("detached-game"), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(::kill(static_cast<pid_t>(childPid), 0) != 0, 2000);
+  }
+
   void testControllerDisconnectNeutralization() {
     auto mockBackend = std::make_unique<MockUinputBackend>();
     MockUinputBackend *rawMock = mockBackend.get();
@@ -1611,12 +1707,8 @@ private slots:
     engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
                                              &uiCtrl);
 
-    const QString qmlBase =
-        QFileInfo(QString::fromUtf8(__FILE__)).absolutePath() +
-        QStringLiteral("/../src/qml/pages/");
-
     QQmlComponent settingsComp(
-        &engine, QUrl::fromLocalFile(qmlBase + QStringLiteral("SettingsPage.qml")));
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/SettingsPage.qml")));
     QVERIFY2(settingsComp.errors().isEmpty(),
              qPrintable(settingsComp.errorString()));
     QScopedPointer<QObject> settingsObj(settingsComp.create());
@@ -1628,7 +1720,7 @@ private slots:
 
     QQmlComponent detailComp(
         &engine,
-        QUrl::fromLocalFile(qmlBase + QStringLiteral("GameDetailPage.qml")));
+        resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
     QVERIFY2(detailComp.errors().isEmpty(),
              qPrintable(detailComp.errorString()));
     QScopedPointer<QObject> detailObj(detailComp.createWithInitialProperties(
@@ -1674,8 +1766,7 @@ private slots:
     const bool origHud = settings.showNavigationHud();
     QSignalSpy behaviorSpy(&settings, &AppSettings::behaviorChanged);
     QQmlComponent hudComp(
-        &engine, QUrl::fromLocalFile(QFileInfo(QString::fromUtf8(__FILE__)).absolutePath() +
-                                    QStringLiteral("/../src/qml/components/NavigationHudBar.qml")));
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/components/NavigationHudBar.qml")));
     QVERIFY2(hudComp.errors().isEmpty(), qPrintable(hudComp.errorString()));
     QScopedPointer<QObject> hudObj(hudComp.create());
     QVERIFY(hudObj != nullptr);
@@ -1690,10 +1781,568 @@ private slots:
 
     // 9. Verify RunnersView.qml compiles/loads cleanly with active downloads navigation
     QQmlComponent runnersComp(
-        &engine, QUrl::fromLocalFile(qmlBase + QStringLiteral("RunnersView.qml")));
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/RunnersView.qml")));
     QVERIFY2(runnersComp.errors().isEmpty(), qPrintable(runnersComp.errorString()));
     QScopedPointer<QObject> runnersObj(runnersComp.create());
     QVERIFY(runnersObj != nullptr);
+  }
+
+  void testGamescopeSupportAndPipeline() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+
+    // Backup global QSettings keys modified by this test
+    QSettings rawSettings(QStringLiteral("Tsuki"), QStringLiteral("TsukiLauncher"));
+    const bool hadGsDefault = rawSettings.contains(QStringLiteral("performance/gamescope"));
+    const QVariant oldGsDefault = rawSettings.value(QStringLiteral("performance/gamescope"));
+    const bool hadGsCfg = rawSettings.contains(QStringLiteral("performance/gamescopeConfig"));
+    const QVariant oldGsCfg = rawSettings.value(QStringLiteral("performance/gamescopeConfig"));
+    const QByteArray oldPath = qgetenv("PATH");
+
+    auto restoreEnv = qScopeGuard([&]() {
+      if (hadGsDefault) rawSettings.setValue(QStringLiteral("performance/gamescope"), oldGsDefault);
+      else rawSettings.remove(QStringLiteral("performance/gamescope"));
+      if (hadGsCfg) rawSettings.setValue(QStringLiteral("performance/gamescopeConfig"), oldGsCfg);
+      else rawSettings.remove(QStringLiteral("performance/gamescopeConfig"));
+      qputenv("PATH", oldPath);
+    });
+
+    rawSettings.remove(QStringLiteral("performance/gamescope"));
+    rawSettings.remove(QStringLiteral("performance/gamescopeConfig"));
+
+    // 1. GamescopeConfig JSON round-trip and normalization bounds
+    GameRecord rec;
+    rec.id = QStringLiteral("gs-json-test");
+    rec.gamescopeState = 1;
+    rec.gamescope.inheritGlobal = false;
+    rec.gamescope.windowMode = QStringLiteral("borderless");
+    rec.gamescope.outputWidth = 2560;
+    rec.gamescope.outputHeight = 1440;
+    rec.gamescope.internalWidth = 1920;
+    rec.gamescope.internalHeight = 1080;
+    rec.gamescope.filter = QStringLiteral("fsr");
+    rec.gamescope.fsrSharpness = 99; // Should clamp to 20
+    rec.gamescope.scaler = QStringLiteral("integer");
+    rec.gamescope.fpsLimit = 120;
+    rec.gamescope.unfocusedFpsLimit = 30;
+    rec.gamescope.adaptiveSync = true;
+    rec.gamescope.hdrEnabled = true;
+    rec.gamescope.forceGrabCursor = true;
+    rec.gamescope.mouseSensitivity = 9.0; // Should clamp to 5.0
+    rec.gamescope.mangoapp = false;
+    rec.gamescope.backend = QStringLiteral("wayland");
+    rec.gamescope.exposeWayland = true;
+    rec.gamescope.extraArgs = QStringLiteral(" --rt ");
+    rec.gamescope.normalize();
+
+    QCOMPARE(rec.gamescope.fsrSharpness, 20);
+    QCOMPARE(rec.gamescope.mouseSensitivity, 5.0);
+    QCOMPARE(rec.gamescope.extraArgs, QStringLiteral("--rt"));
+
+    GameRecord restored;
+    restored.applyLaunchConfigJson(rec.launchConfigToJson());
+    QCOMPARE(restored.gamescopeState, 1);
+    QVERIFY(restored.gamescope == rec.gamescope);
+
+    // 2. AppSettings global Gamescope default is false by default & persists cleanly
+    AppSettings settings;
+    QCOMPARE(settings.gamescopeDefault(), false);
+    settings.setGamescopeDefault(true);
+    QVariantMap customGlobal = settings.defaultGamescopeConfig();
+    customGlobal[QStringLiteral("windowMode")] = QStringLiteral("borderless");
+    customGlobal[QStringLiteral("fpsLimit")] = 60;
+    settings.setDefaultGamescopeConfig(customGlobal);
+
+    AppSettings reloadedSettings;
+    QCOMPARE(reloadedSettings.gamescopeDefault(), true);
+    QCOMPARE(reloadedSettings.defaultGamescopeConfig().value(QStringLiteral("windowMode")).toString(),
+             QStringLiteral("borderless"));
+    QCOMPARE(reloadedSettings.defaultGamescopeConfig().value(QStringLiteral("fpsLimit")).toInt(), 60);
+
+    reloadedSettings.resetDefaultGamescopeConfig();
+    QCOMPARE(reloadedSettings.defaultGamescopeConfig().value(QStringLiteral("windowMode")).toString(),
+             QStringLiteral("fullscreen"));
+    settings.setGamescopeDefault(false);
+
+    // 3. Create deterministic mock executables in temporary bin dir
+    const QString mockBinDir = tmpDir.filePath(QStringLiteral("mock_bin"));
+    QVERIFY(QDir().mkpath(mockBinDir));
+    auto makeExec = [&](const QString& name) -> QString {
+      const QString p = mockBinDir + QLatin1Char('/') + name;
+      QFile f(p);
+      if (!f.open(QIODevice::WriteOnly)) return QString();
+      f.write("#!/bin/sh\nexit 0\n");
+      f.close();
+      if (!QFile::setPermissions(p, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner |
+                                        QFile::ReadGroup | QFile::ExeGroup)) {
+        return QString();
+      }
+      return p;
+    };
+    const QString mockGamescope = makeExec(QStringLiteral("gamescope"));
+    const QString mockMangohud = makeExec(QStringLiteral("mangohud"));
+    const QString mockGamemode = makeExec(QStringLiteral("gamemoderun"));
+    const QString nativeGameBin = makeExec(QStringLiteral("native_game"));
+    QVERIFY(!mockGamescope.isEmpty());
+    QVERIFY(!mockMangohud.isEmpty());
+    QVERIFY(!mockGamemode.isEmpty());
+    QVERIFY(!nativeGameBin.isEmpty());
+
+    qputenv("PATH", mockBinDir.toUtf8() + ":" + oldPath);
+
+    DatabaseManager db(tmpDir.filePath(QStringLiteral("gs.db")));
+    QVERIFY(db.initialize());
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    ControllerManager ctrlMgr(&db, &settings);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    SteamGridDbService sgdb(&settings, &dl);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+
+    // 4. DiagnosticsManager reports gamescope availability
+    QVERIFY(diagMgr.gamescopeAvailable());
+    bool foundGsCheck = false;
+    for (const QVariant& item : diagMgr.systemChecks()) {
+      const QVariantMap m = item.toMap();
+      if (m.value(QStringLiteral("name")).toString().contains(QStringLiteral("Gamescope"), Qt::CaseInsensitive)) {
+        foundGsCheck = true;
+        QCOMPARE(m.value(QStringLiteral("ok")).toBool(), true);
+        QVERIFY(m.value(QStringLiteral("detail")).toString().contains(mockGamescope));
+      }
+    }
+    QVERIFY(foundGsCheck);
+
+    // 5. GameManager::updateGameDetails persists ONLY Gamescope changes
+    const QString winGameId = gm.addGame(QStringLiteral("Proton Title"), QStringLiteral("/games/win.exe"));
+    QVERIFY(!winGameId.isEmpty());
+    QVariantMap gsMap;
+    gsMap[QStringLiteral("inheritGlobal")] = false;
+    gsMap[QStringLiteral("windowMode")] = QStringLiteral("fullscreen");
+    gsMap[QStringLiteral("outputWidth")] = 1920;
+    gsMap[QStringLiteral("outputHeight")] = 1080;
+    gsMap[QStringLiteral("internalWidth")] = 1280;
+    gsMap[QStringLiteral("internalHeight")] = 720;
+    gsMap[QStringLiteral("filter")] = QStringLiteral("fsr");
+    gsMap[QStringLiteral("fsrSharpness")] = 3;
+    gsMap[QStringLiteral("scaler")] = QStringLiteral("integer");
+    gsMap[QStringLiteral("fpsLimit")] = 60;
+    gsMap[QStringLiteral("unfocusedFpsLimit")] = 15;
+    gsMap[QStringLiteral("adaptiveSync")] = true;
+    gsMap[QStringLiteral("hdrEnabled")] = true;
+    gsMap[QStringLiteral("forceGrabCursor")] = true;
+    gsMap[QStringLiteral("mouseSensitivity")] = 1.4;
+    gsMap[QStringLiteral("mangoapp")] = true;
+    gsMap[QStringLiteral("backend")] = QStringLiteral("wayland");
+    gsMap[QStringLiteral("exposeWayland")] = true;
+    gsMap[QStringLiteral("extraArgs")] = QStringLiteral("--rt -O \"DP-1\"");
+
+    QVERIFY(gm.updateGameDetails(winGameId, QVariantMap{
+        {QStringLiteral("gamescopeState"), 1},
+        {QStringLiteral("gamescope"), gsMap},
+        {QStringLiteral("mangohudState"), 1},
+        {QStringLiteral("gamemodeState"), 1},
+        {QStringLiteral("virtualDesktop"), true}
+    }));
+
+    auto winGameOpt = db.getGame(winGameId);
+    QVERIFY(winGameOpt.has_value());
+    QCOMPARE(winGameOpt->gamescopeState, 1);
+    QCOMPARE(winGameOpt->gamescope.inheritGlobal, false);
+    QCOMPARE(winGameOpt->gamescope.filter, QStringLiteral("fsr"));
+    QCOMPARE(winGameOpt->gamescope.fsrSharpness, 3);
+    QCOMPARE(winGameOpt->gamescope.hdrEnabled, true);
+
+    // 6. LaunchPipeline Wine/Proton plan with Gamescope + MangoApp + GameMode + HDR
+    RunnerRecord protonRunner;
+    protonRunner.id = QStringLiteral("proton-ge");
+    protonRunner.name = QStringLiteral("GE-Proton");
+    protonRunner.type = QStringLiteral("proton-ge");
+    protonRunner.binaryPath = QStringLiteral("/opt/proton-ge/proton");
+    PrefixRecord prefix;
+    prefix.id = QStringLiteral("pfx-1");
+    prefix.path = tmpDir.filePath(QStringLiteral("pfx"));
+    prefix.arch = QStringLiteral("win64");
+
+    const LaunchPlan gsPlan = pipeline.buildLaunchPlan(*winGameOpt, protonRunner, prefix);
+    QVERIFY(gsPlan.usesGamescope);
+    QCOMPARE(gsPlan.program, mockGamemode);
+    QCOMPARE(gsPlan.environment.value(QStringLiteral("DXVK_HDR")), QStringLiteral("1"));
+    QVERIFY(!gsPlan.environment.contains(QStringLiteral("MANGOHUD"))); // --mangoapp replaces MANGOHUD=1
+
+    const int gsIdx = gsPlan.arguments.indexOf(mockGamescope);
+    const int sepIdx = gsPlan.arguments.indexOf(QStringLiteral("--"));
+    const int protonIdx = gsPlan.arguments.indexOf(protonRunner.binaryPath);
+    QVERIFY(gsIdx >= 0);
+    QVERIFY(sepIdx > gsIdx);
+    QVERIFY(protonIdx == sepIdx + 1);
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("--mangoapp")));
+    QVERIFY(!gsPlan.arguments.contains(mockMangohud));
+    QVERIFY(!gsPlan.arguments.contains(QStringLiteral("explorer"))); // Virtual desktop suppressed under Gamescope
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("-f")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("-W")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("1920")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("-w")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("1280")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("-F")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("fsr")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("--fsr-sharpness")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("-S")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("integer")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("-r")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("60")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("-o")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("15")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("--adaptive-sync")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("--hdr-enabled")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("--force-grab-cursor")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("-s")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("1.4")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("--backend")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("wayland")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("--expose-wayland")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("--rt")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("-O")));
+    QVERIFY(gsPlan.arguments.contains(QStringLiteral("DP-1")));
+
+    // 7. Disabling mangoapp falls back to external mangohud after '--'
+    GameRecord extMangoGame = *winGameOpt;
+    extMangoGame.gamescope.mangoapp = false;
+    const LaunchPlan extPlan = pipeline.buildLaunchPlan(extMangoGame, protonRunner, prefix);
+    QCOMPARE(extPlan.environment.value(QStringLiteral("MANGOHUD")), QStringLiteral("1"));
+    QVERIFY(!extPlan.arguments.contains(QStringLiteral("--mangoapp")));
+    const int extSep = extPlan.arguments.indexOf(QStringLiteral("--"));
+    const int extMango = extPlan.arguments.indexOf(mockMangohud);
+    const int extProton = extPlan.arguments.indexOf(protonRunner.binaryPath);
+    QVERIFY(extSep >= 0);
+    QCOMPARE(extMango, extSep + 1);
+    QCOMPARE(extProton, extSep + 2);
+
+    // 7b. Bare '--' in extraArgs is stripped while surrounding flags stay intact
+    GameRecord sepStripGame = *winGameOpt;
+    sepStripGame.gamescope.extraArgs = QStringLiteral("--rt -- -O \"DP-1\"");
+    const LaunchPlan sepStripPlan = pipeline.buildLaunchPlan(sepStripGame, protonRunner, prefix);
+    QCOMPARE(sepStripPlan.arguments.count(QStringLiteral("--")), 1);
+    const int strippedSepIdx = sepStripPlan.arguments.indexOf(QStringLiteral("--"));
+    QVERIFY(strippedSepIdx > sepStripPlan.arguments.indexOf(QStringLiteral("--rt")));
+    QVERIFY(strippedSepIdx > sepStripPlan.arguments.indexOf(QStringLiteral("-O")));
+    QVERIFY(strippedSepIdx > sepStripPlan.arguments.indexOf(QStringLiteral("DP-1")));
+
+    // 8. Native Linux game inheriting global Gamescope default (-1 & inheritGlobal=true)
+    const QString nativeId = gm.addNativeGame(QStringLiteral("Native Game"), nativeGameBin, tmpDir.path(), QStringLiteral("--test-flag"));
+    QVERIFY(!nativeId.isEmpty());
+    auto nativeOpt = db.getGame(nativeId);
+    QVERIFY(nativeOpt.has_value());
+
+    settings.setGamescopeDefault(false);
+    const LaunchPlan nativeOff = pipeline.buildNativeLaunchPlan(*nativeOpt);
+    QVERIFY(!nativeOff.usesGamescope);
+    QCOMPARE(nativeOff.program, nativeGameBin);
+
+    settings.setGamescopeDefault(true);
+    QVariantMap borderlessDef = settings.defaultGamescopeConfig();
+    borderlessDef[QStringLiteral("windowMode")] = QStringLiteral("borderless");
+    settings.setDefaultGamescopeConfig(borderlessDef);
+    const LaunchPlan nativeOn = pipeline.buildNativeLaunchPlan(*nativeOpt);
+    QVERIFY(nativeOn.usesGamescope);
+    QCOMPARE(nativeOn.program, mockGamescope);
+    QVERIFY(nativeOn.arguments.contains(QStringLiteral("-b")));
+    QVERIFY(nativeOn.arguments.contains(nativeGameBin));
+    QVERIFY(nativeOn.arguments.contains(QStringLiteral("--test-flag")));
+
+    // 9. Missing gamescope binary fails clearly via launchGame()
+    qputenv("PATH", "");
+    diagMgr.runSystemDiagnostics();
+    QVERIFY(!diagMgr.gamescopeAvailable());
+
+    QSignalSpy failedSpy(&pipeline, &LaunchPipeline::gameLaunchFailed);
+    QVERIFY(!pipeline.launchGame(nativeId));
+    QCOMPARE(failedSpy.count(), 1);
+    QVERIFY(failedSpy.at(0).at(1).toString().contains(QStringLiteral("gamescope"), Qt::CaseInsensitive));
+  }
+
+  void testGamescopeQmlUiAndNavigation() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+
+    QSettings rawSettings(QStringLiteral("Tsuki"), QStringLiteral("TsukiLauncher"));
+    const bool hadGsDefault = rawSettings.contains(QStringLiteral("performance/gamescope"));
+    const QVariant oldGsDefault = rawSettings.value(QStringLiteral("performance/gamescope"));
+    const bool hadGsCfg = rawSettings.contains(QStringLiteral("performance/gamescopeConfig"));
+    const QVariant oldGsCfg = rawSettings.value(QStringLiteral("performance/gamescopeConfig"));
+    auto restore = qScopeGuard([&]() {
+      if (hadGsDefault) rawSettings.setValue(QStringLiteral("performance/gamescope"), oldGsDefault);
+      else rawSettings.remove(QStringLiteral("performance/gamescope"));
+      if (hadGsCfg) rawSettings.setValue(QStringLiteral("performance/gamescopeConfig"), oldGsCfg);
+      else rawSettings.remove(QStringLiteral("performance/gamescopeConfig"));
+    });
+    rawSettings.remove(QStringLiteral("performance/gamescope"));
+    rawSettings.remove(QStringLiteral("performance/gamescopeConfig"));
+
+    DatabaseManager db(tmpDir.filePath(QStringLiteral("gs_qml.db")));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dl);
+    ControllerManager ctrlMgr(&db, &settings);
+    SteamGridDbService sgdb(&settings, &dl);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+
+    const QString gameId = gm.addGame(QStringLiteral("Hollow Knight"), QStringLiteral("/games/hk.exe"));
+    QVERIFY(!gameId.isEmpty());
+
+    UiController uiCtrl(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
+                        &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm);
+
+    QQuickWindow win;
+    win.resize(1280, 820);
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"), &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"), &uiCtrl);
+
+    // Load SettingsPage and confirm Gamescope rows are present and indexed cleanly
+    QQmlComponent settingsComp(
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/SettingsPage.qml")));
+    QVERIFY2(settingsComp.errors().isEmpty(), qPrintable(settingsComp.errorString()));
+    QScopedPointer<QObject> settingsObj(settingsComp.create());
+    QVERIFY(settingsObj != nullptr);
+    QVERIFY(settingsObj->findChild<QQuickItem *>(QStringLiteral("gamescopeDefaultRow")) != nullptr);
+    QVERIFY(settingsObj->findChild<QQuickItem *>(QStringLiteral("gamescopeDefaultsConfigRow")) != nullptr);
+
+    // Load GameDetailPage and switch to Tab 2 (Performance & Controller)
+    QQmlComponent detailComp(
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
+    QVERIFY2(detailComp.errors().isEmpty(), qPrintable(detailComp.errorString()));
+    QScopedPointer<QObject> detailObj(detailComp.createWithInitialProperties(
+        {{QStringLiteral("gameId"), gameId}}));
+    QVERIFY(detailObj != nullptr);
+    auto *detailItem = qobject_cast<QQuickItem *>(detailObj.get());
+    QVERIFY(detailItem != nullptr);
+    detailItem->setParentItem(win.contentItem());
+    detailItem->setSize(QSizeF(1280, 820));
+
+    win.show();
+    QCoreApplication::processEvents();
+
+    detailObj->setProperty("activeTab", 2);
+    QCoreApplication::processEvents();
+
+    auto *gsToggle = detailItem->findChild<QQuickItem *>(QStringLiteral("gamescopeToggle"));
+    auto *gsCustomizeBtn = detailItem->findChild<QQuickItem *>(QStringLiteral("gamescopeCustomizeBtn"));
+    auto *gsDialog = detailObj->findChild<QObject *>(QStringLiteral("gamescopeDialog"));
+    QVERIFY(gsToggle != nullptr);
+    QVERIFY(gsCustomizeBtn != nullptr);
+    QVERIFY(gsDialog != nullptr);
+
+    // Disabled by default -> Customize button stays hidden
+    QCOMPARE(gsToggle->property("checked").toBool(), false);
+    QCOMPARE(gsCustomizeBtn->isVisible(), false);
+
+    // Activate keyboard nav & toggle Gamescope ON -> Customize button appears & DB persists
+    uiCtrl.setKeyboardNavActive(true);
+    gsToggle->forceActiveFocus();
+    QCoreApplication::processEvents();
+    QTest::keyClick(&win, Qt::Key_Return);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(gsToggle->property("checked").toBool(), true);
+    QCOMPARE(gsCustomizeBtn->isVisible(), true);
+    QCOMPARE(db.getGame(gameId)->gamescopeState, 1);
+
+    // Left D-Pad/arrow moves cleanly onto Customize button; Return opens GamescopeDialog
+    QTest::keyClick(&win, Qt::Key_Left);
+    QCoreApplication::processEvents();
+    QCOMPARE(win.activeFocusItem(), gsCustomizeBtn);
+
+    QTest::keyClick(&win, Qt::Key_Return);
+    QCoreApplication::processEvents();
+    QTRY_COMPARE(gsDialog->property("visible").toBool(), true);
+
+    QVariant popupOpenVar;
+    QVERIFY(QMetaObject::invokeMethod(detailObj.get(), "isAnyPopupOpen",
+                                      Q_RETURN_ARG(QVariant, popupOpenVar)));
+    QCOMPARE(popupOpenVar.toBool(), true);
+
+    // Verify dialog styling, icons, right-aligned options, and keyboard/gamepad nav inside dialog
+    auto *dialogBg = gsDialog->property("background").value<QQuickItem *>();
+    QVERIFY(dialogBg != nullptr);
+    QCOMPARE(dialogBg->objectName(), QStringLiteral("gamescopeDialogBg"));
+    QCOMPARE(dialogBg->property("radius").toDouble(), 12.0);
+
+    auto *presetBtn = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopePresetBorderlessBtn"));
+    auto *windowSeg = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeWindowModeSeg"));
+    auto *outCombo = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeOutputResCombo"));
+    auto *outWField = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeOutputWField"));
+    auto *sharpSlider = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeSharpnessSlider"));
+    auto *adaptiveToggle = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeAdaptiveSyncToggle"));
+    auto *cancelBtn = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeCancelBtn"));
+    auto *saveBtn = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeSaveBtn"));
+    QVERIFY(presetBtn != nullptr);
+    QVERIFY(windowSeg != nullptr);
+    QVERIFY(outCombo != nullptr);
+    QVERIFY(outWField != nullptr);
+    QVERIFY(sharpSlider != nullptr);
+    QVERIFY(adaptiveToggle != nullptr);
+    QVERIFY(cancelBtn != nullptr);
+    QVERIFY(saveBtn != nullptr);
+
+    const bool initiallyConnected = ctrlMgr.isConnected();
+    QCOMPARE(cancelBtn->property("iconSource").toString(),
+             initiallyConnected ? QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-right.svg")
+                                : QString());
+    QCOMPARE(saveBtn->property("iconSource").toString(),
+             initiallyConnected ? QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-up.svg")
+                                : QStringLiteral("qrc:/tsuki_app/icons/actions/check.svg"));
+
+    const int virtualJoyIdx = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, 2, 11, 1);
+    bool virtualAttached = (virtualJoyIdx >= 0);
+    auto detachVirtual = qScopeGuard([&]() {
+      if (virtualAttached) {
+        SDL_JoystickDetachVirtual(virtualJoyIdx);
+        ctrlMgr.refreshControllers();
+        QCoreApplication::processEvents();
+      }
+    });
+    if (virtualAttached) {
+      ctrlMgr.refreshControllers();
+      QCoreApplication::processEvents();
+      QVERIFY(ctrlMgr.isConnected());
+      QCOMPARE(cancelBtn->property("iconSource").toString(),
+               QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-right.svg"));
+      QCOMPARE(saveBtn->property("iconSource").toString(),
+               QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-up.svg"));
+
+      if (!initiallyConnected) {
+        SDL_JoystickDetachVirtual(virtualJoyIdx);
+        virtualAttached = false;
+        ctrlMgr.refreshControllers();
+        QCoreApplication::processEvents();
+        QVERIFY(!ctrlMgr.isConnected());
+        QCOMPARE(cancelBtn->property("iconSource").toString(), QString());
+        QCOMPARE(saveBtn->property("iconSource").toString(),
+                 QStringLiteral("qrc:/tsuki_app/icons/actions/check.svg"));
+      }
+    }
+
+    QCoreApplication::processEvents();
+    auto verifyRightAlignedInCol = [](QQuickItem *ctrl, const char *name) {
+      auto *row = ctrl ? ctrl->parentItem() : nullptr;
+      auto *col = row ? row->parentItem() : nullptr;
+      QVERIFY2(row != nullptr && col != nullptr, name);
+      QVERIFY2(col->width() > 300.0, name);
+      QVERIFY2(qAbs(row->width() - col->width()) < 1.0, name);
+      QVERIFY2(qAbs((ctrl->x() + ctrl->width()) - row->width()) < 1.0, name);
+    };
+    verifyRightAlignedInCol(outCombo, "gamescopeOutputResCombo");
+    verifyRightAlignedInCol(adaptiveToggle, "gamescopeAdaptiveSyncToggle");
+
+    QTRY_COMPARE(win.activeFocusItem(), presetBtn);
+
+    // Navigate Down onto M3SegmentedButton (Window Mode) & switch to Borderless via Right arrow
+    QTest::keyClick(&win, Qt::Key_Down);
+    QCoreApplication::processEvents();
+    QCOMPARE(win.activeFocusItem(), windowSeg);
+    QTest::keyClick(&win, Qt::Key_Right);
+    QCoreApplication::processEvents();
+    QCOMPARE(gsDialog->property("windowMode").toString(), QStringLiteral("borderless"));
+
+    // Navigate Down onto Output Resolution combo -> open popup -> Esc closes popup NOT dialog
+    QTest::keyClick(&win, Qt::Key_Down);
+    QCoreApplication::processEvents();
+    QCOMPARE(win.activeFocusItem(), outCombo);
+
+    QTest::keyClick(&win, Qt::Key_Return);
+    QCoreApplication::processEvents();
+    auto *outPopup = outCombo->property("popup").value<QObject *>();
+    QVERIFY(outPopup != nullptr);
+    QTRY_COMPARE(outPopup->property("visible").toBool(), true);
+    QTest::keyClick(&win, Qt::Key_Escape);
+    QCoreApplication::processEvents();
+    QTRY_COMPARE(outPopup->property("visible").toBool(), false);
+    QCOMPARE(gsDialog->property("visible").toBool(), true);
+
+    // Switching presets then selecting "Custom…" keeps custom resolution fields synced (no stale text)
+    outCombo->setProperty("selectedIndex", 3);
+    QMetaObject::invokeMethod(outCombo, "selected", Q_ARG(int, 3));
+    const int preset3W = gsDialog->property("outputWidth").toInt();
+    QVERIFY(preset3W > 0);
+    outCombo->setProperty("selectedIndex", 7);
+    QMetaObject::invokeMethod(outCombo, "selected", Q_ARG(int, 7));
+    QCoreApplication::processEvents();
+    QCOMPARE(outWField->property("text").toString(), QString::number(preset3W));
+
+    outCombo->setProperty("selectedIndex", 1);
+    QMetaObject::invokeMethod(outCombo, "selected", Q_ARG(int, 1));
+    const int preset1W = gsDialog->property("outputWidth").toInt();
+    QVERIFY(preset1W > 0 && preset1W != preset3W);
+    outCombo->setProperty("selectedIndex", 7);
+    QMetaObject::invokeMethod(outCombo, "selected", Q_ARG(int, 7));
+    QCoreApplication::processEvents();
+    QCOMPARE(outWField->property("text").toString(), QString::number(preset1W));
+
+    QMetaObject::invokeMethod(outCombo, "forceActiveFocus");
+    QCoreApplication::processEvents();
+    QTest::keyClick(&win, Qt::Key_Down);
+    QCoreApplication::processEvents();
+    QTRY_COMPARE(win.activeFocusItem(), outWField);
+
+    // Apply 720p->1080p FSR preset, verify sharpness slider alignment, Left/Right + Down exits slider, then Save immediately writes to database
+    QVERIFY(QMetaObject::invokeMethod(gsDialog, "applyPreset", Q_ARG(QVariant, QVariant(QStringLiteral("fsr720")))));
+    QCoreApplication::processEvents();
+    verifyRightAlignedInCol(sharpSlider, "gamescopeSharpnessSlider");
+    QObject *innerSlider = sharpSlider->property("slider").value<QObject *>();
+    QVERIFY(innerSlider != nullptr);
+    qobject_cast<QQuickItem *>(innerSlider)->forceActiveFocus();
+    QCoreApplication::processEvents();
+    QCOMPARE(gsDialog->property("fsrSharpness").toInt(), 3);
+    QTest::keyClick(&win, Qt::Key_Right);
+    QCoreApplication::processEvents();
+    QCOMPARE(gsDialog->property("fsrSharpness").toInt(), 4);
+    QTest::keyClick(&win, Qt::Key_Left);
+    QCoreApplication::processEvents();
+    QCOMPARE(gsDialog->property("fsrSharpness").toInt(), 3);
+    QTest::keyClick(&win, Qt::Key_Down);
+    QCoreApplication::processEvents();
+    QVERIFY(win.activeFocusItem() != innerSlider);
+
+    saveBtn->forceActiveFocus();
+    QCoreApplication::processEvents();
+    QTest::keyClick(&win, Qt::Key_Return);
+    QCoreApplication::processEvents();
+
+    QTRY_COMPARE(gsDialog->property("visible").toBool(), false);
+    auto savedOpt = db.getGame(gameId);
+    QVERIFY(savedOpt.has_value());
+    QCOMPARE(savedOpt->gamescopeState, 1);
+    QCOMPARE(savedOpt->gamescope.inheritGlobal, false);
+    QCOMPARE(savedOpt->gamescope.outputWidth, 1920);
+    QCOMPARE(savedOpt->gamescope.outputHeight, 1080);
+    QCOMPARE(savedOpt->gamescope.internalWidth, 1280);
+    QCOMPARE(savedOpt->gamescope.internalHeight, 720);
+    QCOMPARE(savedOpt->gamescope.filter, QStringLiteral("fsr"));
+    QCOMPARE(savedOpt->gamescope.fsrSharpness, 3);
+
+    // Re-open dialog and verify gamepad Y button saves and closes via searchActionRequested
+    gsCustomizeBtn->forceActiveFocus();
+    QCoreApplication::processEvents();
+    QTest::keyClick(&win, Qt::Key_Return);
+    QCoreApplication::processEvents();
+    QTRY_COMPARE(gsDialog->property("opened").toBool(), true);
+    gsDialog->setProperty("hdrEnabled", true);
+    QCoreApplication::processEvents();
+    ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_Y);
+    QCoreApplication::processEvents();
+    QTRY_COMPARE(gsDialog->property("visible").toBool(), false);
+    savedOpt = db.getGame(gameId);
+    QVERIFY(savedOpt.has_value());
+    QCOMPARE(savedOpt->gamescope.hdrEnabled, true);
   }
 };
 

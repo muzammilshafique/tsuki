@@ -595,6 +595,13 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         if (updates.contains(QStringLiteral("gamemodeState")))
           g.gamemodeState =
               updates.value(QStringLiteral("gamemodeState")).toInt();
+        if (updates.contains(QStringLiteral("gamescopeState")))
+          g.gamescopeState =
+              updates.value(QStringLiteral("gamescopeState")).toInt();
+        if (updates.contains(QStringLiteral("gamescope"))) {
+          g.gamescope = GamescopeConfig::fromVariantMap(
+              updates.value(QStringLiteral("gamescope")).toMap());
+        }
         if (updates.contains(QStringLiteral("xboxEmulationState")))
           g.xboxEmulationState =
               updates.value(QStringLiteral("xboxEmulationState")).toInt();
@@ -625,6 +632,8 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
             g.processPriority == orig.processPriority &&
             g.mangohudState == orig.mangohudState &&
             g.gamemodeState == orig.gamemodeState &&
+            g.gamescopeState == orig.gamescopeState &&
+            g.gamescope == orig.gamescope &&
             g.xboxEmulationState == orig.xboxEmulationState &&
             g.environmentVariables == orig.environmentVariables &&
             g.dllOverrides == orig.dllOverrides) {

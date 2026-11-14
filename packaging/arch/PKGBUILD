@@ -1,6 +1,6 @@
 # Maintainer: Muzammil Shafique <muzu@duck.com>
 pkgname=tsuki
-pkgver=1.0.0
+pkgver=0.1.0
 _rawver="${pkgver}"
 pkgrel=1
 pkgdesc="Native Linux game launcher for Wine, Proton, and native titles"

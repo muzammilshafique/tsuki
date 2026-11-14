@@ -109,7 +109,9 @@ Item {
         if (popup.visible) {
             event.accepted = true
             handleUp()
-        } else if (!combo.upDownNavigatesFocus && combo.selectedIndex > 0) {
+        } else if (combo.upDownNavigatesFocus) {
+            event.accepted = false
+        } else if (combo.selectedIndex > 0) {
             event.accepted = true
             combo.selectedIndex--
             combo.selected(combo.selectedIndex)
@@ -119,7 +121,9 @@ Item {
         if (popup.visible) {
             event.accepted = true
             handleDown()
-        } else if (!combo.upDownNavigatesFocus && combo.comboModel && combo.selectedIndex < combo.comboModel.length - 1) {
+        } else if (combo.upDownNavigatesFocus) {
+            event.accepted = false
+        } else if (combo.comboModel && combo.selectedIndex < combo.comboModel.length - 1) {
             event.accepted = true
             combo.selectedIndex++
             combo.selected(combo.selectedIndex)
@@ -129,12 +133,16 @@ Item {
         if (popup.visible) {
             event.accepted = true
             popup.close()
+        } else {
+            event.accepted = false
         }
     }
     Keys.onPressed: (event) => {
         if (event.key === Qt.Key_Backspace && popup.visible) {
             event.accepted = true
             popup.close()
+        } else if (!popup.visible) {
+            event.accepted = false
         }
     }
 

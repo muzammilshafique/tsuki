@@ -5,6 +5,7 @@
         <file alias="qml/components/GamepadPrompt.qml">../src/qml/components/GamepadPrompt.qml</file>
         <file alias="qml/components/NavigationHudBar.qml">../src/qml/components/NavigationHudBar.qml</file>
         <file alias="qml/components/AddGameDialog.qml">../src/qml/components/AddGameDialog.qml</file>
+        <file alias="qml/components/GamescopeDialog.qml">../src/qml/components/GamescopeDialog.qml</file>
         <file alias="qml/components/WinetricksModal.qml">../src/qml/components/WinetricksModal.qml</file>
         <file alias="qml/components/M3Button.qml">../src/qml/components/M3Button.qml</file>
         <file alias="qml/components/M3TextField.qml">../src/qml/components/M3TextField.qml</file>

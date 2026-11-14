@@ -22,6 +22,7 @@ struct LaunchPlan {
     QString prefixPath;
     QString runnerName;
     bool useXboxEmulation = false;
+    bool usesGamescope = false;
 };
 
 class LaunchPipeline : public QObject {
@@ -44,6 +45,12 @@ public:
     Q_INVOKABLE bool isGameRunning(const QString& gameId) const { return m_running.contains(gameId); }
 
     // Build launch plan (testable without spawning processes)
+    bool isGamescopeEnabled(const GameRecord& game) const;
+    GamescopeConfig resolveEffectiveGamescopeConfig(const GameRecord& game) const;
+    static QStringList buildGamescopeArguments(const GamescopeConfig& cfg, bool useMangohud);
+    Q_INVOKABLE QString formatGamescopePreview(const QVariantMap& cfgMap,
+                                               bool useMangohud,
+                                               const QString& targetCommand = QString()) const;
     LaunchPlan buildLaunchPlan(const GameRecord& game,
                                const RunnerRecord& runner,
                                const PrefixRecord& prefix) const;
@@ -66,10 +73,14 @@ private:
         QString prefixPath;
         QString runnerId;
         QString postExitScript;
+        QString sessionToken;
         qint64 startTimeEpoch = 0;
+        qint64 rootPid = 0;
         QProcess* process = nullptr;
         bool isNative = false;
         bool usesXboxEmulation = false;
+        bool usesGamescope = false;
+        bool stopRequested = false;
         QString workingDirectory;
         QProcessEnvironment environment;
     };
@@ -84,6 +95,7 @@ private:
     QMap<QString, RunningSession*> m_running;
 
     void executeScript(const QString& scriptPathOrCmd, const QString& workingDir, const QProcessEnvironment& env, const QString& gameId);
+    void terminateGameSession(const QString& gameId, bool waitForExit);
     void handleSessionTermination(const QString& gameId, int exitCode, bool isFailedToStart, const QString& errorString);
     void updateEmulationLifecycle();
 };

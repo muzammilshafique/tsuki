@@ -4,8 +4,8 @@ set -euo pipefail
 # Sync packaging/aur/tsuki-bin/{PKGBUILD,.SRCINFO} with a GitHub release.
 # Usage:
 #   ./packaging/aur/update-bin.sh                  # Fetch latest GitHub release
-#   ./packaging/aur/update-bin.sh v1.0.0           # Fetch specific release tag
-#   ./packaging/aur/update-bin.sh v1.0.0 <sha256>  # Update offline with known checksum
+#   ./packaging/aur/update-bin.sh v0.1.0           # Fetch specific release tag
+#   ./packaging/aur/update-bin.sh v0.1.0 <sha256>  # Update offline with known checksum
 
 REPO="muzammilshafique/tsuki"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

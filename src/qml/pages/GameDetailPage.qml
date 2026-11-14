@@ -11,6 +11,47 @@ Page {
     property var gameData: ({})
     property int activeTab: 0
     property bool isSaving: false
+    property int gamescopeStateDraft: -1
+    property var gamescopeDraft: ({})
+
+    function formatGamescopeSummary() {
+        let cfg = root.gamescopeDraft || ({})
+        if (cfg.inheritGlobal !== false) {
+            cfg = (appSettings && appSettings.defaultGamescopeConfig) ? appSettings.defaultGamescopeConfig : ({})
+        }
+        let parts = []
+        if (cfg.windowMode === "borderless") parts.push("Borderless")
+        else if (cfg.windowMode === "windowed") parts.push("Windowed")
+        else parts.push("Fullscreen")
+
+        let hasInt = Number(cfg.internalWidth) > 0 && Number(cfg.internalHeight) > 0
+        let hasOut = Number(cfg.outputWidth) > 0 && Number(cfg.outputHeight) > 0
+        if (hasInt && hasOut) {
+            parts.push(cfg.internalWidth + "×" + cfg.internalHeight + " → " + cfg.outputWidth + "×" + cfg.outputHeight)
+        } else if (hasOut) {
+            parts.push(cfg.outputWidth + "×" + cfg.outputHeight)
+        } else if (hasInt) {
+            parts.push(cfg.internalWidth + "×" + cfg.internalHeight + " render")
+        }
+
+        if (cfg.filter && cfg.filter !== "auto") {
+            parts.push(String(cfg.filter).toUpperCase())
+        }
+        if (Number(cfg.fpsLimit) > 0) {
+            parts.push(cfg.fpsLimit + " FPS")
+        }
+        if (cfg.hdrEnabled) {
+            parts.push("HDR")
+        }
+        if (cfg.adaptiveSync) {
+            parts.push("VRR")
+        }
+        let text = parts.join(" • ")
+        if (!root.gamescopeDraft || root.gamescopeDraft.inheritGlobal !== false) {
+            return "Global Default (" + text + ")"
+        }
+        return text
+    }
 
     readonly property bool isNative: root.gameData.isNative === true
 
@@ -58,7 +99,7 @@ Page {
     }
 
     function isAnyPopupOpen() {
-        if (actionsPopup.visible || artworkUrlDialog.visible || removeGameDialog.visible) return true
+        if (actionsPopup.visible || artworkUrlDialog.visible || removeGameDialog.visible || gamescopeDialog.visible) return true
         if (typeof detailRunnerCombo !== "undefined" && detailRunnerCombo.popup.visible) return true
         if (typeof detailPrefixCombo !== "undefined" && detailPrefixCombo.popup.visible) return true
         if (typeof hudCombo !== "undefined" && hudCombo.popup.visible) return true
@@ -115,6 +156,7 @@ Page {
         } else if (root.activeTab === 2) {
             rows.push([mangohudToggle])
             rows.push([gamemodeToggle])
+            rows.push(gamescopeToggle.checked ? [gamescopeCustomizeBtn, gamescopeToggle] : [gamescopeToggle])
             rows.push([affinityField])
             rows.push([priorityField])
             rows.push([detailXboxToggle])
@@ -285,6 +327,8 @@ Page {
     function reloadGame() {
         if (gameId.length > 0) {
             gameData = uiController.gameManager.getGameMap(gameId)
+            gamescopeStateDraft = (gameData.gamescopeState !== undefined) ? gameData.gamescopeState : -1
+            gamescopeDraft = gameData.gamescope || ({})
             uiController.diagnosticsManager.selectedLogGameId = gameId
             if (typeof detailXboxToggle !== "undefined" && detailXboxToggle) {
                 detailXboxToggle.checked = (root.gameData.xboxEmulationState === 1)
@@ -433,6 +477,8 @@ Page {
             virtualDesktopResolution: (!root.isNative && typeof vdesktopResField !== "undefined" && vdesktopResField && vdesktopResField.text.length > 0) ? vdesktopResField.text : (root.gameData.virtualDesktopResolution || "1920x1080"),
             mangohudState: mangohudVal,
             gamemodeState: gamemodeVal,
+            gamescopeState: root.gamescopeStateDraft,
+            gamescope: root.gamescopeDraft || ({}),
             cpuAffinity: (typeof affinityField !== "undefined" && affinityField) ? affinityField.text.trim() : (root.gameData.cpuAffinity || ""),
             processPriority: (typeof priorityField !== "undefined" && priorityField) ? (Number(priorityField.text) || 0) : (root.gameData.processPriority || 0),
             xboxEmulationState: xboxEmuVal,
@@ -2124,6 +2170,76 @@ Page {
 
                                 Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
 
+                                // Row 3: Gamescope Micro-Compositor (Customize Button + Toggle)
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.minimumHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        RowLayout {
+                                            spacing: 8
+                                            Label { text: "Gamescope Micro-Compositor"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                            Rectangle {
+                                                visible: gamescopeToggle.checked && Boolean(uiController && uiController.diagnosticsManager && !uiController.diagnosticsManager.gamescopeAvailable)
+                                                implicitWidth: gsWarnLbl.implicitWidth + 12
+                                                implicitHeight: 20
+                                                radius: 10
+                                                color: Qt.rgba(0.96, 0.62, 0.04, 0.16)
+                                                border.color: Qt.rgba(0.96, 0.62, 0.04, 0.45)
+                                                Label {
+                                                    id: gsWarnLbl
+                                                    anchors.centerIn: parent
+                                                    text: "Not installed"
+                                                    color: appSettings.isEffectiveDark ? "#fcd34d" : "#92400e"
+                                                    font.pixelSize: 10
+                                                    font.weight: Font.DemiBold
+                                                }
+                                            }
+                                        }
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: gamescopeToggle.checked
+                                                ? ("Active: " + root.formatGamescopeSummary())
+                                                : "Isolates display resolution, FSR/NIS upscaling, FPS cap, VRR, HDR & cursor grab"
+                                            color: gamescopeToggle.checked ? appSettings.accentColor : appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                    RowLayout {
+                                        spacing: 12
+                                        M3Button {
+                                            id: gamescopeCustomizeBtn
+                                            objectName: "gamescopeCustomizeBtn"
+                                            visible: gamescopeToggle.checked
+                                            text: "Customize…"
+                                            iconSource: "qrc:/tsuki_app/icons/actions/settings.svg"
+                                            buttonType: "tonal"
+                                            onClicked: {
+                                                gamescopeDialog.openWithConfig(root.gamescopeDraft, {
+                                                    isGlobal: false,
+                                                    title: root.gameData.title || "",
+                                                    useMangohud: mangohudToggle.checked,
+                                                    targetCommand: root.gameData.title || "<game>"
+                                                })
+                                            }
+                                        }
+                                        Toggle {
+                                            id: gamescopeToggle
+                                            objectName: "gamescopeToggle"
+                                            checked: (root.gamescopeStateDraft === 1) ? true : ((root.gamescopeStateDraft === 0) ? false : appSettings.gamescopeDefault)
+                                            onToggled: (c) => {
+                                                root.gamescopeStateDraft = c ? 1 : 0
+                                                root.saveAllChanges()
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle { Layout.fillWidth: true; height: 1; color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.04) }
+
                                 // Row 3: CPU Core Affinity
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -2796,5 +2912,30 @@ Page {
     RemoveGameDialog {
         id: removeGameDialog
         onGameRemoved: stack.pop()
+    }
+
+    GamescopeDialog {
+        id: gamescopeDialog
+        objectName: "gamescopeDialog"
+        onSaveRequested: (cfgMap) => {
+            root.gamescopeStateDraft = 1
+            root.gamescopeDraft = cfgMap
+            root.saveAllChanges()
+        }
+        onResetToGlobalRequested: {
+            let defMap = Object.assign({}, (appSettings && appSettings.defaultGamescopeConfig) ? appSettings.defaultGamescopeConfig : ({}))
+            defMap.inheritGlobal = true
+            root.gamescopeDraft = defMap
+            root.saveAllChanges()
+        }
+        onClosed: {
+            Qt.callLater(() => {
+                if (typeof gamescopeCustomizeBtn !== "undefined" && gamescopeCustomizeBtn && gamescopeCustomizeBtn.visible) {
+                    gamescopeCustomizeBtn.forceActiveFocus()
+                } else if (typeof gamescopeToggle !== "undefined" && gamescopeToggle) {
+                    gamescopeToggle.forceActiveFocus()
+                }
+            })
+        }
     }
 }

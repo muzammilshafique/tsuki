@@ -1,11 +1,132 @@
 #include "LaunchPipeline.h"
-#include <QFileInfo>
-#include <QDir>
 #include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QHash>
+#include <QPointer>
+#include <QQueue>
+#include <QSet>
 #include <QStandardPaths>
+#include <QTimer>
+#include <QUuid>
 #include <signal.h>
+#include <unistd.h>
 
 namespace Tsuki {
+
+namespace {
+
+/// Collect all same-UID descendant PIDs under rootPid via a single /proc stat pass.
+QList<qint64> collectDescendantPids(qint64 rootPid) {
+    QList<qint64> descendants;
+    if (rootPid <= 1) return descendants;
+
+    const qint64 selfPid = static_cast<qint64>(::getpid());
+    const uint myUid = static_cast<uint>(::getuid());
+    QHash<qint64, QList<qint64>> childrenByParent;
+
+    const QStringList entries = QDir(QStringLiteral("/proc")).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString& name : entries) {
+        bool ok = false;
+        const qint64 pid = name.toLongLong(&ok);
+        if (!ok || pid <= 1 || pid == selfPid) continue;
+
+        const QString statPath = QStringLiteral("/proc/%1/stat").arg(pid);
+        QFileInfo info(statPath);
+        if (!info.exists() || info.ownerId() != myUid) continue;
+
+        QFile f(statPath);
+        if (!f.open(QIODevice::ReadOnly)) continue;
+        const QByteArray data = f.readAll();
+        const int rparen = data.lastIndexOf(')');
+        if (rparen < 0) continue;
+
+        const QList<QByteArray> fields = data.mid(rparen + 1).trimmed().split(' ');
+        if (fields.size() < 2) continue;
+        bool ppidOk = false;
+        const qint64 ppid = fields.at(1).toLongLong(&ppidOk);
+        if (ppidOk && ppid > 1) {
+            childrenByParent[ppid].append(pid);
+        }
+    }
+
+    QSet<qint64> seen;
+    QQueue<qint64> queue;
+    seen.insert(rootPid);
+    queue.enqueue(rootPid);
+    while (!queue.isEmpty()) {
+        const qint64 current = queue.dequeue();
+        const QList<qint64> children = childrenByParent.value(current);
+        for (qint64 child : children) {
+            if (!seen.contains(child)) {
+                seen.insert(child);
+                descendants.append(child);
+                queue.enqueue(child);
+            }
+        }
+    }
+    return descendants;
+}
+
+/// Find same-UID processes carrying TSUKI_SESSION_ID=<sessionToken> (e.g. detached gamescopereaper children).
+QList<qint64> collectTaggedSessionPids(const QString& sessionToken) {
+    QList<qint64> matched;
+    if (sessionToken.isEmpty()) return matched;
+
+    const qint64 selfPid = static_cast<qint64>(::getpid());
+    const uint myUid = static_cast<uint>(::getuid());
+    const QByteArray targetEntry = QByteArray("TSUKI_SESSION_ID=") + sessionToken.toUtf8();
+
+    const QStringList entries = QDir(QStringLiteral("/proc")).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString& name : entries) {
+        bool ok = false;
+        const qint64 pid = name.toLongLong(&ok);
+        if (!ok || pid <= 1 || pid == selfPid) continue;
+
+        const QString envPath = QStringLiteral("/proc/%1/environ").arg(pid);
+        QFileInfo info(envPath);
+        if (!info.exists() || info.ownerId() != myUid) continue;
+
+        QFile f(envPath);
+        if (!f.open(QIODevice::ReadOnly)) continue;
+        const QList<QByteArray> vars = f.readAll().split('\0');
+        if (vars.contains(targetEntry)) {
+            matched.append(pid);
+        }
+    }
+    return matched;
+}
+
+/// Signal the session process group, descendant tree, and any detached session-tagged processes.
+void signalSessionProcesses(qint64 rootPid, const QString& sessionToken, int sig) {
+    const QList<qint64> descendants = collectDescendantPids(rootPid);
+    const QList<qint64> tagged = collectTaggedSessionPids(sessionToken);
+    const qint64 selfPid = static_cast<qint64>(::getpid());
+
+    QSet<qint64> signaled;
+    for (int i = descendants.size() - 1; i >= 0; --i) {
+        const qint64 p = descendants.at(i);
+        if (p > 1 && p != selfPid && !signaled.contains(p)) {
+            ::kill(static_cast<pid_t>(p), sig);
+            signaled.insert(p);
+        }
+    }
+    for (qint64 p : tagged) {
+        if (p > 1 && p != selfPid && !signaled.contains(p)) {
+            ::kill(static_cast<pid_t>(p), sig);
+            signaled.insert(p);
+        }
+    }
+    if (rootPid > 1 && rootPid != selfPid) {
+        ::kill(-static_cast<pid_t>(rootPid), sig);
+        if (!signaled.contains(rootPid)) {
+            ::kill(static_cast<pid_t>(rootPid), sig);
+        }
+    }
+}
+
+} // namespace
 
 LaunchPipeline::LaunchPipeline(DatabaseManager* db,
                                AppSettings* settings,
@@ -28,7 +149,7 @@ LaunchPipeline::~LaunchPipeline() {
     stopAllGames();
 }
 
-static QStringList buildPerformanceWrappers(const GameRecord& game, bool useGamemode, bool useMangohud) {
+static QStringList buildHostPrefixWrappers(const GameRecord& game, bool useGamemode) {
     QStringList fullCmd;
     if (!game.cpuAffinity.trimmed().isEmpty()) {
         const QString tasksetBin = QStandardPaths::findExecutable(QStringLiteral("taskset"));
@@ -48,13 +169,138 @@ static QStringList buildPerformanceWrappers(const GameRecord& game, bool useGame
             fullCmd << gmBin;
         }
     }
-    if (useMangohud) {
+    return fullCmd;
+}
+
+static QStringList buildExecutionWrappers(const GameRecord& game,
+                                          bool useGamemode,
+                                          bool useMangohud,
+                                          bool useGamescope,
+                                          const GamescopeConfig& gsCfg)
+{
+    QStringList fullCmd = buildHostPrefixWrappers(game, useGamemode);
+
+    if (useGamescope) {
+        const QString gsBin = QStandardPaths::findExecutable(QStringLiteral("gamescope"));
+        if (!gsBin.isEmpty()) {
+            fullCmd << gsBin;
+            fullCmd.append(LaunchPipeline::buildGamescopeArguments(gsCfg, useMangohud));
+            fullCmd << QStringLiteral("--");
+        }
+        if (useMangohud && !gsCfg.mangoapp) {
+            const QString mhBin = QStandardPaths::findExecutable(QStringLiteral("mangohud"));
+            if (!mhBin.isEmpty()) {
+                fullCmd << mhBin;
+            }
+        }
+    } else if (useMangohud) {
         const QString mhBin = QStandardPaths::findExecutable(QStringLiteral("mangohud"));
         if (!mhBin.isEmpty()) {
             fullCmd << mhBin;
         }
     }
+
     return fullCmd;
+}
+
+bool LaunchPipeline::isGamescopeEnabled(const GameRecord& game) const {
+    return (game.gamescopeState == -1) ? m_settings->gamescopeDefault() : (game.gamescopeState == 1);
+}
+
+GamescopeConfig LaunchPipeline::resolveEffectiveGamescopeConfig(const GameRecord& game) const {
+    if (game.gamescope.inheritGlobal) {
+        GamescopeConfig cfg = GamescopeConfig::fromVariantMap(m_settings->defaultGamescopeConfig());
+        cfg.inheritGlobal = true;
+        return cfg;
+    }
+    GamescopeConfig cfg = game.gamescope;
+    cfg.normalize();
+    return cfg;
+}
+
+QStringList LaunchPipeline::buildGamescopeArguments(const GamescopeConfig& rawCfg, bool useMangohud) {
+    GamescopeConfig cfg = rawCfg;
+    cfg.normalize();
+
+    QStringList args;
+    if (cfg.windowMode == QStringLiteral("fullscreen")) {
+        args << QStringLiteral("-f");
+    } else if (cfg.windowMode == QStringLiteral("borderless")) {
+        args << QStringLiteral("-b");
+    }
+
+    if (cfg.outputWidth > 0 && cfg.outputHeight > 0) {
+        args << QStringLiteral("-W") << QString::number(cfg.outputWidth)
+             << QStringLiteral("-H") << QString::number(cfg.outputHeight);
+    }
+    if (cfg.internalWidth > 0 && cfg.internalHeight > 0) {
+        args << QStringLiteral("-w") << QString::number(cfg.internalWidth)
+             << QStringLiteral("-h") << QString::number(cfg.internalHeight);
+    }
+
+    if (cfg.filter != QStringLiteral("auto")) {
+        args << QStringLiteral("-F") << cfg.filter;
+        if (cfg.filter == QStringLiteral("fsr") ||
+            cfg.filter == QStringLiteral("nis") ||
+            cfg.filter == QStringLiteral("sgsr")) {
+            args << QStringLiteral("--fsr-sharpness") << QString::number(cfg.fsrSharpness);
+        }
+    }
+
+    if (cfg.scaler != QStringLiteral("auto")) {
+        args << QStringLiteral("-S") << cfg.scaler;
+    }
+
+    if (cfg.fpsLimit > 0) {
+        args << QStringLiteral("-r") << QString::number(cfg.fpsLimit);
+    }
+    if (cfg.unfocusedFpsLimit > 0) {
+        args << QStringLiteral("-o") << QString::number(cfg.unfocusedFpsLimit);
+    }
+    if (cfg.adaptiveSync) {
+        args << QStringLiteral("--adaptive-sync");
+    }
+    if (cfg.hdrEnabled) {
+        args << QStringLiteral("--hdr-enabled");
+    }
+    if (cfg.forceGrabCursor) {
+        args << QStringLiteral("--force-grab-cursor");
+    }
+    if (qAbs(cfg.mouseSensitivity - 1.0) >= 0.05) {
+        args << QStringLiteral("-s") << QString::number(cfg.mouseSensitivity, 'g', 3);
+    }
+    if (useMangohud && cfg.mangoapp) {
+        args << QStringLiteral("--mangoapp");
+    }
+    if (cfg.backend != QStringLiteral("auto")) {
+        args << QStringLiteral("--backend") << cfg.backend;
+    }
+    if (cfg.exposeWayland) {
+        args << QStringLiteral("--expose-wayland");
+    }
+    if (!cfg.extraArgs.isEmpty()) {
+        const QStringList extraTokens = QProcess::splitCommand(cfg.extraArgs);
+        for (const QString& tok : extraTokens) {
+            // Avoid premature `--` terminator before Tsuki appends `-- <game>`
+            if (!tok.isEmpty() && tok != QStringLiteral("--")) {
+                args << tok;
+            }
+        }
+    }
+    return args;
+}
+
+QString LaunchPipeline::formatGamescopePreview(const QVariantMap& cfgMap,
+                                                bool useMangohud,
+                                                const QString& targetCommand) const
+{
+    const GamescopeConfig cfg = GamescopeConfig::fromVariantMap(cfgMap);
+    QStringList parts;
+    parts << QStringLiteral("gamescope");
+    parts.append(buildGamescopeArguments(cfg, useMangohud));
+    parts << QStringLiteral("--");
+    parts << (targetCommand.trimmed().isEmpty() ? QStringLiteral("<game>") : targetCommand.trimmed());
+    return parts.join(QLatin1Char(' '));
 }
 
 LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
@@ -80,7 +326,11 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
     const bool useFsync = (game.fsyncState == -1) ? m_settings->fsyncDefault() : (game.fsyncState == 1);
     const bool useMangohud = (game.mangohudState == -1) ? m_settings->mangohudDefault() : (game.mangohudState == 1);
     const bool useGamemode = (game.gamemodeState == -1) ? m_settings->gamemodeDefault() : (game.gamemodeState == 1);
+    const bool useGamescope = isGamescopeEnabled(game);
+    const GamescopeConfig gsCfg = resolveEffectiveGamescopeConfig(game);
+    const bool useMangoapp = useGamescope && useMangohud && gsCfg.mangoapp;
     plan.useXboxEmulation = (game.xboxEmulationState == 1);
+    plan.usesGamescope = useGamescope;
 
     // Esync & Fsync
     env.insert(QStringLiteral("WINEESYNC"), useEsync ? QStringLiteral("1") : QStringLiteral("0"));
@@ -156,6 +406,10 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
         }
     }
 
+    if (useGamescope && gsCfg.hdrEnabled) {
+        env.insert(QStringLiteral("DXVK_HDR"), QStringLiteral("1"));
+    }
+
     // Per-game custom environment variables
     for (auto it = game.environmentVariables.constBegin(); it != game.environmentVariables.constEnd(); ++it) {
         if (!it.key().isEmpty()) {
@@ -163,23 +417,23 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
         }
     }
 
-    if (useMangohud) {
+    if (useMangohud && !useMangoapp) {
         env.insert(QStringLiteral("MANGOHUD"), QStringLiteral("1"));
     }
 
-    // Build wrapper chain: [taskset] -> [nice] -> [gamemoderun] -> [mangohud] -> [wine/proton] -> [virtual desktop] -> [exe] [args]
-    QStringList fullCmd = buildPerformanceWrappers(game, useGamemode, useMangohud);
+    // Build wrapper chain: [taskset] -> [nice] -> [gamemoderun] -> [gamescope flags --] -> [mangohud?] -> [wine/proton] -> [virtual desktop?] -> [exe] [args]
+    QStringList fullCmd = buildExecutionWrappers(game, useGamemode, useMangohud, useGamescope, gsCfg);
 
     if (runner.isProton()) {
         fullCmd << runner.binaryPath << QStringLiteral("waitforexitandrun");
-        if (game.virtualDesktop) {
+        if (game.virtualDesktop && !useGamescope) {
             const QString res = game.virtualDesktopResolution.isEmpty() ? QStringLiteral("1920x1080") : game.virtualDesktopResolution;
             fullCmd << QStringLiteral("explorer") << QStringLiteral("/desktop=Tsuki,%1").arg(res);
         }
         fullCmd << game.executablePath;
     } else {
         fullCmd << runner.binaryPath;
-        if (game.virtualDesktop) {
+        if (game.virtualDesktop && !useGamescope) {
             const QString res = game.virtualDesktopResolution.isEmpty() ? QStringLiteral("1920x1080") : game.virtualDesktopResolution;
             fullCmd << QStringLiteral("explorer") << QStringLiteral("/desktop=Tsuki,%1").arg(res);
         }
@@ -208,7 +462,11 @@ LaunchPlan LaunchPipeline::buildNativeLaunchPlan(const GameRecord& game) const {
 
     const bool useMangohud = (game.mangohudState == -1) ? m_settings->mangohudDefault() : (game.mangohudState == 1);
     const bool useGamemode = (game.gamemodeState == -1) ? m_settings->gamemodeDefault() : (game.gamemodeState == 1);
+    const bool useGamescope = isGamescopeEnabled(game);
+    const GamescopeConfig gsCfg = resolveEffectiveGamescopeConfig(game);
+    const bool useMangoapp = useGamescope && useMangohud && gsCfg.mangoapp;
     plan.useXboxEmulation = (game.xboxEmulationState == 1);
+    plan.usesGamescope = useGamescope;
 
     if (plan.useXboxEmulation) {
         const QString sdlCfg = m_controllerMgr->buildSdlGameControllerConfig();
@@ -218,7 +476,7 @@ LaunchPlan LaunchPipeline::buildNativeLaunchPlan(const GameRecord& game) const {
         env.insert(QStringLiteral("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS"), QStringLiteral("1"));
     }
 
-    if (useMangohud) {
+    if (useMangohud && !useMangoapp) {
         env.insert(QStringLiteral("MANGOHUD"), QStringLiteral("1"));
     }
 
@@ -229,7 +487,7 @@ LaunchPlan LaunchPipeline::buildNativeLaunchPlan(const GameRecord& game) const {
         }
     }
 
-    QStringList fullCmd = buildPerformanceWrappers(game, useGamemode, useMangohud);
+    QStringList fullCmd = buildExecutionWrappers(game, useGamemode, useMangohud, useGamescope, gsCfg);
 
     QFileInfo exeFi(game.executablePath);
     if (exeFi.suffix().compare(QStringLiteral("sh"), Qt::CaseInsensitive) == 0 && !exeFi.isExecutable()) {
@@ -282,6 +540,13 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
 
     if (game.executablePath.isEmpty() || !QFileInfo::exists(game.executablePath)) {
         const QString msg = QStringLiteral("Executable not found: %1").arg(game.executablePath);
+        m_diagMgr->startNewGameLog(gameId, QStringLiteral("=== Launch Failed ===\n") + msg);
+        emit gameLaunchFailed(gameId, msg);
+        return false;
+    }
+
+    if (isGamescopeEnabled(game) && QStandardPaths::findExecutable(QStringLiteral("gamescope")).isEmpty()) {
+        const QString msg = QStringLiteral("Gamescope is enabled for this game, but 'gamescope' was not found in PATH. Install gamescope or disable Gamescope for this game.");
         m_diagMgr->startNewGameLog(gameId, QStringLiteral("=== Launch Failed ===\n") + msg);
         emit gameLaunchFailed(gameId, msg);
         return false;
@@ -396,14 +661,15 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
         executeScript(game.preLaunchScript, plan.workingDirectory, plan.environment, gameId);
     }
 
+    const QString sessionToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    plan.environment.insert(QStringLiteral("TSUKI_SESSION_ID"), sessionToken);
+
     auto* proc = new QProcess(this);
     proc->setWorkingDirectory(plan.workingDirectory);
     proc->setProcessEnvironment(plan.environment);
-    if (isNative) {
-        proc->setChildProcessModifier([]() {
-            ::setsid();
-        });
-    }
+    proc->setChildProcessModifier([]() {
+        ::setsid();
+    });
 
     auto* session = new RunningSession();
     session->gameId = gameId;
@@ -411,10 +677,12 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
     session->prefixPath = prefix.path;
     session->runnerId = runnerOpt.has_value() ? runnerOpt->id : QString();
     session->postExitScript = game.postExitScript;
+    session->sessionToken = sessionToken;
     session->startTimeEpoch = QDateTime::currentSecsSinceEpoch();
     session->process = proc;
     session->isNative = isNative;
     session->usesXboxEmulation = plan.useXboxEmulation;
+    session->usesGamescope = plan.usesGamescope;
     session->workingDirectory = plan.workingDirectory;
     session->environment = plan.environment;
 
@@ -425,6 +693,13 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
     emit runningGamesChanged();
     emit gameStarted(gameId, game.title);
 
+    connect(proc, &QProcess::started, this, [this, proc, gameId]() {
+        if (RunningSession* s = m_running.value(gameId, nullptr)) {
+            if (proc->processId() > 0) {
+                s->rootPid = proc->processId();
+            }
+        }
+    });
     connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc, gameId]() {
         m_diagMgr->appendGameLog(gameId, QString::fromUtf8(proc->readAllStandardOutput()));
     });
@@ -445,12 +720,19 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
     });
 
     proc->start(plan.program, plan.arguments);
+    if (proc->processId() > 0) {
+        session->rootPid = proc->processId();
+    }
     return true;
 }
 
 void LaunchPipeline::handleSessionTermination(const QString& gameId, int exitCode, bool isFailedToStart, const QString& errorString) {
     if (!m_running.contains(gameId)) return;
     RunningSession* sess = m_running.take(gameId);
+
+    const bool shouldSweepOrphans = (sess->usesGamescope || sess->stopRequested) && !isFailedToStart;
+    const qint64 rootPid = sess->rootPid;
+    const QString sessionToken = sess->sessionToken;
 
     const qint64 now = QDateTime::currentSecsSinceEpoch();
     const qint64 elapsed = qMax<qint64>(1, now - sess->startTimeEpoch);
@@ -479,6 +761,15 @@ void LaunchPipeline::handleSessionTermination(const QString& gameId, int exitCod
     }
     delete sess;
 
+    if (shouldSweepOrphans && !sessionToken.isEmpty() && !collectTaggedSessionPids(sessionToken).isEmpty()) {
+        signalSessionProcesses(rootPid, sessionToken, SIGTERM);
+        QTimer::singleShot(800, this, [rootPid, sessionToken]() {
+            if (!collectTaggedSessionPids(sessionToken).isEmpty()) {
+                signalSessionProcesses(rootPid, sessionToken, SIGKILL);
+            }
+        });
+    }
+
     updateEmulationLifecycle();
     emit runningGamesChanged();
 }
@@ -499,51 +790,83 @@ void LaunchPipeline::updateEmulationLifecycle() {
     }
 }
 
-void LaunchPipeline::stopGame(const QString& gameId) {
-    if (!m_running.contains(gameId)) return;
-    RunningSession* sess = m_running.value(gameId);
+void LaunchPipeline::terminateGameSession(const QString& gameId, bool waitForExit) {
+    RunningSession* sess = m_running.value(gameId, nullptr);
+    if (!sess) return;
+
+    sess->stopRequested = true;
+    const QPointer<QProcess> proc = sess->process;
+    const qint64 rootPid = (proc && proc->processId() > 0) ? proc->processId() : sess->rootPid;
+    const QString sessionToken = sess->sessionToken;
+    const bool isNative = sess->isNative;
+    const QString runnerId = sess->runnerId;
+    const QString prefixPath = sess->prefixPath;
 
     m_diagMgr->appendGameLog(gameId, QStringLiteral("\n[Tsuki] Terminating game processes…\n"));
 
-    // 1. Run wineserver -k for this prefix so all Wine child processes exit cleanly
-    if (!sess->isNative) {
-        if (auto runnerOpt = m_runnerMgr->resolveRunner(sess->runnerId); runnerOpt.has_value()) {
+    // 1. Run wineserver -k for Wine/Proton prefixes (async during runtime so UI never freezes)
+    if (!isNative) {
+        if (auto runnerOpt = m_runnerMgr->resolveRunner(runnerId); runnerOpt.has_value()) {
             const QString wineserverBin = m_runnerMgr->findWineserverBinaryForRunner(*runnerOpt);
             if (!wineserverBin.isEmpty()) {
-                QProcess killWs;
                 QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-                env.insert(QStringLiteral("WINEPREFIX"), sess->prefixPath);
-                killWs.setProcessEnvironment(env);
-                killWs.start(wineserverBin, {QStringLiteral("-k")});
-                killWs.waitForFinished(2000);
+                env.insert(QStringLiteral("WINEPREFIX"), prefixPath);
+                if (waitForExit) {
+                    QProcess killWs;
+                    killWs.setProcessEnvironment(env);
+                    killWs.start(wineserverBin, {QStringLiteral("-k")});
+                    killWs.waitForFinished(1200);
+                } else {
+                    auto* killWs = new QProcess(this);
+                    killWs->setProcessEnvironment(env);
+                    connect(killWs, &QProcess::finished, killWs, &QObject::deleteLater);
+                    connect(killWs, &QProcess::errorOccurred, killWs, &QObject::deleteLater);
+                    QTimer::singleShot(2500, killWs, [killWs]() {
+                        if (killWs->state() != QProcess::NotRunning) {
+                            killWs->kill();
+                        }
+                    });
+                    killWs->start(wineserverBin, {QStringLiteral("-k")});
+                }
             }
         }
     }
 
-    // 2. Terminate and kill QProcess if still alive
-    if (sess->process && sess->process->state() != QProcess::NotRunning) {
-        const qint64 pid = sess->process->processId();
-        if (sess->isNative && pid > 0) {
-            ::kill(-static_cast<pid_t>(pid), SIGTERM);
+    // 2. Signal the entire session tree (process group + /proc descendants + detached session-tagged processes)
+    signalSessionProcesses(rootPid, sessionToken, SIGTERM);
+    if (proc && proc->state() != QProcess::NotRunning) {
+        proc->terminate();
+    }
+
+    if (waitForExit) {
+        if (proc && proc->state() != QProcess::NotRunning && !proc->waitForFinished(500)) {
+            signalSessionProcesses(rootPid, sessionToken, SIGKILL);
+            proc->kill();
+            proc->waitForFinished(500);
+        } else if (!collectTaggedSessionPids(sessionToken).isEmpty()) {
+            signalSessionProcesses(rootPid, sessionToken, SIGKILL);
         }
-        sess->process->terminate();
-        if (!sess->process->waitForFinished(1500)) {
-            if (pid > 0) {
-                if (sess->isNative) {
-                    ::kill(-static_cast<pid_t>(pid), SIGKILL);
-                } else {
-                    ::kill(static_cast<pid_t>(pid), SIGKILL);
+    } else {
+        QTimer::singleShot(1200, this, [proc, rootPid, sessionToken]() {
+            const bool procAlive = (proc && proc->state() != QProcess::NotRunning);
+            if (procAlive || !collectTaggedSessionPids(sessionToken).isEmpty()) {
+                signalSessionProcesses(rootPid, sessionToken, SIGKILL);
+                if (procAlive) {
+                    proc->kill();
                 }
             }
-            sess->process->kill();
-        }
+        });
     }
+}
+
+void LaunchPipeline::stopGame(const QString& gameId) {
+    terminateGameSession(gameId, false);
 }
 
 void LaunchPipeline::stopAllGames() {
     const QStringList ids = m_running.keys();
     for (const QString& id : ids) {
-        stopGame(id);
+        terminateGameSession(id, true);
     }
 }
 

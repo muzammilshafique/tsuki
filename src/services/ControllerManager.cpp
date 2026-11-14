@@ -13,6 +13,7 @@ ControllerManager::ControllerManager(DatabaseManager *db, AppSettings *settings,
                                      QObject *parent)
     : QObject(parent), m_db(db), m_settings(settings),
       m_virtualXbox(std::move(backend)) {
+  SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
   SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
   if (SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) == 0) {
     m_sdlInitialized = true;

@@ -14,6 +14,7 @@ namespace Tsuki {
 class DiagnosticsManager : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList systemChecks READ systemChecks NOTIFY systemChecksChanged)
+    Q_PROPERTY(bool gamescopeAvailable READ gamescopeAvailable NOTIFY systemChecksChanged)
     Q_PROPERTY(QString activeGameLog READ activeGameLog NOTIFY activeGameLogChanged)
     Q_PROPERTY(QString selectedLogGameId READ selectedLogGameId WRITE setSelectedLogGameId NOTIFY activeGameLogChanged)
     Q_PROPERTY(QVariantList detectedIssues READ detectedIssues NOTIFY detectedIssuesChanged)
@@ -26,6 +27,7 @@ public:
                                 QObject* parent = nullptr);
 
     QVariantList systemChecks() const { return m_systemChecks; }
+    bool gamescopeAvailable() const { return m_gamescopeAvailable; }
     QString activeGameLog() const;
     QString selectedLogGameId() const { return m_selectedLogGameId; }
     void setSelectedLogGameId(const QString& gameId);
@@ -55,6 +57,7 @@ private:
     PrefixManager* m_prefixMgr;
 
     QVariantList m_systemChecks;
+    bool m_gamescopeAvailable = false;
     QVariantList m_detectedIssues;
     QString m_selectedLogGameId;
     QMap<QString, QString> m_inMemoryLogs;

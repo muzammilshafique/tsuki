@@ -17,7 +17,7 @@ Page {
     focus: true
 
     function isAnyModalOpen() {
-        return tagColorsModal.visible
+        return tagColorsModal.visible || gamescopeSettingsDialog.visible
     }
 
     function isTextInputActive() {
@@ -31,7 +31,10 @@ Page {
     }
 
     Keys.onEscapePressed: (event) => {
-        if (tagColorsModal.visible) {
+        if (gamescopeSettingsDialog.visible) {
+            event.accepted = true
+            gamescopeSettingsDialog.close()
+        } else if (tagColorsModal.visible) {
             event.accepted = true
             tagColorsModal.close()
         } else {
@@ -42,9 +45,10 @@ Page {
     Keys.onPressed: (event) => {
         if (event.key === Qt.Key_Backspace && !isTextInputActive()) {
             event.accepted = true
-            if (tagColorsModal.visible) tagColorsModal.close()
+            if (gamescopeSettingsDialog.visible) gamescopeSettingsDialog.close()
+            else if (tagColorsModal.visible) tagColorsModal.close()
             else settingsPage.backRequested()
-        } else if (event.key === Qt.Key_Down && !tagColorsModal.visible && settingsPage.activeFocus) {
+        } else if (event.key === Qt.Key_Down && !settingsPage.isAnyModalOpen() && settingsPage.activeFocus) {
             event.accepted = true
             let rows = getVisibleRows()
             if (rows.length > 1) {
@@ -56,14 +60,14 @@ Page {
 
     Shortcut {
         sequences: ["/", "Ctrl+F"]
-        enabled: settingsPage.visible && settingsPage.StackView.status === StackView.Active && !tagColorsModal.visible && !settingsPage.isTextInputActive()
+        enabled: settingsPage.visible && settingsPage.StackView.status === StackView.Active && !settingsPage.isAnyModalOpen() && !settingsPage.isTextInputActive()
         onActivated: searchField.forceActiveFocus()
     }
 
     Connections {
         target: uiController ? uiController.controllerManager : null
         function onSearchActionRequested() {
-            if (settingsPage.StackView.status === StackView.Active && !tagColorsModal.visible) {
+            if (settingsPage.StackView.status === StackView.Active && !settingsPage.isAnyModalOpen()) {
                 uiController.setKeyboardNavActive(true)
                 searchField.forceActiveFocus()
             }
@@ -1155,6 +1159,46 @@ Page {
 
                 RowDiv {}
 
+                // Gamescope Micro-Compositor (Global Default - disabled by default)
+                SettingRow {
+                    id: gamescopeDefaultRow
+                    objectName: "gamescopeDefaultRow"
+                    label: "Gamescope Micro-Compositor (Global Default)"
+                    description: Boolean(uiController && uiController.diagnosticsManager && !uiController.diagnosticsManager.gamescopeAvailable)
+                        ? "Enable Valve's micro-compositor for resolution scaling, FSR, VRR & HDR (gamescope not detected in PATH)"
+                        : "Run games inside Valve's micro-compositor for resolution scaling, FSR, VRR & HDR"
+                    controlItem: Toggle {
+                        id: settingsGamescopeToggle
+                        checked: appSettings.gamescopeDefault
+                        onToggled: (c) => appSettings.gamescopeDefault = c
+                    }
+                }
+
+                RowDiv {}
+
+                // Gamescope Default Parameters
+                SettingRow {
+                    id: gamescopeDefaultsConfigRow
+                    objectName: "gamescopeDefaultsConfigRow"
+                    label: "Gamescope Default Parameters"
+                    description: "Configure global resolution, FSR upscaling, FPS limit, HDR & input defaults inherited by games"
+                    controlItem: M3Button {
+                        id: settingsGamescopeConfigBtn
+                        text: "Configure Defaults…"
+                        iconSource: "qrc:/tsuki_app/icons/actions/settings.svg"
+                        buttonType: "tonal"
+                        onClicked: {
+                            gamescopeSettingsDialog.openWithConfig(appSettings.defaultGamescopeConfig, {
+                                isGlobal: true,
+                                useMangohud: appSettings.mangohudDefault,
+                                targetCommand: "<game>"
+                            })
+                        }
+                    }
+                }
+
+                RowDiv {}
+
                 // DXVK HUD
                 SettingRow {
                     label: "DXVK HUD Mode"
@@ -1851,6 +1895,17 @@ Page {
                     }
                 }
             }
+        }
+    }
+
+    // ── Default Gamescope Parameters Dialog ─────────────────────────────────
+    GamescopeDialog {
+        id: gamescopeSettingsDialog
+        onSaveRequested: (cfgMap) => {
+            appSettings.defaultGamescopeConfig = cfgMap
+        }
+        onClosed: {
+            Qt.callLater(() => gamescopeDefaultsConfigRow.forceActiveFocus())
         }
     }
 }

@@ -1,6 +1,9 @@
 #include "AppSettings.h"
 #include "DatabaseManager.h"
+#include "Models.h"
 #include <QGuiApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QStyleHints>
 
 namespace Tsuki {
@@ -129,6 +132,22 @@ AppSettings::AppSettings(QObject *parent)
       m_settings.value(QStringLiteral("performance/mangohud"), false).toBool();
   m_gamemodeDefault =
       m_settings.value(QStringLiteral("performance/gamemode"), false).toBool();
+  m_gamescopeDefault =
+      m_settings.value(QStringLiteral("performance/gamescope"), false).toBool();
+  {
+    GamescopeConfig defGs;
+    const QString gsJson =
+        m_settings.value(QStringLiteral("performance/gamescopeConfig"), QString())
+            .toString();
+    if (!gsJson.isEmpty()) {
+      const QJsonDocument doc = QJsonDocument::fromJson(gsJson.toUtf8());
+      if (doc.isObject()) {
+        defGs = GamescopeConfig::fromJsonObject(doc.object());
+      }
+    }
+    defGs.inheritGlobal = false;
+    m_defaultGamescopeConfig = defGs.toVariantMap();
+  }
   m_dxvkDefault =
       m_settings.value(QStringLiteral("performance/dxvk"), true).toBool();
   m_vkd3dDefault =
@@ -681,6 +700,34 @@ QColor AppSettings::surfaceColor() const {
         m_gamemodeDefault = v;
         m_settings.setValue(QStringLiteral("performance/gamemode"), v);
         emit performanceDefaultsChanged();
+      }
+
+      void AppSettings::setGamescopeDefault(bool v) {
+        if (m_gamescopeDefault == v)
+          return;
+        m_gamescopeDefault = v;
+        m_settings.setValue(QStringLiteral("performance/gamescope"), v);
+        emit performanceDefaultsChanged();
+      }
+
+      void AppSettings::setDefaultGamescopeConfig(const QVariantMap &cfgMap) {
+        GamescopeConfig cfg = GamescopeConfig::fromVariantMap(cfgMap);
+        cfg.inheritGlobal = false;
+        const QVariantMap normalized = cfg.toVariantMap();
+        if (m_defaultGamescopeConfig == normalized)
+          return;
+        m_defaultGamescopeConfig = normalized;
+        m_settings.setValue(
+            QStringLiteral("performance/gamescopeConfig"),
+            QString::fromUtf8(
+                QJsonDocument(cfg.toJsonObject()).toJson(QJsonDocument::Compact)));
+        emit performanceDefaultsChanged();
+      }
+
+      void AppSettings::resetDefaultGamescopeConfig() {
+        GamescopeConfig cfg;
+        cfg.inheritGlobal = false;
+        setDefaultGamescopeConfig(cfg.toVariantMap());
       }
 
       void AppSettings::setDxvkDefault(bool v) {

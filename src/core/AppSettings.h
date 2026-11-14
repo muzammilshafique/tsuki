@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QVariantMap>
 
 namespace Tsuki {
 
@@ -93,6 +94,10 @@ class AppSettings : public QObject {
                  NOTIFY performanceDefaultsChanged)
   Q_PROPERTY(bool gamemodeDefault READ gamemodeDefault WRITE setGamemodeDefault
                  NOTIFY performanceDefaultsChanged)
+  Q_PROPERTY(bool gamescopeDefault READ gamescopeDefault WRITE setGamescopeDefault
+                 NOTIFY performanceDefaultsChanged)
+  Q_PROPERTY(QVariantMap defaultGamescopeConfig READ defaultGamescopeConfig WRITE
+                 setDefaultGamescopeConfig NOTIFY performanceDefaultsChanged)
   Q_PROPERTY(bool dxvkDefault READ dxvkDefault WRITE setDxvkDefault NOTIFY
                  performanceDefaultsChanged)
   Q_PROPERTY(bool vkd3dDefault READ vkd3dDefault WRITE setVkd3dDefault NOTIFY
@@ -218,6 +223,11 @@ public:
   void setMangohudDefault(bool v);
   bool gamemodeDefault() const { return m_gamemodeDefault; }
   void setGamemodeDefault(bool v);
+  bool gamescopeDefault() const { return m_gamescopeDefault; }
+  void setGamescopeDefault(bool v);
+  QVariantMap defaultGamescopeConfig() const { return m_defaultGamescopeConfig; }
+  void setDefaultGamescopeConfig(const QVariantMap &cfg);
+  Q_INVOKABLE void resetDefaultGamescopeConfig();
   bool dxvkDefault() const { return m_dxvkDefault; }
   void setDxvkDefault(bool v);
   bool vkd3dDefault() const { return m_vkd3dDefault; }
@@ -284,6 +294,8 @@ private:
 
   bool m_mangohudDefault = false;
   bool m_gamemodeDefault = false;
+  bool m_gamescopeDefault = false;
+  QVariantMap m_defaultGamescopeConfig;
   bool m_dxvkDefault = true;
   bool m_vkd3dDefault = true;
   bool m_esyncDefault = true;

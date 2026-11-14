@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(tsuki VERSION 1.0.0 LANGUAGES CXX)
+project(tsuki VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -83,6 +83,7 @@ enable_testing()
 add_executable(tsuki_tests
     tests/test_tsuki.cpp
 )
+target_compile_definitions(tsuki_tests PRIVATE TSUKI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(tsuki_tests PRIVATE tsuki_core Qt6::Test)
 add_test(NAME TsukiUnitTests COMMAND tsuki_tests)
 set_tests_properties(TsukiUnitTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
