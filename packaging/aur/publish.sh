@@ -37,6 +37,12 @@ if [[ -z "${PKG_NAME}" || "${PKG_NAME}" =~ [/[:space:]] ]]; then
     exit 1
 fi
 
+if [[ ! -d "${SOURCE_DIR}" ]]; then
+    echo "Error: Source directory '${SOURCE_DIR}' does not exist." >&2
+    exit 1
+fi
+SOURCE_DIR="$(cd "${SOURCE_DIR}" && pwd)"
+
 if [[ ! -f "${SOURCE_DIR}/PKGBUILD" || ! -f "${SOURCE_DIR}/.SRCINFO" ]]; then
     echo "Error: '${SOURCE_DIR}' must contain PKGBUILD and .SRCINFO." >&2
     exit 1
@@ -51,7 +57,11 @@ trap cleanup EXIT
 parse_pkgbuild_var() {
     local pkgbuild_path="$1"
     local var_name="$2"
-    bash -c 'set -e; source "$1" >/dev/null 2>&1; printf "%s" "${!2-}"' _ "${pkgbuild_path}" "${var_name}"
+    if [[ ! -f "${pkgbuild_path}" ]]; then
+        echo "Error: Missing PKGBUILD at '${pkgbuild_path}'." >&2
+        return 1
+    fi
+    bash -c 'set -e; source "$1" >/dev/null; printf "%s" "${!2-}"' _ "${pkgbuild_path}" "${var_name}"
 }
 
 format_pkg_ver() {
