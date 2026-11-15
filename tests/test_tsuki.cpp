@@ -2225,6 +2225,9 @@ private slots:
     QTest::keyClick(&win, Qt::Key_Return);
     QCoreApplication::processEvents();
     QTRY_COMPARE(gsDialog->property("visible").toBool(), true);
+    QVERIFY(gsDialog->property("enter").value<QObject *>() != nullptr);
+    QVERIFY(gsDialog->property("exit").value<QObject *>() != nullptr);
+    QTRY_COMPARE(gsDialog->property("opened").toBool(), true);
 
     QVariant popupOpenVar;
     QVERIFY(QMetaObject::invokeMethod(detailObj.get(), "isAnyPopupOpen",

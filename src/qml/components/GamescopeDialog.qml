@@ -238,6 +238,13 @@ Popup {
         }
     }
 
+    Timer {
+        id: focusInitialTimer
+        interval: 0
+        repeat: false
+        onTriggered: presetBorderlessBtn.forceActiveFocus()
+    }
+
     function openWithConfig(cfgMap, opts) {
         let o = opts || {}
         isGlobalMode = Boolean(o.isGlobal)
@@ -254,7 +261,7 @@ Popup {
             dialogScroll.contentItem.contentY = 0
         }
         root.open()
-        Qt.callLater(() => presetBorderlessBtn.forceActiveFocus())
+        focusInitialTimer.restart()
     }
 
     Connections {
@@ -437,6 +444,15 @@ Popup {
         property: "contentY"
         duration: 160
         easing.type: Easing.OutCubic
+    }
+
+    enter: Transition {
+        NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 180; easing.type: Easing.OutCubic }
+        NumberAnimation { property: "scale"; from: 0.96; to: 1.0; duration: 180; easing.type: Easing.OutCubic }
+    }
+    exit: Transition {
+        NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 140; easing.type: Easing.InCubic }
+        NumberAnimation { property: "scale"; from: 1.0; to: 0.96; duration: 140; easing.type: Easing.InCubic }
     }
 
     background: Rectangle {
