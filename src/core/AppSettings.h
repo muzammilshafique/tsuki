@@ -142,6 +142,9 @@ public:
   static QString artworkDir();
   static QString backupsDir();
   static QString toolsDir();
+  Q_INVOKABLE QString configDirPath() const { return configDir(); }
+  Q_INVOKABLE QString dataDirPath() const { return dataDir(); }
+  Q_INVOKABLE QString logsDirPath() const { return logsDir(); }
 
   // Window Geometry
   Q_INVOKABLE int windowWidth() const;
@@ -295,7 +298,7 @@ signals:
 
 private:
   QSettings m_settings;
-  int m_themeMode = 0; // 0: Dark, 1: Light, 2: System, 3: AMOLED
+  int m_themeMode = 2; // 0: Dark, 1: Light, 2: System, 3: AMOLED
   QString m_customBgColor;
   QString m_customSidebarColor;
   bool m_syncSidebarColor = false;

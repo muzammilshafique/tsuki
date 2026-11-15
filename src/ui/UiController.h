@@ -76,6 +76,7 @@ public:
     // Native System File & Folder Selectors
     Q_INVOKABLE QString selectFile(const QString& title = QString(), const QString& filter = QString(), const QString& initialPath = QString());
     Q_INVOKABLE QString selectFolder(const QString& title = QString(), const QString& initialPath = QString());
+    Q_INVOKABLE bool openDirectory(const QString& path);
 
     // Yoru-compatible search & card actions
     Q_INVOKABLE void search(const QString& query, int filterType = -1);

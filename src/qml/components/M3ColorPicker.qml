@@ -189,9 +189,10 @@ Item {
                             cursorShape: Qt.PointingHandCursor
                         }
 
-                        ToolTip.visible: swatchHover.hovered
-                        ToolTip.text: modelData.name || modelData.color || "Auto"
-                        ToolTip.delay: 300
+                        M3ToolTip {
+                            visible: swatchHover.hovered
+                            text: modelData.name || modelData.color || "Auto"
+                        }
 
                         TapHandler {
                             onTapped: {
@@ -254,9 +255,10 @@ Item {
                         cursorShape: Qt.PointingHandCursor
                     }
 
-                    ToolTip.visible: customHover.hovered
-                    ToolTip.text: "Custom Color"
-                    ToolTip.delay: 300
+                    M3ToolTip {
+                        visible: customHover.hovered
+                        text: "Custom Color"
+                    }
 
                     TapHandler {
                         onTapped: {

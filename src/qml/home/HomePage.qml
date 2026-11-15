@@ -16,7 +16,7 @@ Page {
     }
 
     function isAnyModalOpen() {
-        return addGameDialog.visible || winetricksModal.visible
+        return addGameDialog.visible || winetricksModal.visible || (topBar.visible && topBar.isAddMenuOpen)
     }
 
     function isTextInputActive() {
@@ -123,10 +123,22 @@ Page {
         }
     }
 
+    Timer {
+        id: topBarOpenTimer
+        interval: 0
+        repeat: false
+        onTriggered: topBar.openAddMenu()
+    }
+
     Shortcut {
         sequences: ["Ctrl+N"]
-        enabled: page.visible
-        onActivated: addGameDialog.resetAndOpen()
+        enabled: page.visible && !addGameDialog.visible && !winetricksModal.visible
+        onActivated: {
+            if (page.activeSection !== "library") {
+                page.activeSection = "library"
+            }
+            topBarOpenTimer.restart()
+        }
     }
 
     RowLayout {
@@ -160,10 +172,11 @@ Page {
             TopBar {
                 id: topBar
                 visible: page.activeSection === "library"
+                onVisibleChanged: if (!visible) closeAddMenu()
                 onSearchRequested: (query) => {
                     uiController.search(query, sidebar.currentFilter)
                 }
-                onAddGameRequested: addGameDialog.resetAndOpen()
+                onAddGameRequested: (platform) => addGameDialog.resetAndOpen(platform)
                 onFocusGridRequested: grid.forceFocus()
                 onFocusSidebarRequested: sidebar.forceActiveFocus()
             }
@@ -184,7 +197,7 @@ Page {
                     model: uiController.searchModel
                     onGameDetailsRequested: (gameId) => page.gameDetailsRequested(gameId)
                     onWinetricksRequested: (prefixId, title) => winetricksModal.openForPrefix(prefixId, title)
-                    onAddGameRequested: addGameDialog.resetAndOpen()
+                    onAddGameRequested: topBar.openAddMenu()
                     onFocusSidebarRequested: sidebar.forceActiveFocus()
                     onFocusTopBarRequested: topBar.forceSearchFocus()
                 }
@@ -216,6 +229,11 @@ Page {
 
     AddGameDialog {
         id: addGameDialog
+        onClosed: {
+            if (!winetricksModal.visible && !topBar.isAddMenuOpen) {
+                page.focusActiveSectionContent()
+            }
+        }
     }
 
     WinetricksModal {

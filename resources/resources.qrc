@@ -13,6 +13,12 @@
         <file alias="qml/components/ArtworkUrlDialog.qml">../src/qml/components/ArtworkUrlDialog.qml</file>
         <file alias="qml/components/RemoveGameDialog.qml">../src/qml/components/RemoveGameDialog.qml</file>
         <file alias="qml/components/M3SegmentedButton.qml">../src/qml/components/M3SegmentedButton.qml</file>
+        <file alias="qml/components/M3PillGroup.qml">../src/qml/components/M3PillGroup.qml</file>
+        <file alias="qml/components/M3FabMenu.qml">../src/qml/components/M3FabMenu.qml</file>
+        <file alias="qml/components/ThemePreviewCards.qml">../src/qml/components/ThemePreviewCards.qml</file>
+        <file alias="qml/components/M3ToolTip.qml">../src/qml/components/M3ToolTip.qml</file>
+        <file alias="qml/components/SettingsSection.qml">../src/qml/components/SettingsSection.qml</file>
+        <file alias="qml/components/SettingTile.qml">../src/qml/components/SettingTile.qml</file>
         <file alias="qml/components/StyledSlider.qml">../src/qml/components/StyledSlider.qml</file>
         <file alias="qml/components/StyledCombo.qml">../src/qml/components/StyledCombo.qml</file>
         <file alias="qml/components/M3ColorPicker.qml">../src/qml/components/M3ColorPicker.qml</file>

@@ -75,26 +75,17 @@ Item {
             return appSettings.secondaryContainer
         }
 
-        border.color: {
-            if (root.isSuccess) return "#22c55e"
-            if (root.buttonType === "outlined") {
-                return isHovered
-                    ? appSettings.accentColor
-                    : Qt.rgba(appSettings.textColor.r, appSettings.textColor.g, appSettings.textColor.b, appSettings.isEffectiveDark ? 0.22 : 0.18)
-            }
-            return Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.0)
-        }
-        border.width: (root.buttonType === "outlined" || root.isSuccess) ? 1 : 0
+        border.width: 0
         scale: isPressed ? 0.97 : (root.kbFocused ? 1.02 : 1.0)
 
         Behavior on color { ColorAnimation { duration: 150 } }
-        Behavior on border.color { ColorAnimation { duration: 150 } }
         Behavior on scale { NumberAnimation { duration: 120 } }
 
-        // Outlined hover container fill (opacity-only so it never interpolates through #00000000)
+        // Outlined hover container fill (inset by border width so inner fill never overlaps border AA edges)
         Rectangle {
             anchors.fill: parent
-            radius: parent.radius
+            anchors.margins: (root.buttonType === "outlined" || root.isSuccess) ? 1 : 0
+            radius: Math.max(0, btnBg.radius - ((root.buttonType === "outlined" || root.isSuccess) ? 1 : 0))
             color: appSettings.surfaceContainerHigh
             opacity: (!root.isSuccess && root.buttonType === "outlined" && btnBg.isHovered) ? 1.0 : 0.0
             Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
@@ -103,7 +94,7 @@ Item {
         // Subtle tonal state layer on hover / press for filled and tonal variants
         Rectangle {
             anchors.fill: parent
-            radius: parent.radius
+            radius: btnBg.radius
             color: {
                 if (root.buttonType === "filled") return appSettings.onPrimary
                 if (appSettings.isEffectiveDark) return "#ffffff"
@@ -115,10 +106,28 @@ Item {
             Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
         }
 
+        // Dedicated crisp capsule outline above fills so borders stay uniform on all edges
+        Rectangle {
+            anchors.fill: parent
+            radius: btnBg.radius
+            color: "transparent"
+            z: 2
+            visible: root.buttonType === "outlined" || root.isSuccess
+            border.width: 1
+            border.color: {
+                if (root.isSuccess) return "#22c55e"
+                return btnBg.isHovered
+                    ? appSettings.accentColor
+                    : Qt.rgba(appSettings.textColor.r, appSettings.textColor.g, appSettings.textColor.b, appSettings.isEffectiveDark ? 0.22 : 0.18)
+            }
+            Behavior on border.color { ColorAnimation { duration: 150 } }
+        }
+
         Row {
             id: buttonRow
             anchors.centerIn: parent
             spacing: 8
+            z: 1
 
             YIcon {
                 size: 18

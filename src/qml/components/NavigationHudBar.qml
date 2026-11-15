@@ -98,7 +98,7 @@ Item {
 
         // Switch Tab Left / Right (L1/L2 + R1/R2 or [ / ])
         RowLayout {
-            visible: root.pageContext === "home" || root.pageContext === "gameDetail"
+            visible: root.pageContext === "home" || root.pageContext === "gameDetail" || root.pageContext === "settings"
             spacing: 4
 
             GamepadPrompt {

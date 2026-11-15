@@ -1,8 +1,10 @@
 #include "UiController.h"
 #include <QCoreApplication>
 #include <QCursor>
+#include <QDesktopServices>
 #include <QFileDialog>
 #include <QDir>
+#include <QUrl>
 #include <QEvent>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -218,6 +220,13 @@ QString UiController::selectFolder(const QString& title, const QString& initialP
     const QString startDir = initialPath.isEmpty() ? QDir::homePath() : initialPath;
     const QString selected = QFileDialog::getExistingDirectory(nullptr, dlgTitle, startDir, QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     return selected;
+}
+
+bool UiController::openDirectory(const QString& path) {
+    const QString clean = path.trimmed();
+    if (clean.isEmpty()) return false;
+    QDir().mkpath(clean);
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(clean));
 }
 
 } // namespace Tsuki

@@ -2627,6 +2627,589 @@ private slots:
     QTest::qWait(30);
     QVERIFY2(qmlErrors.isEmpty(), qPrintable(qmlErrors.join(QLatin1Char('\n'))));
   }
+
+  void testSettingsPageTabsDynamicPillsAndCrossTabSearch() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+
+    QSettings rawSettings(QStringLiteral("Tsuki"), QStringLiteral("TsukiLauncher"));
+    const bool hadThemeMode = rawSettings.contains(QStringLiteral("appearance/themeMode"));
+    const QVariant oldThemeMode = rawSettings.value(QStringLiteral("appearance/themeMode"));
+    const bool hadCustomSb = rawSettings.contains(QStringLiteral("appearance/customSidebarColor"));
+    const QVariant oldCustomSb = rawSettings.value(QStringLiteral("appearance/customSidebarColor"));
+    const bool hadSyncSb = rawSettings.contains(QStringLiteral("appearance/syncSidebarColor"));
+    const QVariant oldSyncSb = rawSettings.value(QStringLiteral("appearance/syncSidebarColor"));
+    auto restoreTheme = qScopeGuard([&]() {
+      if (hadThemeMode) rawSettings.setValue(QStringLiteral("appearance/themeMode"), oldThemeMode);
+      else rawSettings.remove(QStringLiteral("appearance/themeMode"));
+      if (hadCustomSb) rawSettings.setValue(QStringLiteral("appearance/customSidebarColor"), oldCustomSb);
+      else rawSettings.remove(QStringLiteral("appearance/customSidebarColor"));
+      if (hadSyncSb) rawSettings.setValue(QStringLiteral("appearance/syncSidebarColor"), oldSyncSb);
+      else rawSettings.remove(QStringLiteral("appearance/syncSidebarColor"));
+    });
+    rawSettings.remove(QStringLiteral("appearance/themeMode"));
+
+    DatabaseManager db(tmpDir.filePath(QStringLiteral("settings_qml.db")));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    settings.setDatabaseManager(&db);
+    // Default appearance mode must be System (2)
+    QCOMPARE(settings.themeMode(), 2);
+
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dl);
+    ControllerManager ctrlMgr(&db, &settings);
+    SteamGridDbService sgdb(&settings, &dl);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+    UiController uiCtrl(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
+                        &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm);
+
+    QVERIFY(!settings.configDirPath().isEmpty());
+    QVERIFY(!settings.dataDirPath().isEmpty());
+    QVERIFY(!settings.logsDirPath().isEmpty());
+
+    QQuickWindow win;
+    win.resize(1280, 820);
+    win.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"), &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"), &uiCtrl);
+
+    QStringList relevantWarnings;
+    QObject::connect(&engine, &QQmlEngine::warnings, &win,
+                     [&](const QList<QQmlError> &warnings) {
+                       for (const QQmlError &err : warnings) {
+                         const QString text = err.toString();
+                         if (text.contains(QStringLiteral("SettingsPage")) ||
+                             text.contains(QStringLiteral("SettingTile")) ||
+                             text.contains(QStringLiteral("SettingsSection")) ||
+                             text.contains(QStringLiteral("M3PillGroup")) ||
+                             text.contains(QStringLiteral("M3ToolTip")) ||
+                             text.contains(QStringLiteral("ThemePreviewCards")) ||
+                             text.contains(QStringLiteral("Binding loop")) ||
+                             text.contains(QStringLiteral("ReferenceError")) ||
+                             text.contains(QStringLiteral("TypeError")) ||
+                             text.contains(QStringLiteral("recursive rearrange")) ||
+                             text.contains(QStringLiteral("Detected anchors")) ||
+                             text.contains(QStringLiteral("Invalid property assignment"))) {
+                           relevantWarnings << text;
+                         }
+                       }
+                     });
+
+    // 1. M3PillGroup component behavior
+    QQmlComponent pillComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/M3PillGroup.qml")));
+    QVERIFY2(pillComp.isReady(), qPrintable(pillComp.errorString()));
+    QVariantList pillModel{
+        QVariantMap{{QStringLiteral("label"), QStringLiteral("Off")}, {QStringLiteral("val"), 0}},
+        QVariantMap{{QStringLiteral("label"), QStringLiteral("Hover")}, {QStringLiteral("val"), 1}},
+        QVariantMap{{QStringLiteral("label"), QStringLiteral("Always")}, {QStringLiteral("val"), 2}},
+    };
+    std::unique_ptr<QObject> pillObj(pillComp.createWithInitialProperties(
+        {{QStringLiteral("model"), pillModel}, {QStringLiteral("selectedValue"), 0}}));
+    QVERIFY(pillObj != nullptr);
+    auto *pillItem = qobject_cast<QQuickItem *>(pillObj.get());
+    QVERIFY(pillItem != nullptr);
+    pillItem->setParentItem(win.contentItem());
+    QCoreApplication::processEvents();
+    QCOMPARE(pillObj->property("selectedIndex").toInt(), 0);
+    auto verifyPillCornerSymmetry = [](QQuickItem *rootPill) {
+      QList<QQuickItem *> stack{rootPill};
+      int rectCount = 0;
+      while (!stack.isEmpty()) {
+        QQuickItem *cur = stack.takeLast();
+        for (QQuickItem *ch : cur->childItems()) {
+          stack.append(ch);
+          if (ch->metaObject()->indexOfProperty("topLeftRadius") < 0)
+            continue;
+          ++rectCount;
+          const qreal tl = ch->property("topLeftRadius").toReal();
+          const qreal bl = ch->property("bottomLeftRadius").toReal();
+          const qreal tr = ch->property("topRightRadius").toReal();
+          const qreal br = ch->property("bottomRightRadius").toReal();
+          QVERIFY2(qAbs(tl - bl) < 0.05 && qAbs(tr - br) < 0.05,
+                   qPrintable(QStringLiteral("Asymmetric pill corners: TL=%1 BL=%2 TR=%3 BR=%4")
+                                  .arg(tl).arg(bl).arg(tr).arg(br)));
+        }
+      }
+      QVERIFY(rectCount >= 3);
+    };
+    QVERIFY(QMetaObject::invokeMethod(pillObj.get(), "adjustRight"));
+    QTest::qWait(40); // Mid-transition: top and bottom corners must animate in lockstep
+    verifyPillCornerSymmetry(pillItem);
+    QCOMPARE(pillObj->property("selectedIndex").toInt(), 1);
+    QCOMPARE(pillObj->property("selectedValue").toInt(), 1);
+    QVERIFY(QMetaObject::invokeMethod(pillObj.get(), "adjustLeft"));
+    QTest::qWait(40);
+    verifyPillCornerSymmetry(pillItem);
+    QTest::qWait(200);
+    verifyPillCornerSymmetry(pillItem);
+    QCOMPARE(pillObj->property("selectedIndex").toInt(), 0);
+    pillObj.reset();
+
+    // Verify wrapped M3PillGroup also keeps symmetric corner transitions
+    std::unique_ptr<QObject> wrapPillObj(pillComp.createWithInitialProperties(
+        {{QStringLiteral("model"), pillModel},
+         {QStringLiteral("selectedValue"), 0},
+         {QStringLiteral("wrap"), true},
+         {QStringLiteral("width"), 220}}));
+    QVERIFY(wrapPillObj != nullptr);
+    auto *wrapPillItem = qobject_cast<QQuickItem *>(wrapPillObj.get());
+    QVERIFY(wrapPillItem != nullptr);
+    wrapPillItem->setParentItem(win.contentItem());
+    QCoreApplication::processEvents();
+    QVERIFY(QMetaObject::invokeMethod(wrapPillObj.get(), "adjustRight"));
+    QTest::qWait(40);
+    verifyPillCornerSymmetry(wrapPillItem);
+    QTest::qWait(200);
+    verifyPillCornerSymmetry(wrapPillItem);
+    wrapPillObj.reset();
+
+    // 2. ThemePreviewCards component behavior
+    QQmlComponent cardsComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/ThemePreviewCards.qml")));
+    QVERIFY2(cardsComp.isReady(), qPrintable(cardsComp.errorString()));
+    std::unique_ptr<QObject> cardsObj(cardsComp.createWithInitialProperties(
+        {{QStringLiteral("selectedMode"), 0}}));
+    QVERIFY(cardsObj != nullptr);
+    auto *cardsItem = qobject_cast<QQuickItem *>(cardsObj.get());
+    QVERIFY(cardsItem != nullptr);
+    cardsItem->setParentItem(win.contentItem());
+    QCoreApplication::processEvents();
+    QVERIFY(QMetaObject::invokeMethod(cardsObj.get(), "adjustRight"));
+    QCoreApplication::processEvents();
+    QCOMPARE(cardsObj->property("selectedMode").toInt(), 1);
+    QVERIFY(QMetaObject::invokeMethod(cardsObj.get(), "adjustLeft"));
+    QCoreApplication::processEvents();
+    QCOMPARE(cardsObj->property("selectedMode").toInt(), 0);
+    cardsObj.reset();
+
+    // 3. SettingsSection, SettingTile & M3ToolTip standalone instantiation
+    QQmlComponent sectionComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/SettingsSection.qml")));
+    QVERIFY2(sectionComp.isReady(), qPrintable(sectionComp.errorString()));
+    std::unique_ptr<QObject> sectionObj(sectionComp.createWithInitialProperties(
+        {{QStringLiteral("sectionTitle"), QStringLiteral("Sample Section")},
+         {QStringLiteral("infoTip"), QStringLiteral("Tooltip info")}}));
+    QVERIFY(sectionObj != nullptr);
+    qobject_cast<QQuickItem *>(sectionObj.get())->setParentItem(win.contentItem());
+
+    QQmlComponent tileComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/SettingTile.qml")));
+    QVERIFY2(tileComp.isReady(), qPrintable(tileComp.errorString()));
+    std::unique_ptr<QObject> tileObj(tileComp.createWithInitialProperties(
+        {{QStringLiteral("label"), QStringLiteral("Sample Option")},
+         {QStringLiteral("infoTip"), QStringLiteral("Helpful hint")},
+         {QStringLiteral("badgeText"), QStringLiteral("NEW")}}));
+    QVERIFY(tileObj != nullptr);
+    auto *tileItem = qobject_cast<QQuickItem *>(tileObj.get());
+    tileItem->setParentItem(win.contentItem());
+    tileItem->setWidth(420);
+
+    QQmlComponent tipComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/M3ToolTip.qml")));
+    QVERIFY2(tipComp.isReady(), qPrintable(tipComp.errorString()));
+    std::unique_ptr<QObject> tipObj(tipComp.createWithInitialProperties(
+        {{QStringLiteral("text"), QStringLiteral("Clean M3 tooltip hint")},
+         {QStringLiteral("visible"), true}}));
+    QVERIFY(tipObj != nullptr);
+    tipObj->setParent(tileItem);
+    QCoreApplication::processEvents();
+    auto *standaloneTitle = tileObj->findChild<QQuickItem *>(QStringLiteral("settingTileTitleLabel"));
+    QVERIFY(standaloneTitle != nullptr);
+    QCOMPARE(standaloneTitle->property("truncated").toBool(), false);
+    tipObj.reset();
+    tileObj.reset();
+    sectionObj.reset();
+
+    // 4. SettingsPage full 6-tab layout, rail sidebar color sync, no truncated labels, keyboard cycling, and cross-tab search
+#if !TSUKI_VERSION_OVERRIDDEN
+    QCOMPARE(QStringLiteral(TSUKI_VERSION), QStringLiteral(TSUKI_PROJECT_VERSION));
+#endif
+    const QString prevAppVersion = QCoreApplication::applicationVersion();
+    const auto restoreAppVersion = qScopeGuard([&]() {
+      QCoreApplication::setApplicationVersion(prevAppVersion);
+    });
+    QCoreApplication::setApplicationVersion(QStringLiteral(TSUKI_VERSION));
+
+    QQmlComponent settingsComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/pages/SettingsPage.qml")));
+    QVERIFY2(settingsComp.isReady(), qPrintable(settingsComp.errorString()));
+    std::unique_ptr<QObject> settingsObj(settingsComp.create());
+    QVERIFY(settingsObj != nullptr);
+    auto *settingsItem = qobject_cast<QQuickItem *>(settingsObj.get());
+    QVERIFY(settingsItem != nullptr);
+    settingsItem->setParentItem(win.contentItem());
+    settingsItem->setSize(QSizeF(win.width(), win.height()));
+    QCoreApplication::processEvents();
+    QTest::qWait(30);
+
+    const QVariantList tabMeta = settingsObj->property("tabMeta").toList();
+    QCOMPARE(tabMeta.size(), 6);
+    QCOMPARE(settingsObj->property("activeTab").toInt(), 0);
+    QCOMPARE(settingsObj->property("railCollapsed").toBool(), false);
+    settingsObj->setProperty("railCollapsed", true);
+    QCOMPARE(settingsObj->property("railCollapsed").toBool(), true);
+    settingsObj->setProperty("railCollapsed", false);
+
+    // Settings sidebar adapts dynamically to AppSettings::sidebarColor
+    auto *navRailItem = settingsObj->findChild<QQuickItem *>(QStringLiteral("settingsNavRail"));
+    QVERIFY(navRailItem != nullptr);
+    settings.setSyncSidebarColor(false);
+    settings.setCustomSidebarColor(QStringLiteral("#1e232d"));
+    QTRY_COMPARE(navRailItem->property("color").value<QColor>(), QColor(QStringLiteral("#1e232d")));
+    settings.setSyncSidebarColor(true);
+    QTRY_COMPARE(navRailItem->property("color").value<QColor>(), settings.bgColor());
+    settings.setSyncSidebarColor(false);
+    settings.resetSidebarColor();
+
+    // Visit every tab at desktop (1280x820) and minimum window width (960x540):
+    // verify zero layout/anchor loops AND zero truncated setting tile labels
+    for (const QSizeF &sz : {QSizeF(1280, 820), QSizeF(960, 540)}) {
+      settingsItem->setSize(sz);
+      for (int t = 0; t < 6; ++t) {
+        QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "selectTab", Q_ARG(QVariant, QVariant(t))));
+        QCoreApplication::processEvents();
+        QCOMPARE(settingsObj->property("activeTab").toInt(), t);
+        const auto titleLabels = settingsObj->findChildren<QQuickItem *>(QStringLiteral("settingTileTitleLabel"));
+        for (QQuickItem *lbl : titleLabels) {
+          if (lbl->isVisible()) {
+            QVERIFY2(!lbl->property("truncated").toBool(),
+                     qPrintable(QStringLiteral("Truncated label on tab %1 (%2x%3): %4")
+                                    .arg(t)
+                                    .arg(sz.width())
+                                    .arg(sz.height())
+                                    .arg(lbl->property("text").toString())));
+          }
+        }
+      }
+    }
+    settingsItem->setSize(QSizeF(win.width(), win.height()));
+    QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "selectTab", Q_ARG(QVariant, QVariant(0))));
+    QCoreApplication::processEvents();
+
+    // Verify About tab version, author & GitHub/Repository controls
+    auto *aboutVerLbl = settingsObj->findChild<QQuickItem *>(QStringLiteral("aboutVersionLabel"));
+    QVERIFY(aboutVerLbl != nullptr);
+    QCOMPARE(aboutVerLbl->property("text").toString(),
+             QStringLiteral("v") + QStringLiteral(TSUKI_VERSION));
+    QVERIFY(settingsObj->findChild<QQuickItem *>(QStringLiteral("aboutAuthorRow")) != nullptr);
+    auto *ghAccBtn = settingsObj->findChild<QQuickItem *>(QStringLiteral("githubAccountBtn"));
+    auto *ghRepoBtn = settingsObj->findChild<QQuickItem *>(QStringLiteral("githubRepoBtn"));
+    QVERIFY(ghAccBtn != nullptr);
+    QVERIFY(ghRepoBtn != nullptr);
+    QCOMPARE(ghAccBtn->property("text").toString(), QStringLiteral("@muzammilshafique"));
+    QCOMPARE(ghRepoBtn->property("text").toString(), QStringLiteral("Repository"));
+
+    // Bracket keys [ / ] cycle tabs smoothly (including wrap-around 0 -> 5)
+    settingsItem->forceActiveFocus();
+    QCoreApplication::processEvents();
+    QTest::keyClick(&win, Qt::Key_BracketRight);
+    QCoreApplication::processEvents();
+    QCOMPARE(settingsObj->property("activeTab").toInt(), 1);
+    QTest::keyClick(&win, Qt::Key_BracketLeft);
+    QCoreApplication::processEvents();
+    QCOMPARE(settingsObj->property("activeTab").toInt(), 0);
+    QTest::keyClick(&win, Qt::Key_BracketLeft);
+    QCoreApplication::processEvents();
+    QCOMPARE(settingsObj->property("activeTab").toInt(), 5);
+    QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "selectTab", Q_ARG(QVariant, QVariant(0))));
+    QCoreApplication::processEvents();
+
+    // Verify catalog indexing across all 6 tabs and preserved objectNames
+    QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "buildIndex"));
+    const QVariantList catalog = settingsObj->property("settingsCatalog").toList();
+    QVERIFY(catalog.size() >= 15);
+    QSet<int> indexedTabs;
+    for (const QVariant &entryVar : catalog) {
+      indexedTabs.insert(entryVar.toMap().value(QStringLiteral("tabIdx")).toInt());
+    }
+    QCOMPARE(indexedTabs.size(), 6);
+
+    QVERIFY(settingsObj->findChild<QQuickItem *>(QStringLiteral("gamescopeDefaultRow")) != nullptr);
+    QVERIFY(settingsObj->findChild<QQuickItem *>(QStringLiteral("gamescopeDefaultsConfigRow")) != nullptr);
+
+    // Cross-tab search jump from tab 0 (Style) -> tab 2 (Performance)
+    QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "updateSearchResults",
+                                      Q_ARG(QVariant, QVariant(QStringLiteral("gamescope")))));
+    QCoreApplication::processEvents();
+    const QVariantList results = settingsObj->property("searchResults").toList();
+    QVERIFY(!results.isEmpty());
+    QVariantMap gsMatch;
+    for (const QVariant &rVar : results) {
+      const QVariantMap rMap = rVar.toMap();
+      if (rMap.value(QStringLiteral("tabIdx")).toInt() == 2) {
+        gsMatch = rMap;
+        break;
+      }
+    }
+    QVERIFY(!gsMatch.isEmpty());
+    QObject *targetRowObj = gsMatch.value(QStringLiteral("item")).value<QObject *>();
+    QVERIFY(targetRowObj != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "scrollToSetting",
+                                      Q_ARG(QVariant, QVariant::fromValue(targetRowObj)),
+                                      Q_ARG(QVariant, QVariant(2))));
+    QCoreApplication::processEvents();
+    QTest::qWait(30);
+    QCOMPARE(settingsObj->property("activeTab").toInt(), 2);
+
+    // Clean teardown while jump timer/effects have settled
+    settingsObj.reset();
+    QCoreApplication::processEvents();
+    QTest::qWait(30);
+
+    // Ephemeral create + immediate destroy before event-loop flush
+    std::unique_ptr<QObject> ephemeralSettings(settingsComp.create());
+    QVERIFY(ephemeralSettings != nullptr);
+    ephemeralSettings.reset();
+    QCoreApplication::processEvents();
+    QTest::qWait(30);
+
+    QVERIFY2(relevantWarnings.isEmpty(), qPrintable(relevantWarnings.join(QLatin1Char('\n'))));
+  }
+
+  void testFabMenuAndCompactAddGameDialog() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    QSettings rawSettings(QStringLiteral("Tsuki"), QStringLiteral("TsukiLauncher"));
+    const bool hasThemeMode = rawSettings.contains(QStringLiteral("appearance/themeMode"));
+    const QVariant oldThemeMode = rawSettings.value(QStringLiteral("appearance/themeMode"));
+    const auto restoreSettings = qScopeGuard([&]() {
+      if (hasThemeMode) rawSettings.setValue(QStringLiteral("appearance/themeMode"), oldThemeMode);
+      else rawSettings.remove(QStringLiteral("appearance/themeMode"));
+    });
+
+    DatabaseManager db(tmpDir.filePath(QStringLiteral("fab_add_dialog.db")));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    settings.setDatabaseManager(&db);
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dl);
+    ControllerManager ctrlMgr(&db, &settings);
+    SteamGridDbService sgdb(&settings, &dl);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+    UiController uiCtrl(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
+                        &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm);
+
+    QQuickWindow win;
+    win.resize(1280, 820);
+    win.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"), &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"), &uiCtrl);
+
+    QStringList relevantWarnings;
+    QObject::connect(&engine, &QQmlEngine::warnings, &win,
+                     [&](const QList<QQmlError> &warnings) {
+                       for (const QQmlError &err : warnings) {
+                         const QString text = err.toString();
+                         if (text.contains(QStringLiteral("M3FabMenu")) ||
+                             text.contains(QStringLiteral("AddGameDialog")) ||
+                             text.contains(QStringLiteral("TopBar")) ||
+                             text.contains(QStringLiteral("Binding loop")) ||
+                             text.contains(QStringLiteral("ReferenceError")) ||
+                             text.contains(QStringLiteral("TypeError")) ||
+                             text.contains(QStringLiteral("recursive rearrange")) ||
+                             text.contains(QStringLiteral("Detected anchors"))) {
+                           relevantWarnings << text;
+                         }
+                       }
+                     });
+
+    // 1. M3FabMenu open/close and platform selection
+    QQmlComponent fabComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/M3FabMenu.qml")));
+    QVERIFY2(fabComp.isReady(), qPrintable(fabComp.errorString()));
+    std::unique_ptr<QObject> fabObj(fabComp.create());
+    QVERIFY(fabObj != nullptr);
+    auto *fabItem = qobject_cast<QQuickItem *>(fabObj.get());
+    QVERIFY(fabItem != nullptr);
+    fabItem->setParentItem(win.contentItem());
+    fabItem->setPosition(QPointF(1100, 24));
+    QCoreApplication::processEvents();
+
+    QSignalSpy fabSpy(fabObj.get(), SIGNAL(itemSelected(QString)));
+    QCOMPARE(fabObj->property("isMenuOpen").toBool(), false);
+    QCOMPARE(fabObj->property("isExpanded").toBool(), false);
+    QTRY_VERIFY(qAbs(fabItem->implicitWidth() - 40.0) <= 0.5);
+    QVERIFY(fabObj->property("expandedWidth").toReal() > 60.0);
+
+    QVERIFY(QMetaObject::invokeMethod(fabObj.get(), "openMenu"));
+    QTRY_COMPARE(fabObj->property("isMenuOpen").toBool(), true);
+    QCOMPARE(fabObj->property("isExpanded").toBool(), true);
+    QTRY_VERIFY(fabItem->implicitWidth() > 60.0);
+    QVERIFY(QMetaObject::invokeMethod(fabObj.get(), "activateItem", Q_ARG(QVariant, QVariant(0))));
+    QTRY_COMPARE(fabSpy.count(), 1);
+    QCOMPARE(fabSpy.at(0).at(0).toString(), QStringLiteral("windows"));
+    QTRY_COMPARE(fabObj->property("isMenuOpen").toBool(), false);
+    QCOMPARE(fabObj->property("isExpanded").toBool(), false);
+    QTRY_VERIFY(qAbs(fabItem->implicitWidth() - 40.0) <= 0.5);
+
+    QVERIFY(QMetaObject::invokeMethod(fabObj.get(), "openMenu"));
+    QTRY_COMPARE(fabObj->property("isMenuOpen").toBool(), true);
+    QVERIFY(QMetaObject::invokeMethod(fabObj.get(), "activateItem", Q_ARG(QVariant, QVariant(1))));
+    QTRY_COMPARE(fabSpy.count(), 2);
+    QCOMPARE(fabSpy.at(1).at(0).toString(), QStringLiteral("linux"));
+    QTRY_COMPARE(fabObj->property("isMenuOpen").toBool(), false);
+    QTRY_VERIFY(qAbs(fabItem->implicitWidth() - 40.0) <= 0.5);
+    fabObj.reset();
+
+    // Background focus sentinel to verify AddGameDialog never leaks directional keys
+    QQmlComponent bgSentinelComp(&engine);
+    bgSentinelComp.setData(
+        "import QtQuick\n"
+        "FocusScope {\n"
+        "    width: 200; height: 200\n"
+        "    property int leakedKeys: 0\n"
+        "    Keys.onPressed: (event) => { leakedKeys++; event.accepted = true }\n"
+        "}\n",
+        QUrl());
+    QVERIFY2(bgSentinelComp.isReady(), qPrintable(bgSentinelComp.errorString()));
+    std::unique_ptr<QObject> bgSentinelObj(bgSentinelComp.create());
+    QVERIFY(bgSentinelObj != nullptr);
+    auto *bgSentinel = qobject_cast<QQuickItem *>(bgSentinelObj.get());
+    QVERIFY(bgSentinel != nullptr);
+    bgSentinel->setParentItem(win.contentItem());
+    bgSentinel->forceActiveFocus();
+    QCoreApplication::processEvents();
+    QCOMPARE(bgSentinel->hasActiveFocus(), true);
+
+    // 2. AddGameDialog compact Settings aesthetic, no internal platform switcher, adaptive height
+    QQmlComponent dialogComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/AddGameDialog.qml")));
+    QVERIFY2(dialogComp.isReady(), qPrintable(dialogComp.errorString()));
+    std::unique_ptr<QObject> dialogObj(dialogComp.create());
+    QVERIFY(dialogObj != nullptr);
+    dialogObj->setProperty("parent", QVariant::fromValue(win.contentItem()));
+    QCoreApplication::processEvents();
+
+    QVERIFY(QMetaObject::invokeMethod(dialogObj.get(), "resetAndOpen",
+                                      Q_ARG(QVariant, QVariant(QStringLiteral("windows")))));
+    auto *contentItem = dialogObj->property("contentItem").value<QQuickItem *>();
+    QVERIFY(contentItem != nullptr);
+    auto *winExeField = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameExeField"));
+    auto *winBrowseBtn = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameBrowseExeBtn"));
+    auto *winTitleField = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameTitleField"));
+    auto *winWorkDirField = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameWorkDirField"));
+    auto *winCancelBtn = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameCancelBtn"));
+    QVERIFY(winExeField && winBrowseBtn && winTitleField && winWorkDirField && winCancelBtn);
+
+    // Focus must enter AddGameDialog immediately and stay inside after the enter transition finishes
+    QTRY_COMPARE(winExeField->hasActiveFocus(), true);
+    QTest::qWait(220);
+    QCOMPARE(dialogObj->property("opened").toBool(), true);
+    QCOMPARE(winExeField->hasActiveFocus(), true);
+    QCOMPARE(dialogObj->property("platform").toString(), QStringLiteral("windows"));
+
+    // Keyboard/gamepad navigation inside Windows dialog without leaking keys to background
+    QTest::keyClick(&win, Qt::Key_Up);
+    QCoreApplication::processEvents();
+    QCOMPARE(winExeField->hasActiveFocus(), true);
+
+    QTest::keyClick(&win, Qt::Key_Right);
+    QCoreApplication::processEvents();
+    QCOMPARE(winBrowseBtn->hasActiveFocus(), true);
+
+    QTest::keyClick(&win, Qt::Key_Left);
+    QCoreApplication::processEvents();
+    QCOMPARE(winExeField->hasActiveFocus(), true);
+
+    // Enter edit mode via Return on M3TextField, then Down exits edit mode and moves to Title
+    QTest::keyClick(&win, Qt::Key_Return);
+    QCoreApplication::processEvents();
+    QCOMPARE(winExeField->property("isEditing").toBool(), true);
+    QTest::keyClick(&win, Qt::Key_Down);
+    QCoreApplication::processEvents();
+    QCOMPARE(winTitleField->hasActiveFocus(), true);
+
+    for (int i = 0; i < 5; ++i) {
+      QTest::keyClick(&win, Qt::Key_Down);
+      QCoreApplication::processEvents();
+    }
+    QCOMPARE(winWorkDirField->hasActiveFocus(), true);
+    QTest::keyClick(&win, Qt::Key_Down);
+    QCoreApplication::processEvents();
+    QCOMPARE(winCancelBtn->hasActiveFocus(), true);
+    QCOMPARE(bgSentinel->property("leakedKeys").toInt(), 0);
+
+    // Platform selector must not exist inside the dialog (chosen exclusively from FAB menu)
+    QVERIFY(contentItem->findChild<QQuickItem *>(QStringLiteral("platformSeg")) == nullptr);
+
+    auto *headerLbl = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameHeaderTitle"));
+    auto *winCard = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameWindowsCard"));
+    QVERIFY(headerLbl != nullptr);
+    QVERIFY(winCard != nullptr);
+    QCOMPARE(headerLbl->property("text").toString(), QStringLiteral("Add Windows Game"));
+    QCOMPARE(winCard->isVisible(), true);
+    const qreal windowsDialogHeight = dialogObj->property("height").toReal();
+
+    QTest::keyClick(&win, Qt::Key_Escape);
+    QTRY_COMPARE(dialogObj->property("visible").toBool(), false);
+
+    QVERIFY(QMetaObject::invokeMethod(dialogObj.get(), "resetAndOpen",
+                                      Q_ARG(QVariant, QVariant(QStringLiteral("linux")))));
+    QTRY_COMPARE(dialogObj->property("opened").toBool(), true);
+    QCOMPARE(dialogObj->property("platform").toString(), QStringLiteral("linux"));
+    QCOMPARE(headerLbl->property("text").toString(), QStringLiteral("Add Linux Game"));
+    QCOMPARE(winCard->isVisible(), false);
+    const qreal linuxDialogHeight = dialogObj->property("height").toReal();
+    QVERIFY2(linuxDialogHeight < windowsDialogHeight,
+             qPrintable(QStringLiteral("Expected Linux dialog height (%1) < Windows height (%2)")
+                            .arg(linuxDialogHeight)
+                            .arg(windowsDialogHeight)));
+
+    // Submitting Linux native game creates native game entry and closes popup
+    auto *exeField = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameExeField"));
+    auto *titleField = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameTitleField"));
+    auto *submitBtn = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameSubmitBtn"));
+    QVERIFY(exeField != nullptr && titleField != nullptr && submitBtn != nullptr);
+    exeField->setProperty("text", QStringLiteral("/opt/games/hollow_knight/hollow.x86_64"));
+    titleField->setProperty("text", QStringLiteral("Hollow Knight Native"));
+    QCoreApplication::processEvents();
+    QCOMPARE(submitBtn->isEnabled(), true);
+    QVERIFY(QMetaObject::invokeMethod(submitBtn, "clicked"));
+    QTRY_COMPARE(dialogObj->property("visible").toBool(), false);
+    const auto addedGames = db.getAllGames();
+    QCOMPARE(addedGames.size(), 1);
+    QCOMPARE(addedGames.first().platform, QStringLiteral("linux"));
+    QCOMPARE(addedGames.first().title, QStringLiteral("Hollow Knight Native"));
+    dialogObj.reset();
+    bgSentinelObj.reset();
+
+    // 3. TopBar top-right FAB integration
+    QQmlComponent topBarComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/home/TopBar.qml")));
+    QVERIFY2(topBarComp.isReady(), qPrintable(topBarComp.errorString()));
+    std::unique_ptr<QObject> topBarObj(topBarComp.create());
+    QVERIFY(topBarObj != nullptr);
+    auto *topBarItem = qobject_cast<QQuickItem *>(topBarObj.get());
+    QVERIFY(topBarItem != nullptr);
+    topBarItem->setParentItem(win.contentItem());
+    topBarItem->setSize(QSizeF(1060, 84));
+    QCoreApplication::processEvents();
+
+    auto *topFab = topBarObj->findChild<QQuickItem *>(QStringLiteral("topBarAddFabMenu"));
+    QVERIFY(topFab != nullptr);
+    QSignalSpy topAddSpy(topBarObj.get(), SIGNAL(addGameRequested(QString)));
+    QVERIFY(QMetaObject::invokeMethod(topBarObj.get(), "openAddMenu"));
+    QTRY_COMPARE(topBarObj->property("isAddMenuOpen").toBool(), true);
+    QVERIFY(QMetaObject::invokeMethod(topFab, "activateItem", Q_ARG(QVariant, QVariant(1))));
+    QTRY_COMPARE(topAddSpy.count(), 1);
+    QCOMPARE(topAddSpy.at(0).at(0).toString(), QStringLiteral("linux"));
+    QTRY_COMPARE(topBarObj->property("isAddMenuOpen").toBool(), false);
+
+    topBarObj.reset();
+    QCoreApplication::processEvents();
+    QTest::qWait(30);
+
+    QVERIFY2(relevantWarnings.isEmpty(), qPrintable(relevantWarnings.join(QLatin1Char('\n'))));
+  }
 };
 
 QTEST_MAIN(TestTsuki)

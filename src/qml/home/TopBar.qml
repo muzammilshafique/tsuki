@@ -12,13 +12,16 @@ Rectangle {
 
     property string searchQuery: ""
     readonly property bool isSearchFocused: searchField.activeFocus
+    readonly property bool isAddMenuOpen: addFabMenu.isMenuOpen
     signal searchRequested(string query)
-    signal addGameRequested()
+    signal addGameRequested(string platform)
     signal focusGridRequested()
     signal focusSidebarRequested()
 
     function forceSearchFocus() { searchTile.forceActiveFocus() }
     function activateSearch() { searchField.forceActiveFocus() }
+    function openAddMenu() { addFabMenu.openMenu() }
+    function closeAddMenu() { addFabMenu.closeMenu() }
 
     readonly property var sortOptions: [
         { label: "Recently Played / Default", mode: 0 },
@@ -279,7 +282,7 @@ Rectangle {
             Keys.onRightPressed: (event) => {
                 if (!sortPopup.visible) {
                     event.accepted = true
-                    addGameBtn.forceActiveFocus()
+                    addFabMenu.forceFocus()
                 }
             }
             Keys.onUpPressed: (event) => {
@@ -541,99 +544,17 @@ Rectangle {
             }
         }
 
-        // + Add Game Dynamic Spring Button (Second, far right)
-        Button {
-            id: addGameBtn
-            padding: 0
-            activeFocusOnTab: false
+        // + Add Game Expanding Pill FAB Menu (Top Right)
+        M3FabMenu {
+            id: addFabMenu
+            objectName: "topBarAddFabMenu"
             Layout.alignment: Qt.AlignVCenter
-
-            readonly property bool isBtnActive: addGameBtn.hovered || (addGameBtn.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
-            property real expandedWidth: 10 + 16 + 8 + addGameLabel.implicitWidth + 14
-            implicitWidth: isBtnActive ? expandedWidth : 40
-            implicitHeight: 40
-
-            Behavior on implicitWidth {
-                SpringAnimation { spring: 4; damping: 0.25; epsilon: 0.25 }
-            }
-
-            background: Rectangle {
-                radius: 20
-                color: addGameBtn.hovered ? Qt.lighter(appSettings.accentColor, 1.08) : appSettings.accentColor
-                scale: addGameBtn.pressed ? 0.96 : (addGameBtn.activeFocus ? 1.02 : 1.0)
-                Behavior on scale { NumberAnimation { duration: 100 } }
-                Behavior on color { ColorAnimation { duration: 150 } }
-            }
-
-            contentItem: Item {
-                clip: true
-                implicitWidth: addGameBtn.implicitWidth
-                implicitHeight: 40
-
-                Row {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 10
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    spacing: 8
-
-                    Item {
-                        width: 16
-                        height: parent.height
-                        YIcon {
-                            anchors.centerIn: parent
-                            size: 16
-                            source: "qrc:/tsuki_app/icons/actions/add.svg"
-                            color: appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff"
-                        }
-                    }
-
-                    Label {
-                        id: addGameLabel
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "Add Game"
-                        color: appSettings.isEffectiveDark ? "#0f0f11" : "#ffffff"
-                        font.pixelSize: 13
-                        font.weight: Font.DemiBold
-                        renderType: Text.QtRendering
-                        opacity: addGameBtn.isBtnActive ? 1.0 : 0.0
-                        Behavior on opacity { NumberAnimation { duration: 150 } }
-                    }
-                }
-            }
-
-            onClicked: topBar.addGameRequested()
-            Keys.onLeftPressed: (event) => {
-                event.accepted = true
-                sortBtn.forceActiveFocus()
-            }
-            Keys.onDownPressed: (event) => {
-                event.accepted = true
-                topBar.focusGridRequested()
-            }
-            Keys.onEscapePressed: (event) => {
-                event.accepted = true
-                topBar.focusGridRequested()
-            }
-            Keys.onReturnPressed: (event) => {
-                event.accepted = true
-                topBar.addGameRequested()
-            }
-            Keys.onEnterPressed: (event) => {
-                event.accepted = true
-                topBar.addGameRequested()
-            }
-            Keys.onSpacePressed: (event) => {
-                event.accepted = true
-                topBar.addGameRequested()
-            }
-            Keys.onPressed: (event) => {
-                if (event.key === Qt.Key_Backspace) {
-                    event.accepted = true
-                    topBar.focusGridRequested()
-                }
-            }
-            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            fabSize: 40
+            buttonLabel: "Add Game"
+            expandUpward: false
+            onItemSelected: (platform) => topBar.addGameRequested(platform)
+            onFocusLeftRequested: sortBtn.forceActiveFocus()
+            onFocusDownRequested: topBar.focusGridRequested()
         }
     }
 }

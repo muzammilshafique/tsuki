@@ -70,14 +70,31 @@ target_link_libraries(tsuki_core PUBLIC
     PkgConfig::SDL2
 )
 
-set(TSUKI_VERSION "${PROJECT_VERSION}" CACHE STRING "Application display version")
+# Leave TSUKI_VERSION empty by default so updates to project(tsuki VERSION ...)
+# propagate without getting pinned in CMakeCache; packagers can still pass
+# -DTSUKI_VERSION=<ver> on the CLI. Also migrate any stale cached default left
+# behind by older CMakeLists that stored PROJECT_VERSION directly in the cache.
+if(DEFINED TSUKI_VERSION AND NOT TSUKI_VERSION STREQUAL "")
+    get_property(_tsuki_ver_help CACHE TSUKI_VERSION PROPERTY HELPSTRING)
+    if(_tsuki_ver_help STREQUAL "Application display version" AND TSUKI_VERSION VERSION_LESS PROJECT_VERSION)
+        set(TSUKI_VERSION "" CACHE STRING "Optional override for application display version (defaults to PROJECT_VERSION)" FORCE)
+    endif()
+endif()
+set(TSUKI_VERSION "" CACHE STRING "Optional override for application display version (defaults to PROJECT_VERSION)")
+if(NOT TSUKI_VERSION STREQUAL "")
+    set(_TSUKI_EFFECTIVE_VERSION "${TSUKI_VERSION}")
+    set(_TSUKI_VERSION_OVERRIDDEN 1)
+else()
+    set(_TSUKI_EFFECTIVE_VERSION "${PROJECT_VERSION}")
+    set(_TSUKI_VERSION_OVERRIDDEN 0)
+endif()
 
 add_executable(tsuki
     src/main.cpp
     resources/resources.qrc
     resources/fonts.qrc
 )
-target_compile_definitions(tsuki PRIVATE TSUKI_VERSION="${TSUKI_VERSION}")
+target_compile_definitions(tsuki PRIVATE TSUKI_VERSION="${_TSUKI_EFFECTIVE_VERSION}")
 target_link_libraries(tsuki PRIVATE tsuki_core)
 
 enable_testing()
@@ -85,7 +102,12 @@ add_executable(tsuki_tests
     tests/test_tsuki.cpp
     resources/fonts.qrc
 )
-target_compile_definitions(tsuki_tests PRIVATE TSUKI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(tsuki_tests PRIVATE
+    TSUKI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    TSUKI_VERSION="${_TSUKI_EFFECTIVE_VERSION}"
+    TSUKI_PROJECT_VERSION="${PROJECT_VERSION}"
+    TSUKI_VERSION_OVERRIDDEN=${_TSUKI_VERSION_OVERRIDDEN}
+)
 target_link_libraries(tsuki_tests PRIVATE tsuki_core Qt6::Test)
 add_test(NAME TsukiUnitTests COMMAND tsuki_tests)
 set_tests_properties(TsukiUnitTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

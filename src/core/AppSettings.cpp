@@ -27,7 +27,7 @@ AppSettings::AppSettings(QObject *parent)
   QDir().mkpath(toolsDir());
 
   m_themeMode =
-      m_settings.value(QStringLiteral("appearance/themeMode"), 0).toInt();
+      m_settings.value(QStringLiteral("appearance/themeMode"), 2).toInt();
   m_customBgColor =
       m_settings.value(QStringLiteral("appearance/customBgColor"), QString())
           .toString();
@@ -359,8 +359,10 @@ bool AppSettings::isEffectiveDark() const {
     return false;
   // 2: System
   if (QGuiApplication::styleHints()) {
-    return QGuiApplication::styleHints()->colorScheme() ==
-           Qt::ColorScheme::Dark;
+    const Qt::ColorScheme scheme = QGuiApplication::styleHints()->colorScheme();
+    if (scheme != Qt::ColorScheme::Unknown) {
+      return scheme == Qt::ColorScheme::Dark;
+    }
   }
   return true;
 }
