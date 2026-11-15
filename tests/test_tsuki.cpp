@@ -21,6 +21,7 @@
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
+#include <QQmlError>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QScopeGuard>
@@ -2533,6 +2534,95 @@ private slots:
         QCOMPARE(obj->property("iconSymbol").toString(), QStringLiteral("tune"));
       }
     }
+  }
+
+  void testGameDetailPageDelayedCallbackLifecycleNoErrors() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    DatabaseManager db(tmpDir.filePath(QStringLiteral("detail_lifecycle.db")));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dl);
+    ControllerManager ctrlMgr(&db, &settings);
+    SteamGridDbService sgdb(&settings, &dl);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+
+    const QString nativeGameId = gm.addNativeGame(QStringLiteral("Celeste"), QStringLiteral("/usr/bin/true"));
+    QVERIFY(!nativeGameId.isEmpty());
+
+    UiController uiCtrl(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
+                        &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm);
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"), &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"), &uiCtrl);
+
+    QStringList qmlErrors;
+    QObject::connect(&engine, &QQmlEngine::warnings, &engine,
+                     [&qmlErrors](const QList<QQmlError> &warnings) {
+                       for (const QQmlError &w : warnings) {
+                         const QString msg = w.toString();
+                         if (msg.contains(QStringLiteral("ReferenceError")) ||
+                             msg.contains(QStringLiteral("TypeError")) ||
+                             msg.contains(QStringLiteral("syncActiveTabPill")) ||
+                             msg.contains(QStringLiteral("tabsBar"))) {
+                           qmlErrors.append(msg);
+                         }
+                       }
+                     });
+
+    QQmlComponent detailComp(
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
+    QVERIFY2(detailComp.errors().isEmpty(), qPrintable(detailComp.errorString()));
+
+    QQuickWindow win;
+    win.resize(1280, 820);
+    win.show();
+
+    // 1. Opening GameDetailPage for a native game triggers tabList rebuild immediately after child tab creation
+    QScopedPointer<QObject> detailObj(detailComp.createWithInitialProperties(
+        {{QStringLiteral("gameId"), nativeGameId}}));
+    QVERIFY(detailObj != nullptr);
+    auto *detailItem = qobject_cast<QQuickItem *>(detailObj.get());
+    QVERIFY(detailItem != nullptr);
+    detailItem->setParentItem(win.contentItem());
+    detailItem->setSize(QSizeF(1280, 820));
+
+    QCoreApplication::processEvents();
+    QTest::qWait(30);
+    QVERIFY2(qmlErrors.isEmpty(), qPrintable(qmlErrors.join(QLatin1Char('\n'))));
+
+    bool checkedEnvTitleColor = false;
+    for (QQuickItem *item : detailItem->findChildren<QQuickItem *>()) {
+      if (item->property("text").toString() == QStringLiteral("Environment Variables")) {
+        QCOMPARE(item->property("color").value<QColor>(), settings.accentColor());
+        checkedEnvTitleColor = true;
+        break;
+      }
+    }
+    QVERIFY(checkedEnvTitleColor);
+
+    // Destroy page while tab switch & immediate teardown occur (simulating fast stack.pop())
+    detailObj->setProperty("activeTab", 2);
+    detailObj.reset();
+    QCoreApplication::processEvents();
+    QTest::qWait(30);
+    QVERIFY2(qmlErrors.isEmpty(), qPrintable(qmlErrors.join(QLatin1Char('\n'))));
+
+    // 2. Create and immediately destroy before event-loop flush
+    std::unique_ptr<QObject> ephemeral(detailComp.createWithInitialProperties(
+        {{QStringLiteral("gameId"), nativeGameId}}));
+    QVERIFY(ephemeral != nullptr);
+    ephemeral.reset();
+    QCoreApplication::processEvents();
+    QTest::qWait(30);
+    QVERIFY2(qmlErrors.isEmpty(), qPrintable(qmlErrors.join(QLatin1Char('\n'))));
   }
 };
 

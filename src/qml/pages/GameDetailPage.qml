@@ -120,13 +120,7 @@ Page {
         root.activeTab = tabList[nextPos].stackIndex
         const shouldFocusContent = (focusTabContent !== false)
         if (shouldFocusContent && !primaryActionBtn.activeFocus && !actionsDropdownBtn.activeFocus && !backBtn.activeFocus && !tabsBar.activeFocus) {
-            Qt.callLater(() => {
-                let grid = getFocusGrid()
-                if (grid.length > 3 && grid[3].length > 0 && grid[3][0]) {
-                    grid[3][0].forceActiveFocus()
-                    scrollToControl(grid[3][0])
-                }
-            })
+            focusTabContentTimer.restart()
         }
     }
 
@@ -336,15 +330,35 @@ Page {
         }
     }
 
+    Timer {
+        id: focusPrimaryBtnTimer
+        interval: 0
+        repeat: false
+        onTriggered: primaryActionBtn.forceActiveFocus()
+    }
+
+    Timer {
+        id: focusTabContentTimer
+        interval: 0
+        repeat: false
+        onTriggered: {
+            let grid = root.getFocusGrid()
+            if (grid.length > 3 && grid[3].length > 0 && grid[3][0]) {
+                grid[3][0].forceActiveFocus()
+                root.scrollToControl(grid[3][0])
+            }
+        }
+    }
+
     Component.onCompleted: {
         reloadGame()
-        Qt.callLater(() => primaryActionBtn.forceActiveFocus())
+        focusPrimaryBtnTimer.restart()
     }
     Component.onDestruction: saveAllChanges()
 
     StackView.onStatusChanged: {
         if (StackView.status === StackView.Active) {
-            Qt.callLater(() => primaryActionBtn.forceActiveFocus())
+            focusPrimaryBtnTimer.restart()
         }
     }
 
@@ -1287,6 +1301,13 @@ Page {
                     }
                 }
 
+                Timer {
+                    id: syncPillTimer
+                    interval: 0
+                    repeat: false
+                    onTriggered: tabsBar.syncActiveTabPill(false)
+                }
+
                 Connections {
                     target: root
                     function onActiveTabChanged() {
@@ -1294,7 +1315,7 @@ Page {
                     }
                     function onTabListChanged() {
                         tabsBar.pillInitialized = false
-                        Qt.callLater(() => tabsBar.syncActiveTabPill(false))
+                        syncPillTimer.restart()
                     }
                 }
 
@@ -1369,7 +1390,7 @@ Page {
 
                             onXChanged: if (isSelected) tabsBar.syncActiveTabPill(tabsBar.pillInitialized)
                             onWidthChanged: if (isSelected) tabsBar.syncActiveTabPill(tabsBar.pillInitialized)
-                            Component.onCompleted: if (isSelected) Qt.callLater(() => tabsBar.syncActiveTabPill(false))
+                            Component.onCompleted: if (isSelected) syncPillTimer.restart()
 
                             // Opacity-only hover highlight prevents #00000000 dark hover flash
                             Rectangle {
@@ -1798,7 +1819,7 @@ Page {
 
                                 Label {
                                     text: "Environment Variables"
-                                    color: appSettings.tagColorLinux
+                                    color: appSettings.accentColor
                                     font.family: "Rubik"
                                     font.pixelSize: 17
                                     font.weight: Font.DemiBold
@@ -2984,14 +3005,18 @@ Page {
             root.gamescopeDraft = defMap
             root.saveAllChanges()
         }
-        onClosed: {
-            Qt.callLater(() => {
+        Timer {
+            id: restoreGamescopeFocusTimer
+            interval: 0
+            repeat: false
+            onTriggered: {
                 if (typeof gamescopeCustomizeBtn !== "undefined" && gamescopeCustomizeBtn && gamescopeCustomizeBtn.visible) {
                     gamescopeCustomizeBtn.forceActiveFocus()
                 } else if (typeof gamescopeToggle !== "undefined" && gamescopeToggle) {
                     gamescopeToggle.forceActiveFocus()
                 }
-            })
+            }
         }
+        onClosed: restoreGamescopeFocusTimer.restart()
     }
 }
