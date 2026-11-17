@@ -9,35 +9,71 @@ Item {
     property color color: "#ffffff"
     property real size: 20
 
+    readonly property var _symbolIcons: ({
+        "add":                 "add.svg",
+        "arrow_back":          "back.svg",
+        "article":             "article.svg",
+        "auto_awesome":        "auto_awesome.svg",
+        "build":               "wrench.svg",
+        "check":               "check.svg",
+        "close":               "close.svg",
+        "colorize":            "colorize.svg",
+        "delete":              "trash.svg",
+        "desktop_windows":     "desktop_windows.svg",
+        "download":            "download.svg",
+        "folder_open":         "folder_open.svg",
+        "grid_view":           "grid_view.svg",
+        "info":                "info.svg",
+        "keyboard_arrow_down": "chevron_down.svg",
+        "menu":                "menu.svg",
+        "menu_open":           "menu_open.svg",
+        "open_in_new":         "shortcut.svg",
+        "palette":             "palette.svg",
+        "person":              "person.svg",
+        "play_arrow":          "play_arrow.svg",
+        "refresh":             "refresh.svg",
+        "shortcut":            "forward.svg",
+        "sort":                "sort.svg",
+        "speed":               "speed.svg",
+        "stop":                "stop.svg",
+        "terminal":            "terminal.svg",
+        "tune":                "tune.svg"
+    })
+
+    readonly property var _filledSymbolIcons: ({
+        "article":      "article-filled.svg",
+        "auto_awesome": "auto_awesome-filled.svg",
+        "colorize":     "colorize-filled.svg",
+        "folder_open":  "folder_open-filled.svg",
+        "grid_view":    "grid_view-filled.svg",
+        "info":         "info-filled.svg",
+        "palette":      "palette-filled.svg",
+        "play_arrow":   "play.svg",
+        "speed":        "speed-filled.svg",
+        "stop":         "stop.svg"
+    })
+
+    function resolveSymbolSource(sym, isFilled) {
+        if (!sym) return ""
+        const file = (isFilled && _filledSymbolIcons[sym])
+            ? _filledSymbolIcons[sym]
+            : _symbolIcons[sym]
+        return file ? ("qrc:/tsuki_app/icons/actions/" + file) : ""
+    }
+
+    readonly property string resolvedSource: root.symbol !== ""
+        ? root.resolveSymbolSource(root.symbol, root.filled)
+        : root.source
+
     implicitWidth: size
     implicitHeight: size
     width: size
     height: size
 
-    Text {
-        id: symbolIcon
-        anchors.centerIn: parent
-        visible: root.symbol !== ""
-        text: root.symbol
-        font.family: "Material Symbols Rounded"
-        font.pixelSize: Math.max(1, root.size)
-        font.variableAxes: ({
-            "opsz": Math.max(20, Math.min(48, Math.round(root.size))),
-            "FILL": root.filled ? 1 : 0
-        })
-        // Native FreeType rasterization uses non-zero contour fill and avoids GPU SDF holes
-        // where variable FILL=1 glyphs collapse opposite-winding inner contours.
-        renderType: Text.NativeRendering
-        color: root.color
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        Behavior on color { ColorAnimation { duration: 120 } }
-    }
-
     Image {
         id: rawIcon
         anchors.fill: parent
-        source: (root.symbol === "" && root.source !== "") ? root.source : ""
+        source: root.resolvedSource
         sourceSize: Qt.size(Math.max(16, root.size * 2), Math.max(16, root.size * 2))
         fillMode: Image.PreserveAspectFit
         visible: false
@@ -48,7 +84,7 @@ Item {
     MultiEffect {
         anchors.fill: rawIcon
         source: rawIcon
-        visible: root.symbol === "" && root.source !== ""
+        visible: root.resolvedSource !== ""
         colorization: 1.0
         colorizationColor: root.color
         Behavior on colorizationColor { ColorAnimation { duration: 120 } }

@@ -143,7 +143,8 @@ AppSettings::AppSettings(QObject *parent)
   {
     GamescopeConfig defGs;
     const QString gsJson =
-        m_settings.value(QStringLiteral("performance/gamescopeConfig"), QString())
+        m_settings
+            .value(QStringLiteral("performance/gamescopeConfig"), QString())
             .toString();
     if (!gsJson.isEmpty()) {
       const QJsonDocument doc = QJsonDocument::fromJson(gsJson.toUtf8());
@@ -487,14 +488,9 @@ void AppSettings::registerApplicationFonts() {
          nullptr},
         {{"/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf",
           "/usr/share/fonts/nerd-fonts/JetBrainsMonoNerdFont-Regular.ttf",
-          nullptr, nullptr},
-         ":/tsuki_app/fonts/JetBrainsMonoNerdFont-Regular.ttf",
+          "/usr/local/share/fonts/JetBrainsMonoNerdFont-Regular.ttf", nullptr},
+         nullptr,
          "JetBrains Mono NF"},
-        {{"/usr/share/fonts/TTF/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf",
-          "/usr/share/fonts/material-symbols/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf",
-          "/usr/share/fonts/TTF/MaterialSymbolsRounded.ttf", nullptr},
-         ":/tsuki_app/fonts/MaterialSymbolsRounded.ttf",
-         nullptr},
     };
 
     for (const auto &spec : specs) {
@@ -526,6 +522,32 @@ void AppSettings::registerApplicationFonts() {
         }
       }
     }
+
+    // Ensure "JetBrains Mono NF" resolves even if Fontconfig supplies the font
+    // from another directory or on non-Arch systems without the package.
+    const QString targetFamily = QStringLiteral("JetBrains Mono NF");
+    const QStringList allFamilies = QFontDatabase::families();
+    if (!allFamilies.contains(targetFamily) &&
+        QFont::substitutes(targetFamily).isEmpty()) {
+      QString substitute;
+      for (const QString &candidate :
+           {QStringLiteral("JetBrainsMono Nerd Font"),
+            QStringLiteral("JetBrainsMono NF"),
+            QStringLiteral("JetBrains Mono")}) {
+        if (allFamilies.contains(candidate)) {
+          substitute = candidate;
+          break;
+        }
+      }
+      if (substitute.isEmpty()) {
+        substitute =
+            QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
+        if (substitute.isEmpty()) {
+          substitute = QStringLiteral("monospace");
+        }
+      }
+      QFont::insertSubstitution(targetFamily, substitute);
+    }
   }
 
   if (QGuiApplication::instance() != nullptr) {
@@ -551,9 +573,12 @@ QColor AppSettings::tonalSurfaceColor(int tier) const {
   m_accentColor.getHslF(&ah, &asat, &al);
   const float satScale =
       (aspan == 0 || asat < 0.05f) ? 0.0f : qBound(0.45f, asat / 0.65f, 1.0f);
-  const double uR = (aspan > 0) ? (static_cast<double>(ar - amin) / aspan) * satScale : 0.0;
-  const double uG = (aspan > 0) ? (static_cast<double>(ag - amin) / aspan) * satScale : 0.0;
-  const double uB = (aspan > 0) ? (static_cast<double>(ab - amin) / aspan) * satScale : 0.0;
+  const double uR =
+      (aspan > 0) ? (static_cast<double>(ar - amin) / aspan) * satScale : 0.0;
+  const double uG =
+      (aspan > 0) ? (static_cast<double>(ag - amin) / aspan) * satScale : 0.0;
+  const double uB =
+      (aspan > 0) ? (static_cast<double>(ab - amin) / aspan) * satScale : 0.0;
 
   if (!m_customBgColor.isEmpty() && bg.isValid()) {
     if (idx == 0) {
@@ -565,8 +590,10 @@ QColor AppSettings::tonalSurfaceColor(int tier) const {
       h = (ah >= 0.0f) ? ah : 0.0f;
       s = 0.0f;
     }
-    static constexpr float darkSteps[5] = {0.0f, 0.035f, 0.068f, 0.105f, 0.145f};
-    static constexpr float lightSteps[5] = {0.0f, -0.035f, -0.065f, -0.095f, -0.125f};
+    static constexpr float darkSteps[5] = {0.0f, 0.035f, 0.068f, 0.105f,
+                                           0.145f};
+    static constexpr float lightSteps[5] = {0.0f, -0.035f, -0.065f, -0.095f,
+                                            -0.125f};
     const float targetL = dark ? qMin(0.40f, l + darkSteps[idx])
                                : qMax(0.75f, l + lightSteps[idx]);
     return QColor::fromHslF(h, s, targetL);
@@ -578,9 +605,10 @@ QColor AppSettings::tonalSurfaceColor(int tier) const {
     }
     static constexpr int amoledBase[5] = {0, 10, 17, 25, 34};
     static constexpr int amoledChroma[5] = {0, 2, 4, 6, 8};
-    return QColor(qBound(0, qRound(amoledBase[idx] + amoledChroma[idx] * uR), 255),
-                  qBound(0, qRound(amoledBase[idx] + amoledChroma[idx] * uG), 255),
-                  qBound(0, qRound(amoledBase[idx] + amoledChroma[idx] * uB), 255));
+    return QColor(
+        qBound(0, qRound(amoledBase[idx] + amoledChroma[idx] * uR), 255),
+        qBound(0, qRound(amoledBase[idx] + amoledChroma[idx] * uG), 255),
+        qBound(0, qRound(amoledBase[idx] + amoledChroma[idx] * uB), 255));
   }
 
   if (dark) {
@@ -602,9 +630,7 @@ QColor AppSettings::surfaceContainerLowest() const {
   return tonalSurfaceColor(0);
 }
 
-QColor AppSettings::surfaceContainerLow() const {
-  return tonalSurfaceColor(1);
-}
+QColor AppSettings::surfaceContainerLow() const { return tonalSurfaceColor(1); }
 
 QColor AppSettings::surfaceContainer() const { return tonalSurfaceColor(2); }
 
@@ -626,8 +652,9 @@ QColor AppSettings::secondaryContainer() const {
                ? QColor::fromHslF(0.0f, 0.0f, targetL)
                : QColor::fromHslF(h, qBound(0.18f, s * 0.45f, 0.40f), targetL);
   }
-  return achromatic ? QColor::fromHslF(0.0f, 0.0f, 0.90f)
-                    : QColor::fromHslF(h, qBound(0.32f, s * 0.65f, 0.72f), 0.91f);
+  return achromatic
+             ? QColor::fromHslF(0.0f, 0.0f, 0.90f)
+             : QColor::fromHslF(h, qBound(0.32f, s * 0.65f, 0.72f), 0.91f);
 }
 
 QColor AppSettings::onSecondaryContainer() const {
@@ -635,11 +662,13 @@ QColor AppSettings::onSecondaryContainer() const {
   m_accentColor.getHslF(&h, &s, &l);
   const bool achromatic = (h < 0.0f || s < 0.05f);
   if (isEffectiveDark()) {
-    return achromatic ? QColor(QStringLiteral("#f1f1f4"))
-                      : QColor::fromHslF(h, qBound(0.25f, s * 0.70f, 0.85f), 0.90f);
+    return achromatic
+               ? QColor(QStringLiteral("#f1f1f4"))
+               : QColor::fromHslF(h, qBound(0.25f, s * 0.70f, 0.85f), 0.90f);
   }
-  return achromatic ? QColor(QStringLiteral("#1c1c21"))
-                    : QColor::fromHslF(h, qBound(0.30f, s * 0.75f, 0.80f), 0.18f);
+  return achromatic
+             ? QColor(QStringLiteral("#1c1c21"))
+             : QColor::fromHslF(h, qBound(0.30f, s * 0.75f, 0.80f), 0.18f);
 }
 
 QColor AppSettings::onPrimary() const {
@@ -660,284 +689,282 @@ QColor AppSettings::surfaceAltColor() const { return surfaceContainer(); }
 
 QColor AppSettings::inputColor() const { return surfaceContainerHigh(); }
 
-      QColor AppSettings::borderColor() const {
-        if (!isEffectiveDark()) {
-          if (m_customBgColor.isEmpty())
-            return QColor(QStringLiteral("#cbd5e1"));
-          QColor bg = bgColor();
-          float h = 0.0f, s = 0.0f, l = 0.0f;
-          bg.getHslF(&h, &s, &l);
-          if (h < 0.0f) {
-            h = 0.0f;
-            s = 0.0f;
-          }
-          return QColor::fromHslF(h, s * 0.7f, qMax(0.0f, l - 0.15f));
-        }
+QColor AppSettings::borderColor() const {
+  if (!isEffectiveDark()) {
+    if (m_customBgColor.isEmpty())
+      return QColor(QStringLiteral("#cbd5e1"));
+    QColor bg = bgColor();
+    float h = 0.0f, s = 0.0f, l = 0.0f;
+    bg.getHslF(&h, &s, &l);
+    if (h < 0.0f) {
+      h = 0.0f;
+      s = 0.0f;
+    }
+    return QColor::fromHslF(h, s * 0.7f, qMax(0.0f, l - 0.15f));
+  }
 
-        if (m_themeMode == 3 ||
-            bgColor() == QColor(QStringLiteral("#000000"))) {
-          return QColor(255, 255, 255, 26);
-        }
+  if (m_themeMode == 3 || bgColor() == QColor(QStringLiteral("#000000"))) {
+    return QColor(255, 255, 255, 26);
+  }
 
-        if (m_customBgColor.isEmpty()) {
-          return QColor(255, 255, 255, 22);
-        }
+  if (m_customBgColor.isEmpty()) {
+    return QColor(255, 255, 255, 22);
+  }
 
-        return QColor(255, 255, 255, 24);
-      }
+  return QColor(255, 255, 255, 24);
+}
 
-      QColor AppSettings::textColor() const {
-        if (!isEffectiveDark())
-          return QColor(QStringLiteral("#0f172a"));
-        return QColor(QStringLiteral("#f4f4f5"));
-      }
+QColor AppSettings::textColor() const {
+  if (!isEffectiveDark())
+    return QColor(QStringLiteral("#0f172a"));
+  return QColor(QStringLiteral("#f4f4f5"));
+}
 
-      QColor AppSettings::textSecColor() const {
-        if (!isEffectiveDark())
-          return QColor(QStringLiteral("#475569"));
-        return QColor(QStringLiteral("#a1a1aa"));
-      }
+QColor AppSettings::textSecColor() const {
+  if (!isEffectiveDark())
+    return QColor(QStringLiteral("#475569"));
+  return QColor(QStringLiteral("#a1a1aa"));
+}
 
-      QColor AppSettings::textTerColor() const {
-        if (!isEffectiveDark())
-          return QColor(QStringLiteral("#94a3b8"));
-        return QColor(QStringLiteral("#71717a"));
-      }
+QColor AppSettings::textTerColor() const {
+  if (!isEffectiveDark())
+    return QColor(QStringLiteral("#94a3b8"));
+  return QColor(QStringLiteral("#71717a"));
+}
 
-      void AppSettings::setSidebarCollapsed(bool collapsed) {
-        if (m_sidebarCollapsed == collapsed)
-          return;
-        m_sidebarCollapsed = collapsed;
-        m_settings.setValue(QStringLiteral("appearance/sidebarCollapsed"),
-                            collapsed);
-        emit sidebarCollapsedChanged();
-      }
+void AppSettings::setSidebarCollapsed(bool collapsed) {
+  if (m_sidebarCollapsed == collapsed)
+    return;
+  m_sidebarCollapsed = collapsed;
+  m_settings.setValue(QStringLiteral("appearance/sidebarCollapsed"), collapsed);
+  emit sidebarCollapsedChanged();
+}
 
-      void AppSettings::setDefaultFilter(int filter) {
-        if (m_defaultFilter == filter)
-          return;
-        m_defaultFilter = filter;
-        m_settings.setValue(QStringLiteral("appearance/defaultFilter"), filter);
-        emit defaultFilterChanged();
-      }
+void AppSettings::setDefaultFilter(int filter) {
+  if (m_defaultFilter == filter)
+    return;
+  m_defaultFilter = filter;
+  m_settings.setValue(QStringLiteral("appearance/defaultFilter"), filter);
+  emit defaultFilterChanged();
+}
 
-      void AppSettings::setCardRadius(int r) {
-        if (m_cardRadius == r)
-          return;
-        m_cardRadius = r;
-        m_settings.setValue(QStringLiteral("appearance/cardRadius"), r);
-        emit cardStyleChanged();
-      }
+void AppSettings::setCardRadius(int r) {
+  if (m_cardRadius == r)
+    return;
+  m_cardRadius = r;
+  m_settings.setValue(QStringLiteral("appearance/cardRadius"), r);
+  emit cardStyleChanged();
+}
 
-      void AppSettings::setThumbScaleTarget(int s) {
-        s = qBound(140, s, 300);
-        if (m_thumbScaleTarget == s)
-          return;
-        m_thumbScaleTarget = s;
-        m_settings.setValue(QStringLiteral("appearance/thumbScaleTarget"), s);
-        emit cardStyleChanged();
-      }
+void AppSettings::setThumbScaleTarget(int s) {
+  s = qBound(140, s, 300);
+  if (m_thumbScaleTarget == s)
+    return;
+  m_thumbScaleTarget = s;
+  m_settings.setValue(QStringLiteral("appearance/thumbScaleTarget"), s);
+  emit cardStyleChanged();
+}
 
-      void AppSettings::setTitleVisibility(int v) {
-        if (m_titleVisibility == v)
-          return;
-        m_titleVisibility = v;
-        m_settings.setValue(QStringLiteral("appearance/titleVisibility"), v);
-        emit cardStyleChanged();
-      }
+void AppSettings::setTitleVisibility(int v) {
+  if (m_titleVisibility == v)
+    return;
+  m_titleVisibility = v;
+  m_settings.setValue(QStringLiteral("appearance/titleVisibility"), v);
+  emit cardStyleChanged();
+}
 
-      void AppSettings::setTagPosition(int p) {
-        if (m_tagPosition == p)
-          return;
-        m_tagPosition = p;
-        m_settings.setValue(QStringLiteral("appearance/tagPosition"), p);
-        emit cardStyleChanged();
-      }
+void AppSettings::setTagPosition(int p) {
+  if (m_tagPosition == p)
+    return;
+  m_tagPosition = p;
+  m_settings.setValue(QStringLiteral("appearance/tagPosition"), p);
+  emit cardStyleChanged();
+}
 
-      void AppSettings::setShowYear(bool s) {
-        if (m_showYear == s)
-          return;
-        m_showYear = s;
-        m_settings.setValue(QStringLiteral("appearance/showYear"), s);
-        emit cardStyleChanged();
-      }
+void AppSettings::setShowYear(bool s) {
+  if (m_showYear == s)
+    return;
+  m_showYear = s;
+  m_settings.setValue(QStringLiteral("appearance/showYear"), s);
+  emit cardStyleChanged();
+}
 
-      void AppSettings::setShowGameName(bool s) {
-        if (m_showGameName == s)
-          return;
-        m_showGameName = s;
-        m_settings.setValue(QStringLiteral("appearance/showGameName"), s);
-        emit cardStyleChanged();
-      }
+void AppSettings::setShowGameName(bool s) {
+  if (m_showGameName == s)
+    return;
+  m_showGameName = s;
+  m_settings.setValue(QStringLiteral("appearance/showGameName"), s);
+  emit cardStyleChanged();
+}
 
-      void AppSettings::setLeftClickBehavior(int b) {
-        if (m_leftClickBehavior == b)
-          return;
-        m_leftClickBehavior = b;
-        m_settings.setValue(QStringLiteral("behavior/leftClickBehavior"), b);
-        emit behaviorChanged();
-      }
+void AppSettings::setLeftClickBehavior(int b) {
+  if (m_leftClickBehavior == b)
+    return;
+  m_leftClickBehavior = b;
+  m_settings.setValue(QStringLiteral("behavior/leftClickBehavior"), b);
+  emit behaviorChanged();
+}
 
-      void AppSettings::setMinimizeOnLaunch(bool m) {
-        if (m_minimizeOnLaunch == m)
-          return;
-        m_minimizeOnLaunch = m;
-        m_settings.setValue(QStringLiteral("behavior/minimizeOnLaunch"), m);
-        emit behaviorChanged();
-      }
+void AppSettings::setMinimizeOnLaunch(bool m) {
+  if (m_minimizeOnLaunch == m)
+    return;
+  m_minimizeOnLaunch = m;
+  m_settings.setValue(QStringLiteral("behavior/minimizeOnLaunch"), m);
+  emit behaviorChanged();
+}
 
-      void AppSettings::setShowNavigationHud(bool s) {
-        if (m_showNavigationHud == s)
-          return;
-        m_showNavigationHud = s;
-        m_settings.setValue(QStringLiteral("behavior/showNavigationHud"), s);
-        emit behaviorChanged();
-      }
+void AppSettings::setShowNavigationHud(bool s) {
+  if (m_showNavigationHud == s)
+    return;
+  m_showNavigationHud = s;
+  m_settings.setValue(QStringLiteral("behavior/showNavigationHud"), s);
+  emit behaviorChanged();
+}
 
-      void AppSettings::setDefaultRunnerId(const QString &id) {
-        if (m_defaultRunnerId == id)
-          return;
-        m_defaultRunnerId = id;
-        m_settings.setValue(QStringLiteral("defaults/runnerId"), id);
-        emit runnerDefaultsChanged();
-      }
+void AppSettings::setDefaultRunnerId(const QString &id) {
+  if (m_defaultRunnerId == id)
+    return;
+  m_defaultRunnerId = id;
+  m_settings.setValue(QStringLiteral("defaults/runnerId"), id);
+  emit runnerDefaultsChanged();
+}
 
-      void AppSettings::setDefaultPrefixLocation(const QString &path) {
-        if (m_defaultPrefixLocation == path || path.isEmpty())
-          return;
-        m_defaultPrefixLocation = path;
-        QDir().mkpath(path);
-        m_settings.setValue(QStringLiteral("defaults/prefixLocation"), path);
-        emit pathDefaultsChanged();
-      }
+void AppSettings::setDefaultPrefixLocation(const QString &path) {
+  if (m_defaultPrefixLocation == path || path.isEmpty())
+    return;
+  m_defaultPrefixLocation = path;
+  QDir().mkpath(path);
+  m_settings.setValue(QStringLiteral("defaults/prefixLocation"), path);
+  emit pathDefaultsChanged();
+}
 
-      void AppSettings::setDefaultRunnerLocation(const QString &path) {
-        if (m_defaultRunnerLocation == path || path.isEmpty())
-          return;
-        m_defaultRunnerLocation = path;
-        QDir().mkpath(path);
-        m_settings.setValue(QStringLiteral("defaults/runnerLocation"), path);
-        emit pathDefaultsChanged();
-      }
+void AppSettings::setDefaultRunnerLocation(const QString &path) {
+  if (m_defaultRunnerLocation == path || path.isEmpty())
+    return;
+  m_defaultRunnerLocation = path;
+  QDir().mkpath(path);
+  m_settings.setValue(QStringLiteral("defaults/runnerLocation"), path);
+  emit pathDefaultsChanged();
+}
 
-      void AppSettings::setMangohudDefault(bool v) {
-        if (m_mangohudDefault == v)
-          return;
-        m_mangohudDefault = v;
-        m_settings.setValue(QStringLiteral("performance/mangohud"), v);
-        emit performanceDefaultsChanged();
-      }
+void AppSettings::setMangohudDefault(bool v) {
+  if (m_mangohudDefault == v)
+    return;
+  m_mangohudDefault = v;
+  m_settings.setValue(QStringLiteral("performance/mangohud"), v);
+  emit performanceDefaultsChanged();
+}
 
-      void AppSettings::setGamemodeDefault(bool v) {
-        if (m_gamemodeDefault == v)
-          return;
-        m_gamemodeDefault = v;
-        m_settings.setValue(QStringLiteral("performance/gamemode"), v);
-        emit performanceDefaultsChanged();
-      }
+void AppSettings::setGamemodeDefault(bool v) {
+  if (m_gamemodeDefault == v)
+    return;
+  m_gamemodeDefault = v;
+  m_settings.setValue(QStringLiteral("performance/gamemode"), v);
+  emit performanceDefaultsChanged();
+}
 
-      void AppSettings::setGamescopeDefault(bool v) {
-        if (m_gamescopeDefault == v)
-          return;
-        m_gamescopeDefault = v;
-        m_settings.setValue(QStringLiteral("performance/gamescope"), v);
-        emit performanceDefaultsChanged();
-      }
+void AppSettings::setGamescopeDefault(bool v) {
+  if (m_gamescopeDefault == v)
+    return;
+  m_gamescopeDefault = v;
+  m_settings.setValue(QStringLiteral("performance/gamescope"), v);
+  emit performanceDefaultsChanged();
+}
 
-      void AppSettings::setDefaultGamescopeConfig(const QVariantMap &cfgMap) {
-        GamescopeConfig cfg = GamescopeConfig::fromVariantMap(cfgMap);
-        cfg.inheritGlobal = false;
-        const QVariantMap normalized = cfg.toVariantMap();
-        if (m_defaultGamescopeConfig == normalized)
-          return;
-        m_defaultGamescopeConfig = normalized;
-        m_settings.setValue(
-            QStringLiteral("performance/gamescopeConfig"),
-            QString::fromUtf8(
-                QJsonDocument(cfg.toJsonObject()).toJson(QJsonDocument::Compact)));
-        emit performanceDefaultsChanged();
-      }
+void AppSettings::setDefaultGamescopeConfig(const QVariantMap &cfgMap) {
+  GamescopeConfig cfg = GamescopeConfig::fromVariantMap(cfgMap);
+  cfg.inheritGlobal = false;
+  const QVariantMap normalized = cfg.toVariantMap();
+  if (m_defaultGamescopeConfig == normalized)
+    return;
+  m_defaultGamescopeConfig = normalized;
+  m_settings.setValue(
+      QStringLiteral("performance/gamescopeConfig"),
+      QString::fromUtf8(
+          QJsonDocument(cfg.toJsonObject()).toJson(QJsonDocument::Compact)));
+  emit performanceDefaultsChanged();
+}
 
-      void AppSettings::resetDefaultGamescopeConfig() {
-        GamescopeConfig cfg;
-        cfg.inheritGlobal = false;
-        setDefaultGamescopeConfig(cfg.toVariantMap());
-      }
+void AppSettings::resetDefaultGamescopeConfig() {
+  GamescopeConfig cfg;
+  cfg.inheritGlobal = false;
+  setDefaultGamescopeConfig(cfg.toVariantMap());
+}
 
-      void AppSettings::setDxvkDefault(bool v) {
-        if (m_dxvkDefault == v)
-          return;
-        m_dxvkDefault = v;
-        m_settings.setValue(QStringLiteral("performance/dxvk"), v);
-        emit performanceDefaultsChanged();
-      }
+void AppSettings::setDxvkDefault(bool v) {
+  if (m_dxvkDefault == v)
+    return;
+  m_dxvkDefault = v;
+  m_settings.setValue(QStringLiteral("performance/dxvk"), v);
+  emit performanceDefaultsChanged();
+}
 
-      void AppSettings::setVkd3dDefault(bool v) {
-        if (m_vkd3dDefault == v)
-          return;
-        m_vkd3dDefault = v;
-        m_settings.setValue(QStringLiteral("performance/vkd3d"), v);
-        emit performanceDefaultsChanged();
-      }
+void AppSettings::setVkd3dDefault(bool v) {
+  if (m_vkd3dDefault == v)
+    return;
+  m_vkd3dDefault = v;
+  m_settings.setValue(QStringLiteral("performance/vkd3d"), v);
+  emit performanceDefaultsChanged();
+}
 
-      void AppSettings::setEsyncDefault(bool v) {
-        if (m_esyncDefault == v)
-          return;
-        m_esyncDefault = v;
-        m_settings.setValue(QStringLiteral("performance/esync"), v);
-        emit performanceDefaultsChanged();
-      }
+void AppSettings::setEsyncDefault(bool v) {
+  if (m_esyncDefault == v)
+    return;
+  m_esyncDefault = v;
+  m_settings.setValue(QStringLiteral("performance/esync"), v);
+  emit performanceDefaultsChanged();
+}
 
-      void AppSettings::setFsyncDefault(bool v) {
-        if (m_fsyncDefault == v)
-          return;
-        m_fsyncDefault = v;
-        m_settings.setValue(QStringLiteral("performance/fsync"), v);
-        emit performanceDefaultsChanged();
-      }
+void AppSettings::setFsyncDefault(bool v) {
+  if (m_fsyncDefault == v)
+    return;
+  m_fsyncDefault = v;
+  m_settings.setValue(QStringLiteral("performance/fsync"), v);
+  emit performanceDefaultsChanged();
+}
 
-      void AppSettings::setDefaultDxvkHud(const QString &hud) {
-        if (m_defaultDxvkHud == hud)
-          return;
-        m_defaultDxvkHud = hud;
-        m_settings.setValue(QStringLiteral("performance/dxvkHud"), hud);
-        emit performanceDefaultsChanged();
-      }
+void AppSettings::setDefaultDxvkHud(const QString &hud) {
+  if (m_defaultDxvkHud == hud)
+    return;
+  m_defaultDxvkHud = hud;
+  m_settings.setValue(QStringLiteral("performance/dxvkHud"), hud);
+  emit performanceDefaultsChanged();
+}
 
-      void AppSettings::setXboxEmulationDefault(bool v) {
-        if (m_xboxEmulationDefault == v)
-          return;
-        m_xboxEmulationDefault = v;
-        m_settings.setValue(QStringLiteral("controller/xboxEmulation"), v);
-        if (m_db) {
-          m_db->setAllGamesXboxEmulationState(v);
-        }
-        emit controllerDefaultsChanged();
-      }
+void AppSettings::setXboxEmulationDefault(bool v) {
+  if (m_xboxEmulationDefault == v)
+    return;
+  m_xboxEmulationDefault = v;
+  m_settings.setValue(QStringLiteral("controller/xboxEmulation"), v);
+  if (m_db) {
+    m_db->setAllGamesXboxEmulationState(v);
+  }
+  emit controllerDefaultsChanged();
+}
 
-      void AppSettings::setSteamGridDbApiKey(const QString &key) {
-        if (m_steamGridDbApiKey == key)
-          return;
-        m_steamGridDbApiKey = key.trimmed();
-        m_settings.setValue(QStringLiteral("integrations/steamGridDbApiKey"),
-                            m_steamGridDbApiKey);
-        emit apiSettingsChanged();
-      }
+void AppSettings::setSteamGridDbApiKey(const QString &key) {
+  if (m_steamGridDbApiKey == key)
+    return;
+  m_steamGridDbApiKey = key.trimmed();
+  m_settings.setValue(QStringLiteral("integrations/steamGridDbApiKey"),
+                      m_steamGridDbApiKey);
+  emit apiSettingsChanged();
+}
 
-      void AppSettings::setLogLevel(const QString &level) {
-        if (m_logLevel == level)
-          return;
-        m_logLevel = level;
-        m_settings.setValue(QStringLiteral("logging/logLevel"), level);
-        emit loggingSettingsChanged();
-      }
+void AppSettings::setLogLevel(const QString &level) {
+  if (m_logLevel == level)
+    return;
+  m_logLevel = level;
+  m_settings.setValue(QStringLiteral("logging/logLevel"), level);
+  emit loggingSettingsChanged();
+}
 
-      void AppSettings::setEnableWineDebugLogs(bool v) {
-        if (m_enableWineDebugLogs == v)
-          return;
-        m_enableWineDebugLogs = v;
-        m_settings.setValue(QStringLiteral("logging/enableWineDebugLogs"), v);
-        emit loggingSettingsChanged();
-      }
+void AppSettings::setEnableWineDebugLogs(bool v) {
+  if (m_enableWineDebugLogs == v)
+    return;
+  m_enableWineDebugLogs = v;
+  m_settings.setValue(QStringLiteral("logging/enableWineDebugLogs"), v);
+  emit loggingSettingsChanged();
+}
 
-    } // namespace Tsuki
+} // namespace Tsuki

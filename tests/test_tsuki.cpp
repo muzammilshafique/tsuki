@@ -47,11 +47,14 @@ namespace {
 QUrl resolveQmlUrl(const QString &relativePath) {
   QStringList candidates;
 #ifdef TSUKI_SOURCE_DIR
-  candidates << QStringLiteral(TSUKI_SOURCE_DIR) + QLatin1Char('/') + relativePath;
+  candidates << QStringLiteral(TSUKI_SOURCE_DIR) + QLatin1Char('/') +
+                    relativePath;
 #endif
   candidates << QDir::currentPath() + QLatin1Char('/') + relativePath
-             << QCoreApplication::applicationDirPath() + QStringLiteral("/../") + relativePath
-             << QFileInfo(QString::fromUtf8(__FILE__)).absolutePath() + QStringLiteral("/../") + relativePath;
+             << QCoreApplication::applicationDirPath() +
+                    QStringLiteral("/../") + relativePath
+             << QFileInfo(QString::fromUtf8(__FILE__)).absolutePath() +
+                    QStringLiteral("/../") + relativePath;
   for (const QString &path : candidates) {
     if (QFileInfo::exists(path)) {
       return QUrl::fromLocalFile(QFileInfo(path).canonicalFilePath());
@@ -1048,19 +1051,17 @@ private slots:
     const QString scriptPath = tmpDir.filePath("spawn_detached.sh");
     QFile f(scriptPath);
     QVERIFY(f.open(QIODevice::WriteOnly));
-    const QByteArray script =
-        QByteArray("#!/bin/sh\n"
-                   "setsid sleep 30 >/dev/null 2>&1 &\n"
-                   "CPID=$!\n"
-                   "echo \"$CPID\" > \"") +
-        pidFile.toUtf8() +
-        QByteArray(".tmp\"\n"
-                   "mv \"") +
-        pidFile.toUtf8() +
-        QByteArray(".tmp\" \"") +
-        pidFile.toUtf8() +
-        QByteArray("\"\n"
-                   "wait \"$CPID\"\n");
+    const QByteArray script = QByteArray("#!/bin/sh\n"
+                                         "setsid sleep 30 >/dev/null 2>&1 &\n"
+                                         "CPID=$!\n"
+                                         "echo \"$CPID\" > \"") +
+                              pidFile.toUtf8() +
+                              QByteArray(".tmp\"\n"
+                                         "mv \"") +
+                              pidFile.toUtf8() + QByteArray(".tmp\" \"") +
+                              pidFile.toUtf8() +
+                              QByteArray("\"\n"
+                                         "wait \"$CPID\"\n");
     f.write(script);
     f.close();
     f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner |
@@ -1088,15 +1089,21 @@ private slots:
       }
     });
     auto isProcessAliveNonZombie = [](qint64 pid) -> bool {
-      if (pid <= 1) return false;
-      if (::kill(static_cast<pid_t>(pid), 0) != 0) return false;
+      if (pid <= 1)
+        return false;
+      if (::kill(static_cast<pid_t>(pid), 0) != 0)
+        return false;
       QFile statFile(QStringLiteral("/proc/%1/stat").arg(pid));
-      if (!statFile.open(QIODevice::ReadOnly)) return false;
+      if (!statFile.open(QIODevice::ReadOnly))
+        return false;
       const QByteArray data = statFile.readAll();
       const int rparen = data.lastIndexOf(')');
-      if (rparen < 0) return false;
-      const QList<QByteArray> fields = data.mid(rparen + 1).trimmed().split(' ');
-      if (fields.isEmpty()) return false;
+      if (rparen < 0)
+        return false;
+      const QList<QByteArray> fields =
+          data.mid(rparen + 1).trimmed().split(' ');
+      if (fields.isEmpty())
+        return false;
       const QByteArray state = fields.at(0);
       return state != "Z" && state != "X";
     };
@@ -1507,9 +1514,8 @@ private slots:
     QCOMPARE(settings.showGameName(), false);
 
     bool signalFired = false;
-    QObject::connect(&settings, &AppSettings::cardStyleChanged, [&]() {
-      signalFired = true;
-    });
+    QObject::connect(&settings, &AppSettings::cardStyleChanged,
+                     [&]() { signalFired = true; });
 
     settings.setShowGameName(true);
     QCOMPARE(settings.showGameName(), true);
@@ -1520,7 +1526,8 @@ private slots:
   }
 
   void testGamepadAutoDetectionIconsAndInputNavigation() {
-    // 1. Controller type auto-detection (PlayStation vs Xbox vs vendor IDs & names)
+    // 1. Controller type auto-detection (PlayStation vs Xbox vs vendor IDs &
+    // names)
     QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
                  QStringLiteral("Unknown Pad"), 0, SDL_CONTROLLER_TYPE_PS4),
              QStringLiteral("playstation"));
@@ -1528,27 +1535,33 @@ private slots:
                  QStringLiteral("Unknown Pad"), 0, SDL_CONTROLLER_TYPE_PS5),
              QStringLiteral("playstation"));
     QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
-                 QStringLiteral("Sony Controller"), 0x054c, SDL_CONTROLLER_TYPE_UNKNOWN),
+                 QStringLiteral("Sony Controller"), 0x054c,
+                 SDL_CONTROLLER_TYPE_UNKNOWN),
              QStringLiteral("playstation"));
     QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
-                 QStringLiteral("DualSense Wireless Controller"), 0, SDL_CONTROLLER_TYPE_UNKNOWN),
+                 QStringLiteral("DualSense Wireless Controller"), 0,
+                 SDL_CONTROLLER_TYPE_UNKNOWN),
              QStringLiteral("playstation"));
-    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
-                 QStringLiteral("PS4 Controller"), 0, SDL_CONTROLLER_TYPE_UNKNOWN),
-             QStringLiteral("playstation"));
+    QCOMPARE(
+        ControllerManager::detectControllerTypeFromInfo(
+            QStringLiteral("PS4 Controller"), 0, SDL_CONTROLLER_TYPE_UNKNOWN),
+        QStringLiteral("playstation"));
 
     QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
                  QStringLiteral("Xbox Pad"), 0, SDL_CONTROLLER_TYPE_XBOXONE),
              QStringLiteral("xbox"));
+    QCOMPARE(
+        ControllerManager::detectControllerTypeFromInfo(
+            QStringLiteral("Controller"), 0x045e, SDL_CONTROLLER_TYPE_UNKNOWN),
+        QStringLiteral("xbox"));
     QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
-                 QStringLiteral("Controller"), 0x045e, SDL_CONTROLLER_TYPE_UNKNOWN),
+                 QStringLiteral("Xbox Wireless Controller"), 0,
+                 SDL_CONTROLLER_TYPE_UNKNOWN),
              QStringLiteral("xbox"));
-    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
-                 QStringLiteral("Xbox Wireless Controller"), 0, SDL_CONTROLLER_TYPE_UNKNOWN),
-             QStringLiteral("xbox"));
-    QCOMPARE(ControllerManager::detectControllerTypeFromInfo(
-                 QStringLiteral("Generic Gamepad"), 0, SDL_CONTROLLER_TYPE_UNKNOWN),
-             QStringLiteral("xbox"));
+    QCOMPARE(
+        ControllerManager::detectControllerTypeFromInfo(
+            QStringLiteral("Generic Gamepad"), 0, SDL_CONTROLLER_TYPE_UNKNOWN),
+        QStringLiteral("xbox"));
 
     // 2. Dynamic icons & controllerType override
     QTemporaryDir dir;
@@ -1561,11 +1574,14 @@ private slots:
     RunnerManager runnerMgr(&db, &settings, &dlMgr);
     PrefixManager prefixMgr(&db, &settings, &runnerMgr);
     WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dlMgr);
-    ControllerManager ctrlMgr(&db, &settings, std::make_unique<MockUinputBackend>());
+    ControllerManager ctrlMgr(&db, &settings,
+                              std::make_unique<MockUinputBackend>());
     SteamGridDbService sgdb(&settings, &dlMgr);
     DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
-    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
-    GameManager gameMgr(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
+    GameManager gameMgr(&db, &settings, &runnerMgr, &prefixMgr, &sgdb,
+                        &pipeline);
     UiController uiCtrl(&db, &settings, &dlMgr, &runnerMgr, &prefixMgr, &wtMgr,
                         &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gameMgr);
 
@@ -1612,10 +1628,12 @@ private slots:
     QCOMPARE(ctrlMgr.leftAnalogIconSource(),
              QStringLiteral("qrc:/tsuki_app/icons/gamepad/left-analog.svg"));
 
-    // 3. SDL button signals & trigger hysteresis + UiController activeInputType switching
+    // 3. SDL button signals & trigger hysteresis + UiController activeInputType
+    // switching
     QSignalSpy optionsSpy(&ctrlMgr, &ControllerManager::optionsActionRequested);
     QSignalSpy searchSpy(&ctrlMgr, &ControllerManager::searchActionRequested);
-    QSignalSpy settingsSpy(&ctrlMgr, &ControllerManager::settingsActionRequested);
+    QSignalSpy settingsSpy(&ctrlMgr,
+                           &ControllerManager::settingsActionRequested);
     QSignalSpy tabLeftSpy(&ctrlMgr, &ControllerManager::tabLeftRequested);
     QSignalSpy tabRightSpy(&ctrlMgr, &ControllerManager::tabRightRequested);
     QSignalSpy inputSpy(&ctrlMgr, &ControllerManager::gamepadInputReceived);
@@ -1625,7 +1643,8 @@ private slots:
     QCOMPARE(uiCtrl.activeInputType(), QStringLiteral("keyboard"));
     QVERIFY(!uiCtrl.isGamepadActive());
 
-    // Simulate PlayStation gamepad press -> UiController switches activeInputType to playstation
+    // Simulate PlayStation gamepad press -> UiController switches
+    // activeInputType to playstation
     ctrlMgr.setControllerTypeOverride(QStringLiteral("playstation"));
     ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_X);
     QCOMPARE(optionsSpy.count(), 1);
@@ -1645,7 +1664,8 @@ private slots:
     QCOMPARE(tabLeftSpy.count(), 1);
     QCOMPARE(tabRightSpy.count(), 1);
 
-    // Trigger hysteresis: L2/R2 fire once above 16000, stay latched at 18000, reset below 8000
+    // Trigger hysteresis: L2/R2 fire once above 16000, stay latched at 18000,
+    // reset below 8000
     ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERLEFT, 20000);
     QCOMPARE(tabLeftSpy.count(), 2);
     ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERLEFT, 18000);
@@ -1662,7 +1682,8 @@ private slots:
     ctrlMgr.handleAxisMotion(SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 20000);
     QCOMPARE(tabRightSpy.count(), 3);
 
-    // Switch controller override to Xbox and trigger button -> activeInputType tracks xbox
+    // Switch controller override to Xbox and trigger button -> activeInputType
+    // tracks xbox
     ctrlMgr.setControllerTypeOverride(QStringLiteral("xbox"));
     ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_A);
     QCOMPARE(uiCtrl.activeInputType(), QStringLiteral("xbox"));
@@ -1673,7 +1694,8 @@ private slots:
     QCOMPARE(uiCtrl.activeInputType(), QStringLiteral("keyboard"));
     QVERIFY(!uiCtrl.isGamepadActive());
 
-    // While a game is running, controller input must not trigger Tsuki UI navigation
+    // While a game is running, controller input must not trigger Tsuki UI
+    // navigation
     ctrlMgr.setGameRunning(true);
     QVERIFY(ctrlMgr.isGameRunning());
     const int settingsBefore = settingsSpy.count();
@@ -1728,7 +1750,8 @@ private slots:
     QVERIFY(QGuiApplication::overrideCursor() != nullptr);
     QCOMPARE(QGuiApplication::overrideCursor()->shape(), Qt::BlankCursor);
 
-    // 2. MouseMove with >= 2px delta immediately deactivates keyboard nav and restores cursor
+    // 2. MouseMove with >= 2px delta immediately deactivates keyboard nav and
+    // restores cursor
     QMouseEvent move1(QEvent::MouseMove, QPointF(100, 100), QPointF(100, 100),
                       Qt::NoButton, Qt::NoButton, Qt::NoModifier);
     QCoreApplication::sendEvent(&win, &move1);
@@ -1759,7 +1782,8 @@ private slots:
     QCoreApplication::sendEvent(&win, &move2);
     QVERIFY(!uiCtrl.isKeyboardNavActive());
 
-    // 7. Load GameDetailPage.qml & SettingsPage.qml and verify zero QML errors + M3TextField nav
+    // 7. Load GameDetailPage.qml & SettingsPage.qml and verify zero QML errors
+    // + M3TextField nav
     QQmlEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
                                              &settings);
@@ -1768,8 +1792,8 @@ private slots:
     engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
                                              &uiCtrl);
 
-    QQmlComponent settingsComp(
-        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/SettingsPage.qml")));
+    QQmlComponent settingsComp(&engine, resolveQmlUrl(QStringLiteral(
+                                            "src/qml/pages/SettingsPage.qml")));
     QVERIFY2(settingsComp.errors().isEmpty(),
              qPrintable(settingsComp.errorString()));
     QScopedPointer<QObject> settingsObj(settingsComp.create());
@@ -1779,9 +1803,8 @@ private slots:
     settingsItem->setParentItem(win.contentItem());
     settingsItem->setSize(QSizeF(1280, 820));
 
-    QQmlComponent detailComp(
-        &engine,
-        resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
+    QQmlComponent detailComp(&engine, resolveQmlUrl(QStringLiteral(
+                                          "src/qml/pages/GameDetailPage.qml")));
     QVERIFY2(detailComp.errors().isEmpty(),
              qPrintable(detailComp.errorString()));
     QScopedPointer<QObject> detailObj(detailComp.createWithInitialProperties(
@@ -1795,8 +1818,9 @@ private slots:
     win.show();
     QCoreApplication::processEvents();
 
-    // Navigate down from primaryActionBtn -> tabsBar -> titleField -> exePathField
-    // Verifies titleField (M3TextField wrapper) does NOT freeze isTextInputActive()
+    // Navigate down from primaryActionBtn -> tabsBar -> titleField ->
+    // exePathField Verifies titleField (M3TextField wrapper) does NOT freeze
+    // isTextInputActive()
     QTest::keyClick(&win, Qt::Key_Down);
     QCoreApplication::processEvents();
     QTest::keyClick(&win, Qt::Key_Down);
@@ -1816,18 +1840,21 @@ private slots:
     QVERIFY(focusAfterDown != nullptr);
     QVERIFY(focusAfterDown != focusOnTitle);
 
-    // Move mouse >= 2px while detail page is open -> immediately hides keyboard nav
+    // Move mouse >= 2px while detail page is open -> immediately hides keyboard
+    // nav
     QMouseEvent moveHide(QEvent::MouseMove, QPointF(250, 250),
                          QPointF(250, 250), Qt::NoButton, Qt::NoButton,
                          Qt::NoModifier);
     QCoreApplication::sendEvent(&win, &moveHide);
     QVERIFY(!uiCtrl.isKeyboardNavActive());
 
-    // 8. Verify showNavigationHud setting toggles NavigationHudBar showBar and emits signal
+    // 8. Verify showNavigationHud setting toggles NavigationHudBar showBar and
+    // emits signal
     const bool origHud = settings.showNavigationHud();
     QSignalSpy behaviorSpy(&settings, &AppSettings::behaviorChanged);
-    QQmlComponent hudComp(
-        &engine, resolveQmlUrl(QStringLiteral("src/qml/components/NavigationHudBar.qml")));
+    QQmlComponent hudComp(&engine,
+                          resolveQmlUrl(QStringLiteral(
+                              "src/qml/components/NavigationHudBar.qml")));
     QVERIFY2(hudComp.errors().isEmpty(), qPrintable(hudComp.errorString()));
     QScopedPointer<QObject> hudObj(hudComp.create());
     QVERIFY(hudObj != nullptr);
@@ -1840,10 +1867,12 @@ private slots:
     QVERIFY(behaviorSpy.count() >= 1);
     settings.setShowNavigationHud(origHud);
 
-    // 9. Verify RunnersView.qml compiles/loads cleanly with active downloads navigation
-    QQmlComponent runnersComp(
-        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/RunnersView.qml")));
-    QVERIFY2(runnersComp.errors().isEmpty(), qPrintable(runnersComp.errorString()));
+    // 9. Verify RunnersView.qml compiles/loads cleanly with active downloads
+    // navigation
+    QQmlComponent runnersComp(&engine, resolveQmlUrl(QStringLiteral(
+                                           "src/qml/pages/RunnersView.qml")));
+    QVERIFY2(runnersComp.errors().isEmpty(),
+             qPrintable(runnersComp.errorString()));
     QScopedPointer<QObject> runnersObj(runnersComp.create());
     QVERIFY(runnersObj != nullptr);
   }
@@ -1853,18 +1882,29 @@ private slots:
     QVERIFY(tmpDir.isValid());
 
     // Backup global QSettings keys modified by this test
-    QSettings rawSettings(QStringLiteral("Tsuki"), QStringLiteral("TsukiLauncher"));
-    const bool hadGsDefault = rawSettings.contains(QStringLiteral("performance/gamescope"));
-    const QVariant oldGsDefault = rawSettings.value(QStringLiteral("performance/gamescope"));
-    const bool hadGsCfg = rawSettings.contains(QStringLiteral("performance/gamescopeConfig"));
-    const QVariant oldGsCfg = rawSettings.value(QStringLiteral("performance/gamescopeConfig"));
+    QSettings rawSettings(QStringLiteral("Tsuki"),
+                          QStringLiteral("TsukiLauncher"));
+    const bool hadGsDefault =
+        rawSettings.contains(QStringLiteral("performance/gamescope"));
+    const QVariant oldGsDefault =
+        rawSettings.value(QStringLiteral("performance/gamescope"));
+    const bool hadGsCfg =
+        rawSettings.contains(QStringLiteral("performance/gamescopeConfig"));
+    const QVariant oldGsCfg =
+        rawSettings.value(QStringLiteral("performance/gamescopeConfig"));
     const QByteArray oldPath = qgetenv("PATH");
 
     auto restoreEnv = qScopeGuard([&]() {
-      if (hadGsDefault) rawSettings.setValue(QStringLiteral("performance/gamescope"), oldGsDefault);
-      else rawSettings.remove(QStringLiteral("performance/gamescope"));
-      if (hadGsCfg) rawSettings.setValue(QStringLiteral("performance/gamescopeConfig"), oldGsCfg);
-      else rawSettings.remove(QStringLiteral("performance/gamescopeConfig"));
+      if (hadGsDefault)
+        rawSettings.setValue(QStringLiteral("performance/gamescope"),
+                             oldGsDefault);
+      else
+        rawSettings.remove(QStringLiteral("performance/gamescope"));
+      if (hadGsCfg)
+        rawSettings.setValue(QStringLiteral("performance/gamescopeConfig"),
+                             oldGsCfg);
+      else
+        rawSettings.remove(QStringLiteral("performance/gamescopeConfig"));
       qputenv("PATH", oldPath);
     });
 
@@ -1905,7 +1945,8 @@ private slots:
     QCOMPARE(restored.gamescopeState, 1);
     QVERIFY(restored.gamescope == rec.gamescope);
 
-    // 2. AppSettings global Gamescope default is false by default & persists cleanly
+    // 2. AppSettings global Gamescope default is false by default & persists
+    // cleanly
     AppSettings settings;
     QCOMPARE(settings.gamescopeDefault(), false);
     settings.setGamescopeDefault(true);
@@ -1916,26 +1957,35 @@ private slots:
 
     AppSettings reloadedSettings;
     QCOMPARE(reloadedSettings.gamescopeDefault(), true);
-    QCOMPARE(reloadedSettings.defaultGamescopeConfig().value(QStringLiteral("windowMode")).toString(),
+    QCOMPARE(reloadedSettings.defaultGamescopeConfig()
+                 .value(QStringLiteral("windowMode"))
+                 .toString(),
              QStringLiteral("borderless"));
-    QCOMPARE(reloadedSettings.defaultGamescopeConfig().value(QStringLiteral("fpsLimit")).toInt(), 60);
+    QCOMPARE(reloadedSettings.defaultGamescopeConfig()
+                 .value(QStringLiteral("fpsLimit"))
+                 .toInt(),
+             60);
 
     reloadedSettings.resetDefaultGamescopeConfig();
-    QCOMPARE(reloadedSettings.defaultGamescopeConfig().value(QStringLiteral("windowMode")).toString(),
+    QCOMPARE(reloadedSettings.defaultGamescopeConfig()
+                 .value(QStringLiteral("windowMode"))
+                 .toString(),
              QStringLiteral("fullscreen"));
     settings.setGamescopeDefault(false);
 
     // 3. Create deterministic mock executables in temporary bin dir
     const QString mockBinDir = tmpDir.filePath(QStringLiteral("mock_bin"));
     QVERIFY(QDir().mkpath(mockBinDir));
-    auto makeExec = [&](const QString& name) -> QString {
+    auto makeExec = [&](const QString &name) -> QString {
       const QString p = mockBinDir + QLatin1Char('/') + name;
       QFile f(p);
-      if (!f.open(QIODevice::WriteOnly)) return QString();
+      if (!f.open(QIODevice::WriteOnly))
+        return QString();
       f.write("#!/bin/sh\nexit 0\n");
       f.close();
-      if (!QFile::setPermissions(p, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner |
-                                        QFile::ReadGroup | QFile::ExeGroup)) {
+      if (!QFile::setPermissions(p, QFile::ReadOwner | QFile::WriteOwner |
+                                        QFile::ExeOwner | QFile::ReadGroup |
+                                        QFile::ExeGroup)) {
         return QString();
       }
       return p;
@@ -1958,25 +2008,31 @@ private slots:
     PrefixManager prefixMgr(&db, &settings, &runnerMgr);
     ControllerManager ctrlMgr(&db, &settings);
     DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
-    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
     SteamGridDbService sgdb(&settings, &dl);
     GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
 
     // 4. DiagnosticsManager reports gamescope availability
     QVERIFY(diagMgr.gamescopeAvailable());
     bool foundGsCheck = false;
-    for (const QVariant& item : diagMgr.systemChecks()) {
+    for (const QVariant &item : diagMgr.systemChecks()) {
       const QVariantMap m = item.toMap();
-      if (m.value(QStringLiteral("name")).toString().contains(QStringLiteral("Gamescope"), Qt::CaseInsensitive)) {
+      if (m.value(QStringLiteral("name"))
+              .toString()
+              .contains(QStringLiteral("Gamescope"), Qt::CaseInsensitive)) {
         foundGsCheck = true;
         QCOMPARE(m.value(QStringLiteral("ok")).toBool(), true);
-        QVERIFY(m.value(QStringLiteral("detail")).toString().contains(mockGamescope));
+        QVERIFY(m.value(QStringLiteral("detail"))
+                    .toString()
+                    .contains(mockGamescope));
       }
     }
     QVERIFY(foundGsCheck);
 
     // 5. GameManager::updateGameDetails persists ONLY Gamescope changes
-    const QString winGameId = gm.addGame(QStringLiteral("Proton Title"), QStringLiteral("/games/win.exe"));
+    const QString winGameId = gm.addGame(QStringLiteral("Proton Title"),
+                                         QStringLiteral("/games/win.exe"));
     QVERIFY(!winGameId.isEmpty());
     QVariantMap gsMap;
     gsMap[QStringLiteral("inheritGlobal")] = false;
@@ -1999,13 +2055,12 @@ private slots:
     gsMap[QStringLiteral("exposeWayland")] = true;
     gsMap[QStringLiteral("extraArgs")] = QStringLiteral("--rt -O \"DP-1\"");
 
-    QVERIFY(gm.updateGameDetails(winGameId, QVariantMap{
-        {QStringLiteral("gamescopeState"), 1},
-        {QStringLiteral("gamescope"), gsMap},
-        {QStringLiteral("mangohudState"), 1},
-        {QStringLiteral("gamemodeState"), 1},
-        {QStringLiteral("virtualDesktop"), true}
-    }));
+    QVERIFY(gm.updateGameDetails(
+        winGameId, QVariantMap{{QStringLiteral("gamescopeState"), 1},
+                               {QStringLiteral("gamescope"), gsMap},
+                               {QStringLiteral("mangohudState"), 1},
+                               {QStringLiteral("gamemodeState"), 1},
+                               {QStringLiteral("virtualDesktop"), true}}));
 
     auto winGameOpt = db.getGame(winGameId);
     QVERIFY(winGameOpt.has_value());
@@ -2015,7 +2070,8 @@ private slots:
     QCOMPARE(winGameOpt->gamescope.fsrSharpness, 3);
     QCOMPARE(winGameOpt->gamescope.hdrEnabled, true);
 
-    // 6. LaunchPipeline Wine/Proton plan with Gamescope + MangoApp + GameMode + HDR
+    // 6. LaunchPipeline Wine/Proton plan with Gamescope + MangoApp + GameMode +
+    // HDR
     RunnerRecord protonRunner;
     protonRunner.id = QStringLiteral("proton-ge");
     protonRunner.name = QStringLiteral("GE-Proton");
@@ -2026,11 +2082,14 @@ private slots:
     prefix.path = tmpDir.filePath(QStringLiteral("pfx"));
     prefix.arch = QStringLiteral("win64");
 
-    const LaunchPlan gsPlan = pipeline.buildLaunchPlan(*winGameOpt, protonRunner, prefix);
+    const LaunchPlan gsPlan =
+        pipeline.buildLaunchPlan(*winGameOpt, protonRunner, prefix);
     QVERIFY(gsPlan.usesGamescope);
     QCOMPARE(gsPlan.program, mockGamemode);
-    QCOMPARE(gsPlan.environment.value(QStringLiteral("DXVK_HDR")), QStringLiteral("1"));
-    QVERIFY(!gsPlan.environment.contains(QStringLiteral("MANGOHUD"))); // --mangoapp replaces MANGOHUD=1
+    QCOMPARE(gsPlan.environment.value(QStringLiteral("DXVK_HDR")),
+             QStringLiteral("1"));
+    QVERIFY(!gsPlan.environment.contains(
+        QStringLiteral("MANGOHUD"))); // --mangoapp replaces MANGOHUD=1
 
     const int gsIdx = gsPlan.arguments.indexOf(mockGamescope);
     const int sepIdx = gsPlan.arguments.indexOf(QStringLiteral("--"));
@@ -2040,7 +2099,8 @@ private slots:
     QVERIFY(protonIdx == sepIdx + 1);
     QVERIFY(gsPlan.arguments.contains(QStringLiteral("--mangoapp")));
     QVERIFY(!gsPlan.arguments.contains(mockMangohud));
-    QVERIFY(!gsPlan.arguments.contains(QStringLiteral("explorer"))); // Virtual desktop suppressed under Gamescope
+    QVERIFY(!gsPlan.arguments.contains(QStringLiteral(
+        "explorer"))); // Virtual desktop suppressed under Gamescope
     QVERIFY(gsPlan.arguments.contains(QStringLiteral("-f")));
     QVERIFY(gsPlan.arguments.contains(QStringLiteral("-W")));
     QVERIFY(gsPlan.arguments.contains(QStringLiteral("1920")));
@@ -2070,8 +2130,10 @@ private slots:
     // 7. Disabling mangoapp falls back to external mangohud after '--'
     GameRecord extMangoGame = *winGameOpt;
     extMangoGame.gamescope.mangoapp = false;
-    const LaunchPlan extPlan = pipeline.buildLaunchPlan(extMangoGame, protonRunner, prefix);
-    QCOMPARE(extPlan.environment.value(QStringLiteral("MANGOHUD")), QStringLiteral("1"));
+    const LaunchPlan extPlan =
+        pipeline.buildLaunchPlan(extMangoGame, protonRunner, prefix);
+    QCOMPARE(extPlan.environment.value(QStringLiteral("MANGOHUD")),
+             QStringLiteral("1"));
     QVERIFY(!extPlan.arguments.contains(QStringLiteral("--mangoapp")));
     const int extSep = extPlan.arguments.indexOf(QStringLiteral("--"));
     const int extMango = extPlan.arguments.indexOf(mockMangohud);
@@ -2080,18 +2142,27 @@ private slots:
     QCOMPARE(extMango, extSep + 1);
     QCOMPARE(extProton, extSep + 2);
 
-    // 7b. Bare '--' in extraArgs is stripped while surrounding flags stay intact
+    // 7b. Bare '--' in extraArgs is stripped while surrounding flags stay
+    // intact
     GameRecord sepStripGame = *winGameOpt;
     sepStripGame.gamescope.extraArgs = QStringLiteral("--rt -- -O \"DP-1\"");
-    const LaunchPlan sepStripPlan = pipeline.buildLaunchPlan(sepStripGame, protonRunner, prefix);
+    const LaunchPlan sepStripPlan =
+        pipeline.buildLaunchPlan(sepStripGame, protonRunner, prefix);
     QCOMPARE(sepStripPlan.arguments.count(QStringLiteral("--")), 1);
-    const int strippedSepIdx = sepStripPlan.arguments.indexOf(QStringLiteral("--"));
-    QVERIFY(strippedSepIdx > sepStripPlan.arguments.indexOf(QStringLiteral("--rt")));
-    QVERIFY(strippedSepIdx > sepStripPlan.arguments.indexOf(QStringLiteral("-O")));
-    QVERIFY(strippedSepIdx > sepStripPlan.arguments.indexOf(QStringLiteral("DP-1")));
+    const int strippedSepIdx =
+        sepStripPlan.arguments.indexOf(QStringLiteral("--"));
+    QVERIFY(strippedSepIdx >
+            sepStripPlan.arguments.indexOf(QStringLiteral("--rt")));
+    QVERIFY(strippedSepIdx >
+            sepStripPlan.arguments.indexOf(QStringLiteral("-O")));
+    QVERIFY(strippedSepIdx >
+            sepStripPlan.arguments.indexOf(QStringLiteral("DP-1")));
 
-    // 8. Native Linux game inheriting global Gamescope default (-1 & inheritGlobal=true)
-    const QString nativeId = gm.addNativeGame(QStringLiteral("Native Game"), nativeGameBin, tmpDir.path(), QStringLiteral("--test-flag"));
+    // 8. Native Linux game inheriting global Gamescope default (-1 &
+    // inheritGlobal=true)
+    const QString nativeId =
+        gm.addNativeGame(QStringLiteral("Native Game"), nativeGameBin,
+                         tmpDir.path(), QStringLiteral("--test-flag"));
     QVERIFY(!nativeId.isEmpty());
     auto nativeOpt = db.getGame(nativeId);
     QVERIFY(nativeOpt.has_value());
@@ -2120,23 +2191,35 @@ private slots:
     QSignalSpy failedSpy(&pipeline, &LaunchPipeline::gameLaunchFailed);
     QVERIFY(!pipeline.launchGame(nativeId));
     QCOMPARE(failedSpy.count(), 1);
-    QVERIFY(failedSpy.at(0).at(1).toString().contains(QStringLiteral("gamescope"), Qt::CaseInsensitive));
+    QVERIFY(failedSpy.at(0).at(1).toString().contains(
+        QStringLiteral("gamescope"), Qt::CaseInsensitive));
   }
 
   void testGamescopeQmlUiAndNavigation() {
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());
 
-    QSettings rawSettings(QStringLiteral("Tsuki"), QStringLiteral("TsukiLauncher"));
-    const bool hadGsDefault = rawSettings.contains(QStringLiteral("performance/gamescope"));
-    const QVariant oldGsDefault = rawSettings.value(QStringLiteral("performance/gamescope"));
-    const bool hadGsCfg = rawSettings.contains(QStringLiteral("performance/gamescopeConfig"));
-    const QVariant oldGsCfg = rawSettings.value(QStringLiteral("performance/gamescopeConfig"));
+    QSettings rawSettings(QStringLiteral("Tsuki"),
+                          QStringLiteral("TsukiLauncher"));
+    const bool hadGsDefault =
+        rawSettings.contains(QStringLiteral("performance/gamescope"));
+    const QVariant oldGsDefault =
+        rawSettings.value(QStringLiteral("performance/gamescope"));
+    const bool hadGsCfg =
+        rawSettings.contains(QStringLiteral("performance/gamescopeConfig"));
+    const QVariant oldGsCfg =
+        rawSettings.value(QStringLiteral("performance/gamescopeConfig"));
     auto restore = qScopeGuard([&]() {
-      if (hadGsDefault) rawSettings.setValue(QStringLiteral("performance/gamescope"), oldGsDefault);
-      else rawSettings.remove(QStringLiteral("performance/gamescope"));
-      if (hadGsCfg) rawSettings.setValue(QStringLiteral("performance/gamescopeConfig"), oldGsCfg);
-      else rawSettings.remove(QStringLiteral("performance/gamescopeConfig"));
+      if (hadGsDefault)
+        rawSettings.setValue(QStringLiteral("performance/gamescope"),
+                             oldGsDefault);
+      else
+        rawSettings.remove(QStringLiteral("performance/gamescope"));
+      if (hadGsCfg)
+        rawSettings.setValue(QStringLiteral("performance/gamescopeConfig"),
+                             oldGsCfg);
+      else
+        rawSettings.remove(QStringLiteral("performance/gamescopeConfig"));
     });
     rawSettings.remove(QStringLiteral("performance/gamescope"));
     rawSettings.remove(QStringLiteral("performance/gamescopeConfig"));
@@ -2151,10 +2234,12 @@ private slots:
     ControllerManager ctrlMgr(&db, &settings);
     SteamGridDbService sgdb(&settings, &dl);
     DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
-    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
     GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
 
-    const QString gameId = gm.addGame(QStringLiteral("Hollow Knight"), QStringLiteral("/games/hk.exe"));
+    const QString gameId = gm.addGame(QStringLiteral("Hollow Knight"),
+                                      QStringLiteral("/games/hk.exe"));
     QVERIFY(!gameId.isEmpty());
 
     UiController uiCtrl(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
@@ -2164,23 +2249,31 @@ private slots:
     win.resize(1280, 820);
 
     QQmlEngine engine;
-    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), &settings);
-    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"), &dl);
-    engine.rootContext()->setContextProperty(QStringLiteral("uiController"), &uiCtrl);
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
+                                             &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"),
+                                             &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
+                                             &uiCtrl);
 
-    // Load SettingsPage and confirm Gamescope rows are present and indexed cleanly
-    QQmlComponent settingsComp(
-        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/SettingsPage.qml")));
-    QVERIFY2(settingsComp.errors().isEmpty(), qPrintable(settingsComp.errorString()));
+    // Load SettingsPage and confirm Gamescope rows are present and indexed
+    // cleanly
+    QQmlComponent settingsComp(&engine, resolveQmlUrl(QStringLiteral(
+                                            "src/qml/pages/SettingsPage.qml")));
+    QVERIFY2(settingsComp.errors().isEmpty(),
+             qPrintable(settingsComp.errorString()));
     QScopedPointer<QObject> settingsObj(settingsComp.create());
     QVERIFY(settingsObj != nullptr);
-    QVERIFY(settingsObj->findChild<QQuickItem *>(QStringLiteral("gamescopeDefaultRow")) != nullptr);
-    QVERIFY(settingsObj->findChild<QQuickItem *>(QStringLiteral("gamescopeDefaultsConfigRow")) != nullptr);
+    QVERIFY(settingsObj->findChild<QQuickItem *>(
+                QStringLiteral("gamescopeDefaultRow")) != nullptr);
+    QVERIFY(settingsObj->findChild<QQuickItem *>(
+                QStringLiteral("gamescopeDefaultsConfigRow")) != nullptr);
 
     // Load GameDetailPage and switch to Tab 2 (Performance & Controller)
-    QQmlComponent detailComp(
-        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
-    QVERIFY2(detailComp.errors().isEmpty(), qPrintable(detailComp.errorString()));
+    QQmlComponent detailComp(&engine, resolveQmlUrl(QStringLiteral(
+                                          "src/qml/pages/GameDetailPage.qml")));
+    QVERIFY2(detailComp.errors().isEmpty(),
+             qPrintable(detailComp.errorString()));
     QScopedPointer<QObject> detailObj(detailComp.createWithInitialProperties(
         {{QStringLiteral("gameId"), gameId}}));
     QVERIFY(detailObj != nullptr);
@@ -2195,9 +2288,12 @@ private slots:
     detailObj->setProperty("activeTab", 2);
     QCoreApplication::processEvents();
 
-    auto *gsToggle = detailItem->findChild<QQuickItem *>(QStringLiteral("gamescopeToggle"));
-    auto *gsCustomizeBtn = detailItem->findChild<QQuickItem *>(QStringLiteral("gamescopeCustomizeBtn"));
-    auto *gsDialog = detailObj->findChild<QObject *>(QStringLiteral("gamescopeDialog"));
+    auto *gsToggle =
+        detailItem->findChild<QQuickItem *>(QStringLiteral("gamescopeToggle"));
+    auto *gsCustomizeBtn = detailItem->findChild<QQuickItem *>(
+        QStringLiteral("gamescopeCustomizeBtn"));
+    auto *gsDialog =
+        detailObj->findChild<QObject *>(QStringLiteral("gamescopeDialog"));
     QVERIFY(gsToggle != nullptr);
     QVERIFY(gsCustomizeBtn != nullptr);
     QVERIFY(gsDialog != nullptr);
@@ -2206,7 +2302,8 @@ private slots:
     QCOMPARE(gsToggle->property("checked").toBool(), false);
     QCOMPARE(gsCustomizeBtn->isVisible(), false);
 
-    // Activate keyboard nav & toggle Gamescope ON -> Customize button appears & DB persists
+    // Activate keyboard nav & toggle Gamescope ON -> Customize button appears &
+    // DB persists
     uiCtrl.setKeyboardNavActive(true);
     gsToggle->forceActiveFocus();
     QCoreApplication::processEvents();
@@ -2217,7 +2314,8 @@ private slots:
     QCOMPARE(gsCustomizeBtn->isVisible(), true);
     QCOMPARE(db.getGame(gameId)->gamescopeState, 1);
 
-    // Left D-Pad/arrow moves cleanly onto Customize button; Return opens GamescopeDialog
+    // Left D-Pad/arrow moves cleanly onto Customize button; Return opens
+    // GamescopeDialog
     QTest::keyClick(&win, Qt::Key_Left);
     QCoreApplication::processEvents();
     QCOMPARE(win.activeFocusItem(), gsCustomizeBtn);
@@ -2234,20 +2332,29 @@ private slots:
                                       Q_RETURN_ARG(QVariant, popupOpenVar)));
     QCOMPARE(popupOpenVar.toBool(), true);
 
-    // Verify dialog styling, icons, right-aligned options, and keyboard/gamepad nav inside dialog
+    // Verify dialog styling, icons, right-aligned options, and keyboard/gamepad
+    // nav inside dialog
     auto *dialogBg = gsDialog->property("background").value<QQuickItem *>();
     QVERIFY(dialogBg != nullptr);
     QCOMPARE(dialogBg->objectName(), QStringLiteral("gamescopeDialogBg"));
     QCOMPARE(dialogBg->property("radius").toDouble(), 12.0);
 
-    auto *presetBtn = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopePresetBorderlessBtn"));
-    auto *windowSeg = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeWindowModeSeg"));
-    auto *outCombo = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeOutputResCombo"));
-    auto *outWField = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeOutputWField"));
-    auto *sharpSlider = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeSharpnessSlider"));
-    auto *adaptiveToggle = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeAdaptiveSyncToggle"));
-    auto *cancelBtn = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeCancelBtn"));
-    auto *saveBtn = gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeSaveBtn"));
+    auto *presetBtn = gsDialog->findChild<QQuickItem *>(
+        QStringLiteral("gamescopePresetBorderlessBtn"));
+    auto *windowSeg = gsDialog->findChild<QQuickItem *>(
+        QStringLiteral("gamescopeWindowModeSeg"));
+    auto *outCombo = gsDialog->findChild<QQuickItem *>(
+        QStringLiteral("gamescopeOutputResCombo"));
+    auto *outWField = gsDialog->findChild<QQuickItem *>(
+        QStringLiteral("gamescopeOutputWField"));
+    auto *sharpSlider = gsDialog->findChild<QQuickItem *>(
+        QStringLiteral("gamescopeSharpnessSlider"));
+    auto *adaptiveToggle = gsDialog->findChild<QQuickItem *>(
+        QStringLiteral("gamescopeAdaptiveSyncToggle"));
+    auto *cancelBtn =
+        gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeCancelBtn"));
+    auto *saveBtn =
+        gsDialog->findChild<QQuickItem *>(QStringLiteral("gamescopeSaveBtn"));
     QVERIFY(presetBtn != nullptr);
     QVERIFY(windowSeg != nullptr);
     QVERIFY(outCombo != nullptr);
@@ -2263,7 +2370,8 @@ private slots:
     QCOMPARE(saveBtn->property("iconSource").toString(),
              QStringLiteral("qrc:/tsuki_app/icons/actions/check.svg"));
 
-    const int virtualJoyIdx = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, 2, 11, 1);
+    const int virtualJoyIdx =
+        SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, 2, 11, 1);
     bool virtualAttached = (virtualJoyIdx >= 0);
     auto detachVirtual = qScopeGuard([&]() {
       if (virtualAttached) {
@@ -2277,7 +2385,8 @@ private slots:
       QCoreApplication::processEvents();
       QVERIFY(ctrlMgr.isConnected());
 
-      // Keyboard navigation with controller plugged in must still hide gamepad button icons
+      // Keyboard navigation with controller plugged in must still hide gamepad
+      // button icons
       QVERIFY(uiCtrl.isKeyboardNavActive());
       QVERIFY(!uiCtrl.isGamepadActive());
       QCOMPARE(cancelBtn->property("iconSource").toString(), QString());
@@ -2289,14 +2398,17 @@ private slots:
       uiCtrl.setKeyboardNavActive(true);
       QCoreApplication::processEvents();
       QVERIFY(uiCtrl.isGamepadActive());
-      QCOMPARE(cancelBtn->property("iconSource").toString(),
-               QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-right.svg"));
+      QCOMPARE(
+          cancelBtn->property("iconSource").toString(),
+          QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-right.svg"));
       QCOMPARE(saveBtn->property("iconSource").toString(),
                QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-up.svg"));
 
-      // Mouse navigation hides gamepad icons even while controller stays connected
-      QMouseEvent mouseMove(QEvent::MouseMove, QPointF(240, 240), QPointF(240, 240),
-                            Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+      // Mouse navigation hides gamepad icons even while controller stays
+      // connected
+      QMouseEvent mouseMove(QEvent::MouseMove, QPointF(240, 240),
+                            QPointF(240, 240), Qt::NoButton, Qt::NoButton,
+                            Qt::NoModifier);
       QCoreApplication::sendEvent(&win, &mouseMove);
       QCoreApplication::processEvents();
       QVERIFY(!uiCtrl.isKeyboardNavActive());
@@ -2305,12 +2417,14 @@ private slots:
       QCOMPARE(saveBtn->property("iconSource").toString(),
                QStringLiteral("qrc:/tsuki_app/icons/actions/check.svg"));
 
-      // Switching back to gamepad restores icons, then keyboard press hides them again
+      // Switching back to gamepad restores icons, then keyboard press hides
+      // them again
       uiCtrl.setActiveInputType(QStringLiteral("playstation"));
       uiCtrl.setKeyboardNavActive(true);
       QCoreApplication::processEvents();
-      QCOMPARE(cancelBtn->property("iconSource").toString(),
-               QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-right.svg"));
+      QCOMPARE(
+          cancelBtn->property("iconSource").toString(),
+          QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-right.svg"));
       QCOMPARE(saveBtn->property("iconSource").toString(),
                QStringLiteral("qrc:/tsuki_app/icons/gamepad/gamepad-up.svg"));
 
@@ -2341,22 +2455,26 @@ private slots:
       QVERIFY2(row != nullptr && col != nullptr, name);
       QTRY_VERIFY2(col->width() > 300.0, name);
       QTRY_VERIFY2(qAbs(row->width() - col->width()) < 1.0, name);
-      QTRY_VERIFY2(qAbs((ctrl->x() + ctrl->width()) - row->width()) < 1.0, name);
+      QTRY_VERIFY2(qAbs((ctrl->x() + ctrl->width()) - row->width()) < 1.0,
+                   name);
     };
     verifyRightAlignedInCol(outCombo, "gamescopeOutputResCombo");
     verifyRightAlignedInCol(adaptiveToggle, "gamescopeAdaptiveSyncToggle");
 
     QTRY_COMPARE(win.activeFocusItem(), presetBtn);
 
-    // Navigate Down onto M3SegmentedButton (Window Mode) & switch to Borderless via Right arrow
+    // Navigate Down onto M3SegmentedButton (Window Mode) & switch to Borderless
+    // via Right arrow
     QTest::keyClick(&win, Qt::Key_Down);
     QCoreApplication::processEvents();
     QCOMPARE(win.activeFocusItem(), windowSeg);
     QTest::keyClick(&win, Qt::Key_Right);
     QCoreApplication::processEvents();
-    QCOMPARE(gsDialog->property("windowMode").toString(), QStringLiteral("borderless"));
+    QCOMPARE(gsDialog->property("windowMode").toString(),
+             QStringLiteral("borderless"));
 
-    // Navigate Down onto Output Resolution combo -> open popup -> Esc closes popup NOT dialog
+    // Navigate Down onto Output Resolution combo -> open popup -> Esc closes
+    // popup NOT dialog
     QTest::keyClick(&win, Qt::Key_Down);
     QCoreApplication::processEvents();
     QCOMPARE(win.activeFocusItem(), outCombo);
@@ -2371,7 +2489,8 @@ private slots:
     QTRY_COMPARE(outPopup->property("visible").toBool(), false);
     QCOMPARE(gsDialog->property("visible").toBool(), true);
 
-    // Switching presets then selecting "Custom…" keeps custom resolution fields synced (no stale text)
+    // Switching presets then selecting "Custom…" keeps custom resolution fields
+    // synced (no stale text)
     outCombo->setProperty("selectedIndex", 3);
     QMetaObject::invokeMethod(outCombo, "selected", Q_ARG(int, 3));
     const int preset3W = gsDialog->property("outputWidth").toInt();
@@ -2396,8 +2515,11 @@ private slots:
     QCoreApplication::processEvents();
     QTRY_COMPARE(win.activeFocusItem(), outWField);
 
-    // Apply 720p->1080p FSR preset, verify sharpness slider alignment, Left/Right + Down exits slider, then Save immediately writes to database
-    QVERIFY(QMetaObject::invokeMethod(gsDialog, "applyPreset", Q_ARG(QVariant, QVariant(QStringLiteral("fsr720")))));
+    // Apply 720p->1080p FSR preset, verify sharpness slider alignment,
+    // Left/Right + Down exits slider, then Save immediately writes to database
+    QVERIFY(QMetaObject::invokeMethod(
+        gsDialog, "applyPreset",
+        Q_ARG(QVariant, QVariant(QStringLiteral("fsr720")))));
     QCoreApplication::processEvents();
     verifyRightAlignedInCol(sharpSlider, "gamescopeSharpnessSlider");
     QObject *innerSlider = sharpSlider->property("slider").value<QObject *>();
@@ -2432,7 +2554,8 @@ private slots:
     QCOMPARE(savedOpt->gamescope.filter, QStringLiteral("fsr"));
     QCOMPARE(savedOpt->gamescope.fsrSharpness, 3);
 
-    // Re-open dialog and verify gamepad Y button saves and closes via searchActionRequested
+    // Re-open dialog and verify gamepad Y button saves and closes via
+    // searchActionRequested
     gsCustomizeBtn->forceActiveFocus();
     QCoreApplication::processEvents();
     QTest::keyClick(&win, Qt::Key_Return);
@@ -2449,15 +2572,16 @@ private slots:
   }
 
   void testM3FontsSymbolsAndComponents() {
-    for (const char *resPath :
-         {":/tsuki_app/fonts/Rubik-Regular.ttf",
-          ":/tsuki_app/fonts/Rubik-Medium.ttf",
-          ":/tsuki_app/fonts/Rubik-SemiBold.ttf",
-          ":/tsuki_app/fonts/Rubik-Bold.ttf",
-          ":/tsuki_app/fonts/JetBrainsMonoNerdFont-Regular.ttf",
-          ":/tsuki_app/fonts/MaterialSymbolsRounded.ttf"}) {
+    for (const char *resPath : {":/tsuki_app/fonts/Rubik-Regular.ttf",
+                                ":/tsuki_app/fonts/Rubik-Medium.ttf",
+                                ":/tsuki_app/fonts/Rubik-SemiBold.ttf",
+                                ":/tsuki_app/fonts/Rubik-Bold.ttf"}) {
       QVERIFY2(QFile::exists(QString::fromLatin1(resPath)), resPath);
     }
+    QVERIFY(!QFile::exists(
+        QStringLiteral(":/tsuki_app/fonts/MaterialSymbolsRounded.ttf")));
+    QVERIFY(!QFile::exists(
+        QStringLiteral(":/tsuki_app/fonts/JetBrainsMonoNerdFont-Regular.ttf")));
 
     AppSettings::registerApplicationFonts();
     QCOMPARE(QGuiApplication::font().family(), QStringLiteral("Rubik"));
@@ -2465,16 +2589,19 @@ private slots:
     const QStringList families = QFontDatabase::families();
     QVERIFY2(families.contains(QStringLiteral("Rubik")),
              "Bundled Rubik font family must be registered");
-    QVERIFY2(families.contains(QStringLiteral("Material Symbols Rounded")),
-             "Bundled Material Symbols Rounded font family must be registered");
-    QVERIFY2(families.contains(QStringLiteral("JetBrains Mono NF")) ||
-                 families.contains(QStringLiteral("JetBrainsMono Nerd Font")),
-             "JetBrains Mono NF font family must be registered");
-    QFontInfo jbInfo(QFont(QStringLiteral("JetBrains Mono NF")));
-    QVERIFY2(jbInfo.family().contains(QStringLiteral("JetBrains"),
-                                      Qt::CaseInsensitive),
-             qPrintable(QStringLiteral("Resolved JetBrains font: ") +
-                        jbInfo.family()));
+    QVERIFY2(
+        families.contains(QStringLiteral("JetBrains Mono NF")) ||
+            !QFont::substitutes(QStringLiteral("JetBrains Mono NF")).isEmpty(),
+        "JetBrains Mono NF family or fallback substitution must be registered");
+    if (families.contains(QStringLiteral("JetBrains Mono NF")) ||
+        families.contains(QStringLiteral("JetBrainsMono Nerd Font")) ||
+        families.contains(QStringLiteral("JetBrainsMono NF"))) {
+      QFontInfo jbInfo(QFont(QStringLiteral("JetBrains Mono NF")));
+      QVERIFY2(jbInfo.family().contains(QStringLiteral("JetBrains"),
+                                        Qt::CaseInsensitive),
+               qPrintable(QStringLiteral("Resolved JetBrains font: ") +
+                          jbInfo.family()));
+    }
 
     AppSettings settings;
     settings.setAccentColor(QColor(QStringLiteral("#d71920")));
@@ -2496,33 +2623,93 @@ private slots:
     engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
                                              QVariant());
 
-    const QString componentsDir =
-        QStringLiteral(TSUKI_SOURCE_DIR) + QStringLiteral("/src/qml/components/");
+    const QString componentsDir = QStringLiteral(TSUKI_SOURCE_DIR) +
+                                  QStringLiteral("/src/qml/components/");
 
-    // Verify YIcon renders Material Symbols ligature text when symbol is set
-    QQmlComponent yiconComp(&engine, QUrl::fromLocalFile(componentsDir + QStringLiteral("YIcon.qml")));
+    // Verify YIcon resolves Material symbol names (+ filled state) to bundled
+    // SVGs
+    QQmlComponent yiconComp(
+        &engine,
+        QUrl::fromLocalFile(componentsDir + QStringLiteral("YIcon.qml")));
     QVERIFY2(yiconComp.errorString().isEmpty(),
              qPrintable(yiconComp.errorString()));
     std::unique_ptr<QObject> yicon(yiconComp.create());
     QVERIFY(yicon != nullptr);
-    yicon->setProperty("symbol", QStringLiteral("play_arrow"));
-    QCoreApplication::processEvents();
-    auto *symbolText = yicon->findChild<QQuickItem *>();
-    Q_UNUSED(symbolText);
-    bool foundVisibleSymbolText = false;
+
+    auto findYIconImage = [&yicon]() -> QQuickItem * {
+      for (QObject *child : yicon->children()) {
+        if (child->inherits("QQuickImage")) {
+          return qobject_cast<QQuickItem *>(child);
+        }
+      }
+      return nullptr;
+    };
     for (QObject *child : yicon->children()) {
-      if (child->inherits("QQuickText")) {
-        QCOMPARE(child->property("text").toString(), QStringLiteral("play_arrow"));
-        QCOMPARE(child->property("visible").toBool(), true);
-        foundVisibleSymbolText = true;
+      QVERIFY2(!child->inherits("QQuickText"),
+               "YIcon must render SVG images instead of Material Symbols text");
+    }
+
+    QQuickItem *rawImg = findYIconImage();
+    QVERIFY(rawImg != nullptr);
+
+    yicon->setProperty("symbol", QStringLiteral("play_arrow"));
+    yicon->setProperty("filled", false);
+    QCoreApplication::processEvents();
+    QCOMPARE(rawImg->property("source").toUrl().toString(),
+             QStringLiteral("qrc:/tsuki_app/icons/actions/play_arrow.svg"));
+
+    yicon->setProperty("filled", true);
+    QCoreApplication::processEvents();
+    QCOMPARE(rawImg->property("source").toUrl().toString(),
+             QStringLiteral("qrc:/tsuki_app/icons/actions/play.svg"));
+
+    // Verify every symbol used across QML resolves to an existing QRC SVG
+    for (const char *sym : {"add",
+                            "arrow_back",
+                            "article",
+                            "auto_awesome",
+                            "build",
+                            "check",
+                            "close",
+                            "colorize",
+                            "delete",
+                            "desktop_windows",
+                            "download",
+                            "folder_open",
+                            "grid_view",
+                            "info",
+                            "keyboard_arrow_down",
+                            "menu",
+                            "menu_open",
+                            "open_in_new",
+                            "palette",
+                            "person",
+                            "play_arrow",
+                            "refresh",
+                            "shortcut",
+                            "sort",
+                            "speed",
+                            "stop",
+                            "terminal",
+                            "tune"}) {
+      for (bool filled : {false, true}) {
+        yicon->setProperty("symbol", QString::fromLatin1(sym));
+        yicon->setProperty("filled", filled);
+        const QString resolved = yicon->property("resolvedSource").toString();
+        QVERIFY2(resolved.startsWith(QStringLiteral("qrc:/tsuki_app/icons/")),
+                 qPrintable(QString::fromLatin1(sym)));
+        const QString qrcPath =
+            QStringLiteral(":") + resolved.mid(QStringLiteral("qrc:").length());
+        QVERIFY2(QFile::exists(qrcPath), qPrintable(qrcPath));
       }
     }
-    QVERIFY(foundVisibleSymbolText);
 
-    // Verify M3Button, Toggle, StyledCombo, and M3TextField compile and apply M3 tokens
+    // Verify M3Button, Toggle, StyledCombo, and M3TextField compile and apply
+    // M3 tokens
     for (const QString &file :
          {QStringLiteral("M3Button.qml"), QStringLiteral("Toggle.qml"),
-          QStringLiteral("StyledCombo.qml"), QStringLiteral("M3TextField.qml")}) {
+          QStringLiteral("StyledCombo.qml"),
+          QStringLiteral("M3TextField.qml")}) {
       QQmlComponent comp(&engine, QUrl::fromLocalFile(componentsDir + file));
       QVERIFY2(comp.errorString().isEmpty(), qPrintable(comp.errorString()));
       std::unique_ptr<QObject> obj(comp.create());
@@ -2534,7 +2721,8 @@ private slots:
         QCOMPARE(obj->property("implicitHeight").toInt(), 32);
       } else if (file == QStringLiteral("M3Button.qml")) {
         obj->setProperty("iconSymbol", QStringLiteral("tune"));
-        QCOMPARE(obj->property("iconSymbol").toString(), QStringLiteral("tune"));
+        QCOMPARE(obj->property("iconSymbol").toString(),
+                 QStringLiteral("tune"));
       }
     }
   }
@@ -2552,43 +2740,51 @@ private slots:
     ControllerManager ctrlMgr(&db, &settings);
     SteamGridDbService sgdb(&settings, &dl);
     DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
-    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
     GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
 
-    const QString nativeGameId = gm.addNativeGame(QStringLiteral("Celeste"), QStringLiteral("/usr/bin/true"));
+    const QString nativeGameId = gm.addNativeGame(
+        QStringLiteral("Celeste"), QStringLiteral("/usr/bin/true"));
     QVERIFY(!nativeGameId.isEmpty());
 
     UiController uiCtrl(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
                         &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm);
 
     QQmlEngine engine;
-    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), &settings);
-    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"), &dl);
-    engine.rootContext()->setContextProperty(QStringLiteral("uiController"), &uiCtrl);
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
+                                             &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"),
+                                             &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
+                                             &uiCtrl);
 
     QStringList qmlErrors;
-    QObject::connect(&engine, &QQmlEngine::warnings, &engine,
-                     [&qmlErrors](const QList<QQmlError> &warnings) {
-                       for (const QQmlError &w : warnings) {
-                         const QString msg = w.toString();
-                         if (msg.contains(QStringLiteral("ReferenceError")) ||
-                             msg.contains(QStringLiteral("TypeError")) ||
-                             msg.contains(QStringLiteral("syncActiveTabPill")) ||
-                             msg.contains(QStringLiteral("tabsBar"))) {
-                           qmlErrors.append(msg);
-                         }
-                       }
-                     });
+    QObject::connect(
+        &engine, &QQmlEngine::warnings, &engine,
+        [&qmlErrors](const QList<QQmlError> &warnings) {
+          for (const QQmlError &w : warnings) {
+            const QString msg = w.toString();
+            if (msg.contains(QStringLiteral("ReferenceError")) ||
+                msg.contains(QStringLiteral("TypeError")) ||
+                msg.contains(QStringLiteral("syncActiveTabPill")) ||
+                msg.contains(QStringLiteral("tabsBar"))) {
+              qmlErrors.append(msg);
+            }
+          }
+        });
 
-    QQmlComponent detailComp(
-        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
-    QVERIFY2(detailComp.errors().isEmpty(), qPrintable(detailComp.errorString()));
+    QQmlComponent detailComp(&engine, resolveQmlUrl(QStringLiteral(
+                                          "src/qml/pages/GameDetailPage.qml")));
+    QVERIFY2(detailComp.errors().isEmpty(),
+             qPrintable(detailComp.errorString()));
 
     QQuickWindow win;
     win.resize(1280, 820);
     win.show();
 
-    // 1. Opening GameDetailPage for a native game triggers tabList rebuild immediately after child tab creation
+    // 1. Opening GameDetailPage for a native game triggers tabList rebuild
+    // immediately after child tab creation
     QScopedPointer<QObject> detailObj(detailComp.createWithInitialProperties(
         {{QStringLiteral("gameId"), nativeGameId}}));
     QVERIFY(detailObj != nullptr);
@@ -2599,24 +2795,29 @@ private slots:
 
     QCoreApplication::processEvents();
     QTest::qWait(30);
-    QVERIFY2(qmlErrors.isEmpty(), qPrintable(qmlErrors.join(QLatin1Char('\n'))));
+    QVERIFY2(qmlErrors.isEmpty(),
+             qPrintable(qmlErrors.join(QLatin1Char('\n'))));
 
     bool checkedEnvTitleColor = false;
     for (QQuickItem *item : detailItem->findChildren<QQuickItem *>()) {
-      if (item->property("text").toString() == QStringLiteral("Environment Variables")) {
-        QCOMPARE(item->property("color").value<QColor>(), settings.accentColor());
+      if (item->property("text").toString() ==
+          QStringLiteral("Environment Variables")) {
+        QCOMPARE(item->property("color").value<QColor>(),
+                 settings.accentColor());
         checkedEnvTitleColor = true;
         break;
       }
     }
     QVERIFY(checkedEnvTitleColor);
 
-    // Destroy page while tab switch & immediate teardown occur (simulating fast stack.pop())
+    // Destroy page while tab switch & immediate teardown occur (simulating fast
+    // stack.pop())
     detailObj->setProperty("activeTab", 2);
     detailObj.reset();
     QCoreApplication::processEvents();
     QTest::qWait(30);
-    QVERIFY2(qmlErrors.isEmpty(), qPrintable(qmlErrors.join(QLatin1Char('\n'))));
+    QVERIFY2(qmlErrors.isEmpty(),
+             qPrintable(qmlErrors.join(QLatin1Char('\n'))));
 
     // 2. Create and immediately destroy before event-loop flush
     std::unique_ptr<QObject> ephemeral(detailComp.createWithInitialProperties(
@@ -2625,27 +2826,44 @@ private slots:
     ephemeral.reset();
     QCoreApplication::processEvents();
     QTest::qWait(30);
-    QVERIFY2(qmlErrors.isEmpty(), qPrintable(qmlErrors.join(QLatin1Char('\n'))));
+    QVERIFY2(qmlErrors.isEmpty(),
+             qPrintable(qmlErrors.join(QLatin1Char('\n'))));
   }
 
   void testSettingsPageTabsDynamicPillsAndCrossTabSearch() {
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());
 
-    QSettings rawSettings(QStringLiteral("Tsuki"), QStringLiteral("TsukiLauncher"));
-    const bool hadThemeMode = rawSettings.contains(QStringLiteral("appearance/themeMode"));
-    const QVariant oldThemeMode = rawSettings.value(QStringLiteral("appearance/themeMode"));
-    const bool hadCustomSb = rawSettings.contains(QStringLiteral("appearance/customSidebarColor"));
-    const QVariant oldCustomSb = rawSettings.value(QStringLiteral("appearance/customSidebarColor"));
-    const bool hadSyncSb = rawSettings.contains(QStringLiteral("appearance/syncSidebarColor"));
-    const QVariant oldSyncSb = rawSettings.value(QStringLiteral("appearance/syncSidebarColor"));
+    QSettings rawSettings(QStringLiteral("Tsuki"),
+                          QStringLiteral("TsukiLauncher"));
+    const bool hadThemeMode =
+        rawSettings.contains(QStringLiteral("appearance/themeMode"));
+    const QVariant oldThemeMode =
+        rawSettings.value(QStringLiteral("appearance/themeMode"));
+    const bool hadCustomSb =
+        rawSettings.contains(QStringLiteral("appearance/customSidebarColor"));
+    const QVariant oldCustomSb =
+        rawSettings.value(QStringLiteral("appearance/customSidebarColor"));
+    const bool hadSyncSb =
+        rawSettings.contains(QStringLiteral("appearance/syncSidebarColor"));
+    const QVariant oldSyncSb =
+        rawSettings.value(QStringLiteral("appearance/syncSidebarColor"));
     auto restoreTheme = qScopeGuard([&]() {
-      if (hadThemeMode) rawSettings.setValue(QStringLiteral("appearance/themeMode"), oldThemeMode);
-      else rawSettings.remove(QStringLiteral("appearance/themeMode"));
-      if (hadCustomSb) rawSettings.setValue(QStringLiteral("appearance/customSidebarColor"), oldCustomSb);
-      else rawSettings.remove(QStringLiteral("appearance/customSidebarColor"));
-      if (hadSyncSb) rawSettings.setValue(QStringLiteral("appearance/syncSidebarColor"), oldSyncSb);
-      else rawSettings.remove(QStringLiteral("appearance/syncSidebarColor"));
+      if (hadThemeMode)
+        rawSettings.setValue(QStringLiteral("appearance/themeMode"),
+                             oldThemeMode);
+      else
+        rawSettings.remove(QStringLiteral("appearance/themeMode"));
+      if (hadCustomSb)
+        rawSettings.setValue(QStringLiteral("appearance/customSidebarColor"),
+                             oldCustomSb);
+      else
+        rawSettings.remove(QStringLiteral("appearance/customSidebarColor"));
+      if (hadSyncSb)
+        rawSettings.setValue(QStringLiteral("appearance/syncSidebarColor"),
+                             oldSyncSb);
+      else
+        rawSettings.remove(QStringLiteral("appearance/syncSidebarColor"));
     });
     rawSettings.remove(QStringLiteral("appearance/themeMode"));
 
@@ -2663,7 +2881,8 @@ private slots:
     ControllerManager ctrlMgr(&db, &settings);
     SteamGridDbService sgdb(&settings, &dl);
     DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
-    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
     GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
     UiController uiCtrl(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
                         &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm);
@@ -2678,42 +2897,51 @@ private slots:
     QVERIFY(QTest::qWaitForWindowExposed(&win));
 
     QQmlEngine engine;
-    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), &settings);
-    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"), &dl);
-    engine.rootContext()->setContextProperty(QStringLiteral("uiController"), &uiCtrl);
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
+                                             &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"),
+                                             &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
+                                             &uiCtrl);
 
     QStringList relevantWarnings;
-    QObject::connect(&engine, &QQmlEngine::warnings, &win,
-                     [&](const QList<QQmlError> &warnings) {
-                       for (const QQmlError &err : warnings) {
-                         const QString text = err.toString();
-                         if (text.contains(QStringLiteral("SettingsPage")) ||
-                             text.contains(QStringLiteral("SettingTile")) ||
-                             text.contains(QStringLiteral("SettingsSection")) ||
-                             text.contains(QStringLiteral("M3PillGroup")) ||
-                             text.contains(QStringLiteral("M3ToolTip")) ||
-                             text.contains(QStringLiteral("ThemePreviewCards")) ||
-                             text.contains(QStringLiteral("Binding loop")) ||
-                             text.contains(QStringLiteral("ReferenceError")) ||
-                             text.contains(QStringLiteral("TypeError")) ||
-                             text.contains(QStringLiteral("recursive rearrange")) ||
-                             text.contains(QStringLiteral("Detected anchors")) ||
-                             text.contains(QStringLiteral("Invalid property assignment"))) {
-                           relevantWarnings << text;
-                         }
-                       }
-                     });
+    QObject::connect(
+        &engine, &QQmlEngine::warnings, &win,
+        [&](const QList<QQmlError> &warnings) {
+          for (const QQmlError &err : warnings) {
+            const QString text = err.toString();
+            if (text.contains(QStringLiteral("SettingsPage")) ||
+                text.contains(QStringLiteral("SettingTile")) ||
+                text.contains(QStringLiteral("SettingsSection")) ||
+                text.contains(QStringLiteral("M3PillGroup")) ||
+                text.contains(QStringLiteral("M3ToolTip")) ||
+                text.contains(QStringLiteral("ThemePreviewCards")) ||
+                text.contains(QStringLiteral("Binding loop")) ||
+                text.contains(QStringLiteral("ReferenceError")) ||
+                text.contains(QStringLiteral("TypeError")) ||
+                text.contains(QStringLiteral("recursive rearrange")) ||
+                text.contains(QStringLiteral("Detected anchors")) ||
+                text.contains(QStringLiteral("Invalid property assignment"))) {
+              relevantWarnings << text;
+            }
+          }
+        });
 
     // 1. M3PillGroup component behavior
-    QQmlComponent pillComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/M3PillGroup.qml")));
+    QQmlComponent pillComp(&engine, resolveQmlUrl(QStringLiteral(
+                                        "src/qml/components/M3PillGroup.qml")));
     QVERIFY2(pillComp.isReady(), qPrintable(pillComp.errorString()));
     QVariantList pillModel{
-        QVariantMap{{QStringLiteral("label"), QStringLiteral("Off")}, {QStringLiteral("val"), 0}},
-        QVariantMap{{QStringLiteral("label"), QStringLiteral("Hover")}, {QStringLiteral("val"), 1}},
-        QVariantMap{{QStringLiteral("label"), QStringLiteral("Always")}, {QStringLiteral("val"), 2}},
+        QVariantMap{{QStringLiteral("label"), QStringLiteral("Off")},
+                    {QStringLiteral("val"), 0}},
+        QVariantMap{{QStringLiteral("label"), QStringLiteral("Hover")},
+                    {QStringLiteral("val"), 1}},
+        QVariantMap{{QStringLiteral("label"), QStringLiteral("Always")},
+                    {QStringLiteral("val"), 2}},
     };
     std::unique_ptr<QObject> pillObj(pillComp.createWithInitialProperties(
-        {{QStringLiteral("model"), pillModel}, {QStringLiteral("selectedValue"), 0}}));
+        {{QStringLiteral("model"), pillModel},
+         {QStringLiteral("selectedValue"), 0}}));
     QVERIFY(pillObj != nullptr);
     auto *pillItem = qobject_cast<QQuickItem *>(pillObj.get());
     QVERIFY(pillItem != nullptr);
@@ -2734,15 +2962,21 @@ private slots:
           const qreal bl = ch->property("bottomLeftRadius").toReal();
           const qreal tr = ch->property("topRightRadius").toReal();
           const qreal br = ch->property("bottomRightRadius").toReal();
-          QVERIFY2(qAbs(tl - bl) < 0.05 && qAbs(tr - br) < 0.05,
-                   qPrintable(QStringLiteral("Asymmetric pill corners: TL=%1 BL=%2 TR=%3 BR=%4")
-                                  .arg(tl).arg(bl).arg(tr).arg(br)));
+          QVERIFY2(
+              qAbs(tl - bl) < 0.05 && qAbs(tr - br) < 0.05,
+              qPrintable(QStringLiteral(
+                             "Asymmetric pill corners: TL=%1 BL=%2 TR=%3 BR=%4")
+                             .arg(tl)
+                             .arg(bl)
+                             .arg(tr)
+                             .arg(br)));
         }
       }
       QVERIFY(rectCount >= 3);
     };
     QVERIFY(QMetaObject::invokeMethod(pillObj.get(), "adjustRight"));
-    QTest::qWait(40); // Mid-transition: top and bottom corners must animate in lockstep
+    QTest::qWait(
+        40); // Mid-transition: top and bottom corners must animate in lockstep
     verifyPillCornerSymmetry(pillItem);
     QCOMPARE(pillObj->property("selectedIndex").toInt(), 1);
     QCOMPARE(pillObj->property("selectedValue").toInt(), 1);
@@ -2773,7 +3007,9 @@ private slots:
     wrapPillObj.reset();
 
     // 2. ThemePreviewCards component behavior
-    QQmlComponent cardsComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/ThemePreviewCards.qml")));
+    QQmlComponent cardsComp(&engine,
+                            resolveQmlUrl(QStringLiteral(
+                                "src/qml/components/ThemePreviewCards.qml")));
     QVERIFY2(cardsComp.isReady(), qPrintable(cardsComp.errorString()));
     std::unique_ptr<QObject> cardsObj(cardsComp.createWithInitialProperties(
         {{QStringLiteral("selectedMode"), 0}}));
@@ -2791,15 +3027,19 @@ private slots:
     cardsObj.reset();
 
     // 3. SettingsSection, SettingTile & M3ToolTip standalone instantiation
-    QQmlComponent sectionComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/SettingsSection.qml")));
+    QQmlComponent sectionComp(
+        &engine, resolveQmlUrl(
+                     QStringLiteral("src/qml/components/SettingsSection.qml")));
     QVERIFY2(sectionComp.isReady(), qPrintable(sectionComp.errorString()));
     std::unique_ptr<QObject> sectionObj(sectionComp.createWithInitialProperties(
         {{QStringLiteral("sectionTitle"), QStringLiteral("Sample Section")},
          {QStringLiteral("infoTip"), QStringLiteral("Tooltip info")}}));
     QVERIFY(sectionObj != nullptr);
-    qobject_cast<QQuickItem *>(sectionObj.get())->setParentItem(win.contentItem());
+    qobject_cast<QQuickItem *>(sectionObj.get())
+        ->setParentItem(win.contentItem());
 
-    QQmlComponent tileComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/SettingTile.qml")));
+    QQmlComponent tileComp(&engine, resolveQmlUrl(QStringLiteral(
+                                        "src/qml/components/SettingTile.qml")));
     QVERIFY2(tileComp.isReady(), qPrintable(tileComp.errorString()));
     std::unique_ptr<QObject> tileObj(tileComp.createWithInitialProperties(
         {{QStringLiteral("label"), QStringLiteral("Sample Option")},
@@ -2810,7 +3050,8 @@ private slots:
     tileItem->setParentItem(win.contentItem());
     tileItem->setWidth(420);
 
-    QQmlComponent tipComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/M3ToolTip.qml")));
+    QQmlComponent tipComp(&engine, resolveQmlUrl(QStringLiteral(
+                                       "src/qml/components/M3ToolTip.qml")));
     QVERIFY2(tipComp.isReady(), qPrintable(tipComp.errorString()));
     std::unique_ptr<QObject> tipObj(tipComp.createWithInitialProperties(
         {{QStringLiteral("text"), QStringLiteral("Clean M3 tooltip hint")},
@@ -2818,24 +3059,27 @@ private slots:
     QVERIFY(tipObj != nullptr);
     tipObj->setParent(tileItem);
     QCoreApplication::processEvents();
-    auto *standaloneTitle = tileObj->findChild<QQuickItem *>(QStringLiteral("settingTileTitleLabel"));
+    auto *standaloneTitle = tileObj->findChild<QQuickItem *>(
+        QStringLiteral("settingTileTitleLabel"));
     QVERIFY(standaloneTitle != nullptr);
     QCOMPARE(standaloneTitle->property("truncated").toBool(), false);
     tipObj.reset();
     tileObj.reset();
     sectionObj.reset();
 
-    // 4. SettingsPage full 6-tab layout, rail sidebar color sync, no truncated labels, keyboard cycling, and cross-tab search
+    // 4. SettingsPage full 6-tab layout, rail sidebar color sync, no truncated
+    // labels, keyboard cycling, and cross-tab search
 #if !TSUKI_VERSION_OVERRIDDEN
-    QCOMPARE(QStringLiteral(TSUKI_VERSION), QStringLiteral(TSUKI_PROJECT_VERSION));
+    QCOMPARE(QStringLiteral(TSUKI_VERSION),
+             QStringLiteral(TSUKI_PROJECT_VERSION));
 #endif
     const QString prevAppVersion = QCoreApplication::applicationVersion();
-    const auto restoreAppVersion = qScopeGuard([&]() {
-      QCoreApplication::setApplicationVersion(prevAppVersion);
-    });
+    const auto restoreAppVersion = qScopeGuard(
+        [&]() { QCoreApplication::setApplicationVersion(prevAppVersion); });
     QCoreApplication::setApplicationVersion(QStringLiteral(TSUKI_VERSION));
 
-    QQmlComponent settingsComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/pages/SettingsPage.qml")));
+    QQmlComponent settingsComp(&engine, resolveQmlUrl(QStringLiteral(
+                                            "src/qml/pages/SettingsPage.qml")));
     QVERIFY2(settingsComp.isReady(), qPrintable(settingsComp.errorString()));
     std::unique_ptr<QObject> settingsObj(settingsComp.create());
     QVERIFY(settingsObj != nullptr);
@@ -2855,13 +3099,16 @@ private slots:
     settingsObj->setProperty("railCollapsed", false);
 
     // Settings sidebar adapts dynamically to AppSettings::sidebarColor
-    auto *navRailItem = settingsObj->findChild<QQuickItem *>(QStringLiteral("settingsNavRail"));
+    auto *navRailItem =
+        settingsObj->findChild<QQuickItem *>(QStringLiteral("settingsNavRail"));
     QVERIFY(navRailItem != nullptr);
     settings.setSyncSidebarColor(false);
     settings.setCustomSidebarColor(QStringLiteral("#1e232d"));
-    QTRY_COMPARE(navRailItem->property("color").value<QColor>(), QColor(QStringLiteral("#1e232d")));
+    QTRY_COMPARE(navRailItem->property("color").value<QColor>(),
+                 QColor(QStringLiteral("#1e232d")));
     settings.setSyncSidebarColor(true);
-    QTRY_COMPARE(navRailItem->property("color").value<QColor>(), settings.bgColor());
+    QTRY_COMPARE(navRailItem->property("color").value<QColor>(),
+                 settings.bgColor());
     settings.setSyncSidebarColor(false);
     settings.resetSidebarColor();
 
@@ -2870,38 +3117,48 @@ private slots:
     for (const QSizeF &sz : {QSizeF(1280, 820), QSizeF(960, 540)}) {
       settingsItem->setSize(sz);
       for (int t = 0; t < 6; ++t) {
-        QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "selectTab", Q_ARG(QVariant, QVariant(t))));
+        QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "selectTab",
+                                          Q_ARG(QVariant, QVariant(t))));
         QCoreApplication::processEvents();
         QCOMPARE(settingsObj->property("activeTab").toInt(), t);
-        const auto titleLabels = settingsObj->findChildren<QQuickItem *>(QStringLiteral("settingTileTitleLabel"));
+        const auto titleLabels = settingsObj->findChildren<QQuickItem *>(
+            QStringLiteral("settingTileTitleLabel"));
         for (QQuickItem *lbl : titleLabels) {
           if (lbl->isVisible()) {
             QVERIFY2(!lbl->property("truncated").toBool(),
-                     qPrintable(QStringLiteral("Truncated label on tab %1 (%2x%3): %4")
-                                    .arg(t)
-                                    .arg(sz.width())
-                                    .arg(sz.height())
-                                    .arg(lbl->property("text").toString())));
+                     qPrintable(
+                         QStringLiteral("Truncated label on tab %1 (%2x%3): %4")
+                             .arg(t)
+                             .arg(sz.width())
+                             .arg(sz.height())
+                             .arg(lbl->property("text").toString())));
           }
         }
       }
     }
     settingsItem->setSize(QSizeF(win.width(), win.height()));
-    QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "selectTab", Q_ARG(QVariant, QVariant(0))));
+    QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "selectTab",
+                                      Q_ARG(QVariant, QVariant(0))));
     QCoreApplication::processEvents();
 
     // Verify About tab version, author & GitHub/Repository controls
-    auto *aboutVerLbl = settingsObj->findChild<QQuickItem *>(QStringLiteral("aboutVersionLabel"));
+    auto *aboutVerLbl = settingsObj->findChild<QQuickItem *>(
+        QStringLiteral("aboutVersionLabel"));
     QVERIFY(aboutVerLbl != nullptr);
     QCOMPARE(aboutVerLbl->property("text").toString(),
              QStringLiteral("v") + QStringLiteral(TSUKI_VERSION));
-    QVERIFY(settingsObj->findChild<QQuickItem *>(QStringLiteral("aboutAuthorRow")) != nullptr);
-    auto *ghAccBtn = settingsObj->findChild<QQuickItem *>(QStringLiteral("githubAccountBtn"));
-    auto *ghRepoBtn = settingsObj->findChild<QQuickItem *>(QStringLiteral("githubRepoBtn"));
+    QVERIFY(settingsObj->findChild<QQuickItem *>(
+                QStringLiteral("aboutAuthorRow")) != nullptr);
+    auto *ghAccBtn = settingsObj->findChild<QQuickItem *>(
+        QStringLiteral("githubAccountBtn"));
+    auto *ghRepoBtn =
+        settingsObj->findChild<QQuickItem *>(QStringLiteral("githubRepoBtn"));
     QVERIFY(ghAccBtn != nullptr);
     QVERIFY(ghRepoBtn != nullptr);
-    QCOMPARE(ghAccBtn->property("text").toString(), QStringLiteral("@muzammilshafique"));
-    QCOMPARE(ghRepoBtn->property("text").toString(), QStringLiteral("Repository"));
+    QCOMPARE(ghAccBtn->property("text").toString(),
+             QStringLiteral("@muzammilshafique"));
+    QCOMPARE(ghRepoBtn->property("text").toString(),
+             QStringLiteral("Repository"));
 
     // Bracket keys [ / ] cycle tabs smoothly (including wrap-around 0 -> 5)
     settingsItem->forceActiveFocus();
@@ -2915,27 +3172,34 @@ private slots:
     QTest::keyClick(&win, Qt::Key_BracketLeft);
     QCoreApplication::processEvents();
     QCOMPARE(settingsObj->property("activeTab").toInt(), 5);
-    QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "selectTab", Q_ARG(QVariant, QVariant(0))));
+    QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "selectTab",
+                                      Q_ARG(QVariant, QVariant(0))));
     QCoreApplication::processEvents();
 
     // Verify catalog indexing across all 6 tabs and preserved objectNames
     QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "buildIndex"));
-    const QVariantList catalog = settingsObj->property("settingsCatalog").toList();
+    const QVariantList catalog =
+        settingsObj->property("settingsCatalog").toList();
     QVERIFY(catalog.size() >= 15);
     QSet<int> indexedTabs;
     for (const QVariant &entryVar : catalog) {
-      indexedTabs.insert(entryVar.toMap().value(QStringLiteral("tabIdx")).toInt());
+      indexedTabs.insert(
+          entryVar.toMap().value(QStringLiteral("tabIdx")).toInt());
     }
     QCOMPARE(indexedTabs.size(), 6);
 
-    QVERIFY(settingsObj->findChild<QQuickItem *>(QStringLiteral("gamescopeDefaultRow")) != nullptr);
-    QVERIFY(settingsObj->findChild<QQuickItem *>(QStringLiteral("gamescopeDefaultsConfigRow")) != nullptr);
+    QVERIFY(settingsObj->findChild<QQuickItem *>(
+                QStringLiteral("gamescopeDefaultRow")) != nullptr);
+    QVERIFY(settingsObj->findChild<QQuickItem *>(
+                QStringLiteral("gamescopeDefaultsConfigRow")) != nullptr);
 
     // Cross-tab search jump from tab 0 (Style) -> tab 2 (Performance)
-    QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "updateSearchResults",
-                                      Q_ARG(QVariant, QVariant(QStringLiteral("gamescope")))));
+    QVERIFY(QMetaObject::invokeMethod(
+        settingsObj.get(), "updateSearchResults",
+        Q_ARG(QVariant, QVariant(QStringLiteral("gamescope")))));
     QCoreApplication::processEvents();
-    const QVariantList results = settingsObj->property("searchResults").toList();
+    const QVariantList results =
+        settingsObj->property("searchResults").toList();
     QVERIFY(!results.isEmpty());
     QVariantMap gsMatch;
     for (const QVariant &rVar : results) {
@@ -2946,11 +3210,13 @@ private slots:
       }
     }
     QVERIFY(!gsMatch.isEmpty());
-    QObject *targetRowObj = gsMatch.value(QStringLiteral("item")).value<QObject *>();
+    QObject *targetRowObj =
+        gsMatch.value(QStringLiteral("item")).value<QObject *>();
     QVERIFY(targetRowObj != nullptr);
-    QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "scrollToSetting",
-                                      Q_ARG(QVariant, QVariant::fromValue(targetRowObj)),
-                                      Q_ARG(QVariant, QVariant(2))));
+    QVERIFY(QMetaObject::invokeMethod(
+        settingsObj.get(), "scrollToSetting",
+        Q_ARG(QVariant, QVariant::fromValue(targetRowObj)),
+        Q_ARG(QVariant, QVariant(2))));
     QCoreApplication::processEvents();
     QTest::qWait(30);
     QCOMPARE(settingsObj->property("activeTab").toInt(), 2);
@@ -2967,18 +3233,25 @@ private slots:
     QCoreApplication::processEvents();
     QTest::qWait(30);
 
-    QVERIFY2(relevantWarnings.isEmpty(), qPrintable(relevantWarnings.join(QLatin1Char('\n'))));
+    QVERIFY2(relevantWarnings.isEmpty(),
+             qPrintable(relevantWarnings.join(QLatin1Char('\n'))));
   }
 
   void testFabMenuAndCompactAddGameDialog() {
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());
-    QSettings rawSettings(QStringLiteral("Tsuki"), QStringLiteral("TsukiLauncher"));
-    const bool hasThemeMode = rawSettings.contains(QStringLiteral("appearance/themeMode"));
-    const QVariant oldThemeMode = rawSettings.value(QStringLiteral("appearance/themeMode"));
+    QSettings rawSettings(QStringLiteral("Tsuki"),
+                          QStringLiteral("TsukiLauncher"));
+    const bool hasThemeMode =
+        rawSettings.contains(QStringLiteral("appearance/themeMode"));
+    const QVariant oldThemeMode =
+        rawSettings.value(QStringLiteral("appearance/themeMode"));
     const auto restoreSettings = qScopeGuard([&]() {
-      if (hasThemeMode) rawSettings.setValue(QStringLiteral("appearance/themeMode"), oldThemeMode);
-      else rawSettings.remove(QStringLiteral("appearance/themeMode"));
+      if (hasThemeMode)
+        rawSettings.setValue(QStringLiteral("appearance/themeMode"),
+                             oldThemeMode);
+      else
+        rawSettings.remove(QStringLiteral("appearance/themeMode"));
     });
 
     DatabaseManager db(tmpDir.filePath(QStringLiteral("fab_add_dialog.db")));
@@ -2992,7 +3265,8 @@ private slots:
     ControllerManager ctrlMgr(&db, &settings);
     SteamGridDbService sgdb(&settings, &dl);
     DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
-    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
     GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
     UiController uiCtrl(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
                         &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm);
@@ -3003,30 +3277,35 @@ private slots:
     QVERIFY(QTest::qWaitForWindowExposed(&win));
 
     QQmlEngine engine;
-    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), &settings);
-    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"), &dl);
-    engine.rootContext()->setContextProperty(QStringLiteral("uiController"), &uiCtrl);
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
+                                             &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"),
+                                             &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
+                                             &uiCtrl);
 
     QStringList relevantWarnings;
-    QObject::connect(&engine, &QQmlEngine::warnings, &win,
-                     [&](const QList<QQmlError> &warnings) {
-                       for (const QQmlError &err : warnings) {
-                         const QString text = err.toString();
-                         if (text.contains(QStringLiteral("M3FabMenu")) ||
-                             text.contains(QStringLiteral("AddGameDialog")) ||
-                             text.contains(QStringLiteral("TopBar")) ||
-                             text.contains(QStringLiteral("Binding loop")) ||
-                             text.contains(QStringLiteral("ReferenceError")) ||
-                             text.contains(QStringLiteral("TypeError")) ||
-                             text.contains(QStringLiteral("recursive rearrange")) ||
-                             text.contains(QStringLiteral("Detected anchors"))) {
-                           relevantWarnings << text;
-                         }
-                       }
-                     });
+    QObject::connect(
+        &engine, &QQmlEngine::warnings, &win,
+        [&](const QList<QQmlError> &warnings) {
+          for (const QQmlError &err : warnings) {
+            const QString text = err.toString();
+            if (text.contains(QStringLiteral("M3FabMenu")) ||
+                text.contains(QStringLiteral("AddGameDialog")) ||
+                text.contains(QStringLiteral("TopBar")) ||
+                text.contains(QStringLiteral("Binding loop")) ||
+                text.contains(QStringLiteral("ReferenceError")) ||
+                text.contains(QStringLiteral("TypeError")) ||
+                text.contains(QStringLiteral("recursive rearrange")) ||
+                text.contains(QStringLiteral("Detected anchors"))) {
+              relevantWarnings << text;
+            }
+          }
+        });
 
     // 1. M3FabMenu open/close and platform selection
-    QQmlComponent fabComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/M3FabMenu.qml")));
+    QQmlComponent fabComp(&engine, resolveQmlUrl(QStringLiteral(
+                                       "src/qml/components/M3FabMenu.qml")));
     QVERIFY2(fabComp.isReady(), qPrintable(fabComp.errorString()));
     std::unique_ptr<QObject> fabObj(fabComp.create());
     QVERIFY(fabObj != nullptr);
@@ -3046,7 +3325,8 @@ private slots:
     QTRY_COMPARE(fabObj->property("isMenuOpen").toBool(), true);
     QCOMPARE(fabObj->property("isExpanded").toBool(), true);
     QTRY_VERIFY(fabItem->implicitWidth() > 60.0);
-    QVERIFY(QMetaObject::invokeMethod(fabObj.get(), "activateItem", Q_ARG(QVariant, QVariant(0))));
+    QVERIFY(QMetaObject::invokeMethod(fabObj.get(), "activateItem",
+                                      Q_ARG(QVariant, QVariant(0))));
     QTRY_COMPARE(fabSpy.count(), 1);
     QCOMPARE(fabSpy.at(0).at(0).toString(), QStringLiteral("windows"));
     QTRY_COMPARE(fabObj->property("isMenuOpen").toBool(), false);
@@ -3055,24 +3335,27 @@ private slots:
 
     QVERIFY(QMetaObject::invokeMethod(fabObj.get(), "openMenu"));
     QTRY_COMPARE(fabObj->property("isMenuOpen").toBool(), true);
-    QVERIFY(QMetaObject::invokeMethod(fabObj.get(), "activateItem", Q_ARG(QVariant, QVariant(1))));
+    QVERIFY(QMetaObject::invokeMethod(fabObj.get(), "activateItem",
+                                      Q_ARG(QVariant, QVariant(1))));
     QTRY_COMPARE(fabSpy.count(), 2);
     QCOMPARE(fabSpy.at(1).at(0).toString(), QStringLiteral("linux"));
     QTRY_COMPARE(fabObj->property("isMenuOpen").toBool(), false);
     QTRY_VERIFY(qAbs(fabItem->implicitWidth() - 40.0) <= 0.5);
     fabObj.reset();
 
-    // Background focus sentinel to verify AddGameDialog never leaks directional keys
+    // Background focus sentinel to verify AddGameDialog never leaks directional
+    // keys
     QQmlComponent bgSentinelComp(&engine);
-    bgSentinelComp.setData(
-        "import QtQuick\n"
-        "FocusScope {\n"
-        "    width: 200; height: 200\n"
-        "    property int leakedKeys: 0\n"
-        "    Keys.onPressed: (event) => { leakedKeys++; event.accepted = true }\n"
-        "}\n",
-        QUrl());
-    QVERIFY2(bgSentinelComp.isReady(), qPrintable(bgSentinelComp.errorString()));
+    bgSentinelComp.setData("import QtQuick\n"
+                           "FocusScope {\n"
+                           "    width: 200; height: 200\n"
+                           "    property int leakedKeys: 0\n"
+                           "    Keys.onPressed: (event) => { leakedKeys++; "
+                           "event.accepted = true }\n"
+                           "}\n",
+                           QUrl());
+    QVERIFY2(bgSentinelComp.isReady(),
+             qPrintable(bgSentinelComp.errorString()));
     std::unique_ptr<QObject> bgSentinelObj(bgSentinelComp.create());
     QVERIFY(bgSentinelObj != nullptr);
     auto *bgSentinel = qobject_cast<QQuickItem *>(bgSentinelObj.get());
@@ -3082,33 +3365,47 @@ private slots:
     QCoreApplication::processEvents();
     QCOMPARE(bgSentinel->hasActiveFocus(), true);
 
-    // 2. AddGameDialog compact Settings aesthetic, no internal platform switcher, adaptive height
-    QQmlComponent dialogComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/components/AddGameDialog.qml")));
+    // 2. AddGameDialog compact Settings aesthetic, no internal platform
+    // switcher, adaptive height
+    QQmlComponent dialogComp(
+        &engine,
+        resolveQmlUrl(QStringLiteral("src/qml/components/AddGameDialog.qml")));
     QVERIFY2(dialogComp.isReady(), qPrintable(dialogComp.errorString()));
     std::unique_ptr<QObject> dialogObj(dialogComp.create());
     QVERIFY(dialogObj != nullptr);
     dialogObj->setProperty("parent", QVariant::fromValue(win.contentItem()));
     QCoreApplication::processEvents();
 
-    QVERIFY(QMetaObject::invokeMethod(dialogObj.get(), "resetAndOpen",
-                                      Q_ARG(QVariant, QVariant(QStringLiteral("windows")))));
-    auto *contentItem = dialogObj->property("contentItem").value<QQuickItem *>();
+    QVERIFY(QMetaObject::invokeMethod(
+        dialogObj.get(), "resetAndOpen",
+        Q_ARG(QVariant, QVariant(QStringLiteral("windows")))));
+    auto *contentItem =
+        dialogObj->property("contentItem").value<QQuickItem *>();
     QVERIFY(contentItem != nullptr);
-    auto *winExeField = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameExeField"));
-    auto *winBrowseBtn = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameBrowseExeBtn"));
-    auto *winTitleField = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameTitleField"));
-    auto *winWorkDirField = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameWorkDirField"));
-    auto *winCancelBtn = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameCancelBtn"));
-    QVERIFY(winExeField && winBrowseBtn && winTitleField && winWorkDirField && winCancelBtn);
+    auto *winExeField =
+        contentItem->findChild<QQuickItem *>(QStringLiteral("addGameExeField"));
+    auto *winBrowseBtn = contentItem->findChild<QQuickItem *>(
+        QStringLiteral("addGameBrowseExeBtn"));
+    auto *winTitleField = contentItem->findChild<QQuickItem *>(
+        QStringLiteral("addGameTitleField"));
+    auto *winWorkDirField = contentItem->findChild<QQuickItem *>(
+        QStringLiteral("addGameWorkDirField"));
+    auto *winCancelBtn = contentItem->findChild<QQuickItem *>(
+        QStringLiteral("addGameCancelBtn"));
+    QVERIFY(winExeField && winBrowseBtn && winTitleField && winWorkDirField &&
+            winCancelBtn);
 
-    // Focus must enter AddGameDialog immediately and stay inside after the enter transition finishes
+    // Focus must enter AddGameDialog immediately and stay inside after the
+    // enter transition finishes
     QTRY_COMPARE(winExeField->hasActiveFocus(), true);
     QTest::qWait(220);
     QCOMPARE(dialogObj->property("opened").toBool(), true);
     QCOMPARE(winExeField->hasActiveFocus(), true);
-    QCOMPARE(dialogObj->property("platform").toString(), QStringLiteral("windows"));
+    QCOMPARE(dialogObj->property("platform").toString(),
+             QStringLiteral("windows"));
 
-    // Keyboard/gamepad navigation inside Windows dialog without leaking keys to background
+    // Keyboard/gamepad navigation inside Windows dialog without leaking keys to
+    // background
     QTest::keyClick(&win, Qt::Key_Up);
     QCoreApplication::processEvents();
     QCOMPARE(winExeField->hasActiveFocus(), true);
@@ -3121,7 +3418,8 @@ private slots:
     QCoreApplication::processEvents();
     QCOMPARE(winExeField->hasActiveFocus(), true);
 
-    // Enter edit mode via Return on M3TextField, then Down exits edit mode and moves to Title
+    // Enter edit mode via Return on M3TextField, then Down exits edit mode and
+    // moves to Title
     QTest::keyClick(&win, Qt::Key_Return);
     QCoreApplication::processEvents();
     QCOMPARE(winExeField->property("isEditing").toBool(), true);
@@ -3139,38 +3437,53 @@ private slots:
     QCOMPARE(winCancelBtn->hasActiveFocus(), true);
     QCOMPARE(bgSentinel->property("leakedKeys").toInt(), 0);
 
-    // Platform selector must not exist inside the dialog (chosen exclusively from FAB menu)
-    QVERIFY(contentItem->findChild<QQuickItem *>(QStringLiteral("platformSeg")) == nullptr);
+    // Platform selector must not exist inside the dialog (chosen exclusively
+    // from FAB menu)
+    QVERIFY(contentItem->findChild<QQuickItem *>(
+                QStringLiteral("platformSeg")) == nullptr);
 
-    auto *headerLbl = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameHeaderTitle"));
-    auto *winCard = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameWindowsCard"));
+    auto *headerLbl = contentItem->findChild<QQuickItem *>(
+        QStringLiteral("addGameHeaderTitle"));
+    auto *winCard = contentItem->findChild<QQuickItem *>(
+        QStringLiteral("addGameWindowsCard"));
     QVERIFY(headerLbl != nullptr);
     QVERIFY(winCard != nullptr);
-    QCOMPARE(headerLbl->property("text").toString(), QStringLiteral("Add Windows Game"));
+    QCOMPARE(headerLbl->property("text").toString(),
+             QStringLiteral("Add Windows Game"));
     QCOMPARE(winCard->isVisible(), true);
     const qreal windowsDialogHeight = dialogObj->property("height").toReal();
 
     QTest::keyClick(&win, Qt::Key_Escape);
     QTRY_COMPARE(dialogObj->property("visible").toBool(), false);
 
-    QVERIFY(QMetaObject::invokeMethod(dialogObj.get(), "resetAndOpen",
-                                      Q_ARG(QVariant, QVariant(QStringLiteral("linux")))));
+    QVERIFY(QMetaObject::invokeMethod(
+        dialogObj.get(), "resetAndOpen",
+        Q_ARG(QVariant, QVariant(QStringLiteral("linux")))));
     QTRY_COMPARE(dialogObj->property("opened").toBool(), true);
-    QCOMPARE(dialogObj->property("platform").toString(), QStringLiteral("linux"));
-    QCOMPARE(headerLbl->property("text").toString(), QStringLiteral("Add Linux Game"));
+    QCOMPARE(dialogObj->property("platform").toString(),
+             QStringLiteral("linux"));
+    QCOMPARE(headerLbl->property("text").toString(),
+             QStringLiteral("Add Linux Game"));
     QCOMPARE(winCard->isVisible(), false);
     const qreal linuxDialogHeight = dialogObj->property("height").toReal();
     QVERIFY2(linuxDialogHeight < windowsDialogHeight,
-             qPrintable(QStringLiteral("Expected Linux dialog height (%1) < Windows height (%2)")
-                            .arg(linuxDialogHeight)
-                            .arg(windowsDialogHeight)));
+             qPrintable(
+                 QStringLiteral(
+                     "Expected Linux dialog height (%1) < Windows height (%2)")
+                     .arg(linuxDialogHeight)
+                     .arg(windowsDialogHeight)));
 
     // Submitting Linux native game creates native game entry and closes popup
-    auto *exeField = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameExeField"));
-    auto *titleField = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameTitleField"));
-    auto *submitBtn = contentItem->findChild<QQuickItem *>(QStringLiteral("addGameSubmitBtn"));
-    QVERIFY(exeField != nullptr && titleField != nullptr && submitBtn != nullptr);
-    exeField->setProperty("text", QStringLiteral("/opt/games/hollow_knight/hollow.x86_64"));
+    auto *exeField =
+        contentItem->findChild<QQuickItem *>(QStringLiteral("addGameExeField"));
+    auto *titleField = contentItem->findChild<QQuickItem *>(
+        QStringLiteral("addGameTitleField"));
+    auto *submitBtn = contentItem->findChild<QQuickItem *>(
+        QStringLiteral("addGameSubmitBtn"));
+    QVERIFY(exeField != nullptr && titleField != nullptr &&
+            submitBtn != nullptr);
+    exeField->setProperty(
+        "text", QStringLiteral("/opt/games/hollow_knight/hollow.x86_64"));
     titleField->setProperty("text", QStringLiteral("Hollow Knight Native"));
     QCoreApplication::processEvents();
     QCOMPARE(submitBtn->isEnabled(), true);
@@ -3184,7 +3497,8 @@ private slots:
     bgSentinelObj.reset();
 
     // 3. TopBar top-right FAB integration
-    QQmlComponent topBarComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/home/TopBar.qml")));
+    QQmlComponent topBarComp(
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/home/TopBar.qml")));
     QVERIFY2(topBarComp.isReady(), qPrintable(topBarComp.errorString()));
     std::unique_ptr<QObject> topBarObj(topBarComp.create());
     QVERIFY(topBarObj != nullptr);
@@ -3194,12 +3508,14 @@ private slots:
     topBarItem->setSize(QSizeF(1060, 84));
     QCoreApplication::processEvents();
 
-    auto *topFab = topBarObj->findChild<QQuickItem *>(QStringLiteral("topBarAddFabMenu"));
+    auto *topFab =
+        topBarObj->findChild<QQuickItem *>(QStringLiteral("topBarAddFabMenu"));
     QVERIFY(topFab != nullptr);
     QSignalSpy topAddSpy(topBarObj.get(), SIGNAL(addGameRequested(QString)));
     QVERIFY(QMetaObject::invokeMethod(topBarObj.get(), "openAddMenu"));
     QTRY_COMPARE(topBarObj->property("isAddMenuOpen").toBool(), true);
-    QVERIFY(QMetaObject::invokeMethod(topFab, "activateItem", Q_ARG(QVariant, QVariant(1))));
+    QVERIFY(QMetaObject::invokeMethod(topFab, "activateItem",
+                                      Q_ARG(QVariant, QVariant(1))));
     QTRY_COMPARE(topAddSpy.count(), 1);
     QCOMPARE(topAddSpy.at(0).at(0).toString(), QStringLiteral("linux"));
     QTRY_COMPARE(topBarObj->property("isAddMenuOpen").toBool(), false);
@@ -3208,7 +3524,8 @@ private slots:
     QCoreApplication::processEvents();
     QTest::qWait(30);
 
-    QVERIFY2(relevantWarnings.isEmpty(), qPrintable(relevantWarnings.join(QLatin1Char('\n'))));
+    QVERIFY2(relevantWarnings.isEmpty(),
+             qPrintable(relevantWarnings.join(QLatin1Char('\n'))));
   }
 };
 

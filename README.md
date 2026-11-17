@@ -49,7 +49,7 @@ Support for Ubuntu/Debian (`.deb`) and Fedora (`.rpm`) will be added later.
 ### Dependencies (Arch Linux)
 
 ```bash
-sudo pacman -S cmake ninja pkgconf qt6-base qt6-declarative qt6-svg sdl2 hicolor-icon-theme tar
+sudo pacman -S cmake ninja pkgconf qt6-base qt6-declarative qt6-svg sdl2 hicolor-icon-theme tar ttf-jetbrains-mono-nerd
 ```
 
 Optional runtime packages: `wine`, `winetricks`, `mangohud`, `gamemode`, `7zip`, `vulkan-icd-loader`.

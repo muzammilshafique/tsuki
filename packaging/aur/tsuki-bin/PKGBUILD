@@ -19,6 +19,7 @@ depends=(
     'sdl2'
     'hicolor-icon-theme'
     'tar'
+    'ttf-jetbrains-mono-nerd'
 )
 optdepends=(
     'wine: Windows game compatibility via system Wine'

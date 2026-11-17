@@ -53,25 +53,49 @@
         <file>icons/nav/diagnostics.svg</file>
         <file>icons/nav/diagnostics-filled.svg</file>
 
-        <file>icons/actions/search.svg</file>
-        <file>icons/actions/close.svg</file>
-        <file>icons/actions/download.svg</file>
-        <file>icons/actions/sort.svg</file>
-        <file>icons/actions/play.svg</file>
-        <file>icons/actions/pause.svg</file>
-        <file>icons/actions/stop.svg</file>
-        <file>icons/actions/pin.svg</file>
-        <file>icons/actions/trash.svg</file>
-        <file>icons/actions/settings.svg</file>
         <file>icons/actions/add.svg</file>
-        <file>icons/actions/folder.svg</file>
-        <file>icons/actions/edit.svg</file>
-        <file>icons/actions/wrench.svg</file>
-        <file>icons/actions/refresh.svg</file>
+        <file>icons/actions/article.svg</file>
+        <file>icons/actions/article-filled.svg</file>
+        <file>icons/actions/auto_awesome.svg</file>
+        <file>icons/actions/auto_awesome-filled.svg</file>
         <file>icons/actions/back.svg</file>
-        <file>icons/actions/shortcut.svg</file>
         <file>icons/actions/check.svg</file>
         <file>icons/actions/chevron_down.svg</file>
+        <file>icons/actions/close.svg</file>
+        <file>icons/actions/colorize.svg</file>
+        <file>icons/actions/colorize-filled.svg</file>
+        <file>icons/actions/desktop_windows.svg</file>
+        <file>icons/actions/download.svg</file>
+        <file>icons/actions/edit.svg</file>
+        <file>icons/actions/folder.svg</file>
+        <file>icons/actions/folder_open.svg</file>
+        <file>icons/actions/folder_open-filled.svg</file>
+        <file>icons/actions/forward.svg</file>
+        <file>icons/actions/grid_view.svg</file>
+        <file>icons/actions/grid_view-filled.svg</file>
+        <file>icons/actions/info.svg</file>
+        <file>icons/actions/info-filled.svg</file>
+        <file>icons/actions/menu.svg</file>
+        <file>icons/actions/menu_open.svg</file>
+        <file>icons/actions/palette.svg</file>
+        <file>icons/actions/palette-filled.svg</file>
+        <file>icons/actions/pause.svg</file>
+        <file>icons/actions/person.svg</file>
+        <file>icons/actions/pin.svg</file>
+        <file>icons/actions/play.svg</file>
+        <file>icons/actions/play_arrow.svg</file>
+        <file>icons/actions/refresh.svg</file>
+        <file>icons/actions/search.svg</file>
+        <file>icons/actions/settings.svg</file>
+        <file>icons/actions/shortcut.svg</file>
+        <file>icons/actions/sort.svg</file>
+        <file>icons/actions/speed.svg</file>
+        <file>icons/actions/speed-filled.svg</file>
+        <file>icons/actions/stop.svg</file>
+        <file>icons/actions/terminal.svg</file>
+        <file>icons/actions/trash.svg</file>
+        <file>icons/actions/tune.svg</file>
+        <file>icons/actions/wrench.svg</file>
 
         <file>icons/gamepad/gamepad-up.svg</file>
         <file>icons/gamepad/gamepad-down.svg</file>

@@ -19,6 +19,7 @@ pkgbase = tsuki-git
 	depends = sdl2
 	depends = hicolor-icon-theme
 	depends = tar
+	depends = ttf-jetbrains-mono-nerd
 	optdepends = wine: Windows game compatibility via system Wine
 	optdepends = winetricks: Windows runtime component installer
 	optdepends = mangohud: In-game FPS and performance overlay

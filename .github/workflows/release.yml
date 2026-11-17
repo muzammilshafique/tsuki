@@ -34,7 +34,7 @@ jobs:
           pacman -Syu --noconfirm \
             sudo git cmake ninja pkgconf \
             qt6-base qt6-declarative qt6-svg sdl2 \
-            hicolor-icon-theme tar zstd \
+            hicolor-icon-theme tar zstd ttf-jetbrains-mono-nerd \
             desktop-file-utils appstream
           # Host workspace is bind-mounted as the runner user (UID 1001), while container steps run as root/builduser
           git config --system --add safe.directory '*'

@@ -100,6 +100,7 @@ target_link_libraries(tsuki PRIVATE tsuki_core)
 enable_testing()
 add_executable(tsuki_tests
     tests/test_tsuki.cpp
+    resources/resources.qrc
     resources/fonts.qrc
 )
 target_compile_definitions(tsuki_tests PRIVATE
