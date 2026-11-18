@@ -64,6 +64,9 @@ public:
 
     static void ensureProtonSymlink(const QString& prefixPath);
     static bool writeRegistryDllOverrides(const QString& prefixPath, const QVariantMap& overrides);
+    static bool configureEosOverlayRegistry(const QString& prefixPath,
+                                            const QString& overlayDir,
+                                            bool enable);
 
 signals:
     void prefixesChanged();

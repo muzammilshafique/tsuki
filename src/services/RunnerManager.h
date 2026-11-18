@@ -15,6 +15,12 @@ class RunnerManager : public QObject {
     Q_PROPERTY(QVariantList installedRunners READ installedRunnersVariant NOTIFY runnersChanged)
     Q_PROPERTY(QVariantList availableReleases READ availableReleases NOTIFY availableReleasesChanged)
     Q_PROPERTY(bool isFetchingReleases READ isFetchingReleases NOTIFY isFetchingReleasesChanged)
+    Q_PROPERTY(QString eacRuntimePath READ eacRuntimePath NOTIFY antiCheatRuntimesChanged)
+    Q_PROPERTY(QString battleyeRuntimePath READ battleyeRuntimePath NOTIFY antiCheatRuntimesChanged)
+    Q_PROPERTY(bool eacRuntimeAvailable READ eacRuntimeAvailable NOTIFY antiCheatRuntimesChanged)
+    Q_PROPERTY(bool battleyeRuntimeAvailable READ battleyeRuntimeAvailable NOTIFY antiCheatRuntimesChanged)
+    Q_PROPERTY(bool isInstallingEac READ isInstallingEac NOTIFY antiCheatRuntimesChanged)
+    Q_PROPERTY(bool isInstallingBattleye READ isInstallingBattleye NOTIFY antiCheatRuntimesChanged)
 
 public:
     explicit RunnerManager(DatabaseManager* db, AppSettings* settings, DownloadManager* dl, QObject* parent = nullptr);
@@ -31,6 +37,20 @@ public:
 
     QStringList findDxvkDirectories() const;
     QStringList findVkd3dDirectories() const;
+
+    // Proton Anti-Cheat Runtimes (EAC & BattlEye)
+    static QString resolveEacRuntimePath();
+    static QString resolveBattlEyeRuntimePath();
+    static QString ensureSpaceSafeRuntimePath(const QString& runtimeDir, const QString& linkName);
+    QString eacRuntimePath() const { return resolveEacRuntimePath(); }
+    QString battleyeRuntimePath() const { return resolveBattlEyeRuntimePath(); }
+    bool eacRuntimeAvailable() const { return !resolveEacRuntimePath().isEmpty(); }
+    bool battleyeRuntimeAvailable() const { return !resolveBattlEyeRuntimePath().isEmpty(); }
+    bool isInstallingEac() const { return m_isInstallingEac; }
+    bool isInstallingBattleye() const { return m_isInstallingBattleye; }
+
+    Q_INVOKABLE void installAntiCheatRuntime(const QString& runtimeName);
+    Q_INVOKABLE bool removeAntiCheatRuntime(const QString& runtimeName);
 
     Q_INVOKABLE void detectInstalledRunners();
     Q_INVOKABLE void fetchAvailableReleases(const QString& category = QStringLiteral("proton-ge"));
@@ -51,6 +71,7 @@ signals:
     void runnersChanged();
     void availableReleasesChanged();
     void isFetchingReleasesChanged();
+    void antiCheatRuntimesChanged();
     void runnerOperationStatus(const QString& message, bool isError);
 
 private:
@@ -60,6 +81,8 @@ private:
     QNetworkAccessManager m_nam;
     QVariantList m_availableReleases;
     bool m_isFetchingReleases = false;
+    bool m_isInstallingEac = false;
+    bool m_isInstallingBattleye = false;
 
     void inspectAndRegisterRunnerDir(const QString& dirPath, bool isSystemDir = false, const QString& sourceLabel = QString());
     void scanSteamRunners();

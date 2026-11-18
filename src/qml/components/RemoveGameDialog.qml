@@ -18,6 +18,9 @@ Popup {
     property string targetPrefixId: ""
     property string prefixName: ""
     property bool hasDedicatedPrefix: false
+    property bool isEpicGame: false
+    property bool isInPlaceImported: false
+    property string epicInstallDir: ""
 
     signal gameRemoved(string gameId)
 
@@ -26,6 +29,12 @@ Popup {
         targetTitle = title
         targetPrefixId = prefixId || ""
         deletePrefixToggle.checked = false
+
+        let gMap = (uiController && uiController.gameManager) ? uiController.gameManager.getGameMap(gameId) : ({})
+        isEpicGame = Boolean(gMap && gMap.isEpic)
+        isInPlaceImported = Boolean(gMap && gMap.epicInPlaceImported)
+        epicInstallDir = (gMap && gMap.epicInstallDir) ? gMap.epicInstallDir : ""
+        deleteEpicFilesToggle.checked = isEpicGame && !isInPlaceImported
 
         if (targetPrefixId.length > 0 && targetPrefixId !== "default-prefix") {
             let pMap = uiController.prefixManager.getPrefixMap(targetPrefixId)
@@ -38,7 +47,8 @@ Popup {
 
         root.open()
         Qt.callLater(() => {
-            if (root.hasDedicatedPrefix) deletePrefixToggle.forceActiveFocus()
+            if (root.isEpicGame) deleteEpicFilesToggle.forceActiveFocus()
+            else if (root.hasDedicatedPrefix) deletePrefixToggle.forceActiveFocus()
             else cancelBtn.forceActiveFocus()
         })
     }
@@ -92,7 +102,7 @@ Popup {
                 }
 
                 Label {
-                    text: "Remove from Library"
+                    text: root.isEpicGame ? "Uninstall Epic Game" : "Remove from Library"
                     color: appSettings.textColor
                     font.pixelSize: 18
                     font.weight: Font.DemiBold
@@ -132,7 +142,9 @@ Popup {
             spacing: 16
 
             Label {
-                text: "Are you sure you want to remove <b>" + (root.targetTitle ? root.targetTitle : "this game") + "</b> from your Tsuki library?"
+                text: root.isEpicGame
+                    ? ("Are you sure you want to uninstall <b>" + (root.targetTitle ? root.targetTitle : "this game") + "</b> from your library?")
+                    : ("Are you sure you want to remove <b>" + (root.targetTitle ? root.targetTitle : "this game") + "</b> from your Tsuki library?")
                 color: appSettings.textColor
                 font.pixelSize: 14
                 textFormat: Text.RichText
@@ -142,11 +154,63 @@ Popup {
             }
 
             Label {
-                text: "Your actual game files on disk will not be deleted."
-                color: appSettings.textSecColor
+                text: (root.isEpicGame && deleteEpicFilesToggle.checked)
+                    ? ("Game files on disk will be permanently deleted" + (root.epicInstallDir.length > 0 ? (":\n" + root.epicInstallDir) : "."))
+                    : "Your actual game files on disk will not be deleted."
+                color: (root.isEpicGame && deleteEpicFilesToggle.checked) ? "#ef4444" : appSettings.textSecColor
                 font.pixelSize: 13
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
+            }
+
+            // Epic Game Files Deletion Toggle Card
+            Rectangle {
+                visible: root.isEpicGame
+                Layout.fillWidth: true
+                radius: 12
+                color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
+                border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                implicitHeight: epicFilesRow.implicitHeight + 20
+
+                RowLayout {
+                    id: epicFilesRow
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 12
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        Label {
+                            text: "Delete Game Files from Disk"
+                            color: appSettings.textColor
+                            font.pixelSize: 13
+                            font.weight: Font.Medium
+                        }
+
+                        Label {
+                            text: root.isInPlaceImported
+                                ? "In-place imported folder (unchecked by default so external files stay safe)"
+                                : "Removes the installed Epic game directory from disk"
+                            color: appSettings.textSecColor
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    Toggle {
+                        id: deleteEpicFilesToggle
+                        objectName: "deleteEpicFilesToggle"
+                        checked: false
+                        Keys.onDownPressed: (event) => {
+                            event.accepted = true
+                            if (root.hasDedicatedPrefix) deletePrefixToggle.forceActiveFocus()
+                            else cancelBtn.forceActiveFocus()
+                        }
+                    }
+                }
             }
 
             // Prefix Deletion Option Card
@@ -225,13 +289,15 @@ Popup {
 
                 M3Button {
                     id: removeBtn
-                    text: "Remove Game"
+                    objectName: "removeConfirmBtn"
+                    text: root.isEpicGame ? "Uninstall Game" : "Remove Game"
                     iconSource: "qrc:/tsuki_app/icons/actions/trash.svg"
                     buttonType: "destructive"
                     onClicked: {
                         let gId = root.targetGameId
                         let delPrefix = root.hasDedicatedPrefix && deletePrefixToggle.checked
-                        uiController.gameManager.removeGame(gId, delPrefix)
+                        let delFiles = root.isEpicGame && deleteEpicFilesToggle.checked
+                        uiController.gameManager.removeGame(gId, delPrefix, delFiles)
                         root.close()
                         root.gameRemoved(gId)
                     }

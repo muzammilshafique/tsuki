@@ -32,7 +32,7 @@ Rectangle {
         let items = [
             { name: "Library",     icon: "qrc:/tsuki_app/icons/nav/library.svg",     action: "filter",  val: -1, section: "library" },
             { name: "Favourites",  icon: "qrc:/tsuki_app/icons/nav/favourite.svg",   action: "filter",  val: 3,  section: "library" },
-            { name: "Recent",      icon: "qrc:/tsuki_app/icons/nav/recent.svg",      action: "filter",  val: 4,  section: "library" },
+            { name: "Epic Games",  icon: "qrc:/tsuki_app/icons/nav/epic.svg",        action: "section", val: 0,  section: "epic" },
             { name: "divider",     icon: "",                                         action: "",        val: 0,  section: "" },
             { name: "Prefixes",    icon: "qrc:/tsuki_app/icons/nav/prefixes.svg",    action: "section", val: 0,  section: "prefixes" },
             { name: "Runners",     icon: "qrc:/tsuki_app/icons/nav/runner.svg",      action: "section", val: 0,  section: "runners" },

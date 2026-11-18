@@ -318,6 +318,7 @@ Item {
             required property bool   isFavorite
             required property bool   isRunning
             required property bool   isNative
+            required property bool   isEpic
 
             property bool isMenuOpen: false
             property int menuFocusedIndex: 0
@@ -833,43 +834,61 @@ Item {
                 }
 
                 // ── Top-Right Persistent Badges ──────────────────────────────
-                // 1. Persistent Pin Badge
-                Rectangle {
-                    visible: cell.isPinned && !cell.isMenuOpen
+                Row {
                     anchors.top: parent.top
                     anchors.right: parent.right
                     anchors.margins: 8
-                    width: 24; height: 24; radius: 12
-                    color: Qt.rgba(0, 0, 0, 0.75)
-                    border.color: appSettings.accentColor
-                    border.width: 1
+                    spacing: 5
                     z: 14
+                    visible: !cell.isMenuOpen
 
-                    YIcon {
-                        anchors.centerIn: parent
-                        size: 14
-                        source: "qrc:/tsuki_app/icons/actions/pin.svg"
-                        color: appSettings.accentColor
+                    // 1. Persistent Epic Store Badge (toggleable in Settings)
+                    Rectangle {
+                        objectName: "epicCardBadge"
+                        visible: cell.isEpic && appSettings.showEpicBadge
+                        width: 24; height: 24; radius: 12
+                        color: Qt.rgba(0, 0, 0, 0.78)
+                        border.color: Qt.rgba(1, 1, 1, 0.28)
+                        border.width: 1
+
+                        YIcon {
+                            anchors.centerIn: parent
+                            size: 14
+                            source: "qrc:/tsuki_app/icons/nav/epic-filled.svg"
+                            color: "#ffffff"
+                        }
                     }
-                }
 
-                // 2. Persistent Favorite Badge (if not pinned)
-                Rectangle {
-                    visible: cell.isFavorite && !cell.isPinned && !cell.isMenuOpen
-                    anchors.top: parent.top
-                    anchors.right: parent.right
-                    anchors.margins: 8
-                    width: 24; height: 24; radius: 12
-                    color: Qt.rgba(0, 0, 0, 0.75)
-                    border.color: "#fbbf24"
-                    border.width: 1
-                    z: 14
+                    // 2. Persistent Pin Badge
+                    Rectangle {
+                        visible: cell.isPinned
+                        width: 24; height: 24; radius: 12
+                        color: Qt.rgba(0, 0, 0, 0.75)
+                        border.color: appSettings.accentColor
+                        border.width: 1
 
-                    YIcon {
-                        anchors.centerIn: parent
-                        size: 14
-                        source: "qrc:/tsuki_app/icons/nav/favourite-filled.svg"
-                        color: "#fbbf24"
+                        YIcon {
+                            anchors.centerIn: parent
+                            size: 14
+                            source: "qrc:/tsuki_app/icons/actions/pin.svg"
+                            color: appSettings.accentColor
+                        }
+                    }
+
+                    // 3. Persistent Favorite Badge (if not pinned)
+                    Rectangle {
+                        visible: cell.isFavorite && !cell.isPinned
+                        width: 24; height: 24; radius: 12
+                        color: Qt.rgba(0, 0, 0, 0.75)
+                        border.color: "#fbbf24"
+                        border.width: 1
+
+                        YIcon {
+                            anchors.centerIn: parent
+                            size: 14
+                            source: "qrc:/tsuki_app/icons/nav/favourite-filled.svg"
+                            color: "#fbbf24"
+                        }
                     }
                 }
 
@@ -1145,7 +1164,6 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             text: {
                 if (uiController.searchModel.filterType === 3) return "No Favourite Games Yet"
-                if (uiController.searchModel.filterType === 4) return "No Recently Played Games"
                 return "Your Game Library is Empty"
             }
             color: appSettings.textColor
@@ -1157,8 +1175,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             text: {
                 if (uiController.searchModel.filterType === 3) return "Right-click any game or tap the star button to add it to favourites."
-                if (uiController.searchModel.filterType === 4) return "Games you have launched through Tsuki will appear here."
-                return "Add locally downloaded Windows games (.exe) to launch them with Wine or Proton."
+                return "Add locally downloaded Windows games (.exe) or install titles from Epic Games."
             }
             color: appSettings.textSecColor
             font.pixelSize: 15

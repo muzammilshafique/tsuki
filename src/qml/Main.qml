@@ -82,8 +82,8 @@ ApplicationWindow {
 
         initialItem: HomePage {
             id: homePage
-            onGameDetailsRequested: function(gameId) {
-                stack.push(detailPageComponent, { gameId: gameId })
+            onGameDetailsRequested: function(gameId, epicAppName) {
+                stack.push(detailPageComponent, { gameId: gameId || "", epicAppName: epicAppName || "" })
             }
             onSettingsRequested: {
                 stack.push(settingsPageComponent)
@@ -147,7 +147,7 @@ ApplicationWindow {
             if (stack.currentItem.objectName === "gameDetailPage") return "gameDetail"
             return "home"
         }
-        isLibraryActive: homePage.activeSection === "library"
+        isLibraryActive: homePage.activeSection === "library" || homePage.activeSection === "epic"
     }
 
     // Non-blocking Toast Notification Banner

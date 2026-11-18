@@ -11,6 +11,7 @@
 #include "../services/LaunchPipeline.h"
 #include "../services/DiagnosticsManager.h"
 #include "../services/GameManager.h"
+#include "../services/EpicService.h"
 #include <QObject>
 #include <QPoint>
 #include <QVariant>
@@ -37,6 +38,7 @@ class UiController : public QObject {
     Q_PROPERTY(Tsuki::LaunchPipeline* launchPipeline READ launchPipeline CONSTANT)
     Q_PROPERTY(Tsuki::DiagnosticsManager* diagnosticsManager READ diagnosticsManager CONSTANT)
     Q_PROPERTY(Tsuki::SteamGridDbService* steamGridDb READ steamGridDb CONSTANT)
+    Q_PROPERTY(Tsuki::EpicService* epicService READ epicService CONSTANT)
 
 public:
     explicit UiController(DatabaseManager* db,
@@ -50,6 +52,7 @@ public:
                           LaunchPipeline* launchPipeline,
                           DiagnosticsManager* diagMgr,
                           GameManager* gameMgr,
+                          EpicService* epicService = nullptr,
                           QObject* parent = nullptr);
     ~UiController() override;
 
@@ -72,6 +75,7 @@ public:
     LaunchPipeline* launchPipeline() const { return m_launchPipeline; }
     DiagnosticsManager* diagnosticsManager() const { return m_diagMgr; }
     SteamGridDbService* steamGridDb() const { return m_sgdb; }
+    EpicService* epicService() const { return m_epicSvc; }
 
     // Native System File & Folder Selectors
     Q_INVOKABLE QString selectFile(const QString& title = QString(), const QString& filter = QString(), const QString& initialPath = QString());
@@ -108,6 +112,7 @@ private:
     LaunchPipeline* m_launchPipeline;
     DiagnosticsManager* m_diagMgr;
     GameManager* m_gameMgr;
+    EpicService* m_epicSvc = nullptr;
 
     bool m_isKeyboardNavActive = false;
     bool m_cursorHidden = false;

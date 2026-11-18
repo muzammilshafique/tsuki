@@ -3,6 +3,7 @@
 #include "services/ControllerManager.h"
 #include "services/DiagnosticsManager.h"
 #include "services/DownloadManager.h"
+#include "services/EpicService.h"
 #include "services/GameManager.h"
 #include "services/LaunchPipeline.h"
 #include "services/PrefixManager.h"
@@ -87,18 +88,23 @@ int main(int argc, char *argv[]) {
                                              &runnerManager, &downloadManager);
   Tsuki::ControllerManager controllerManager(&dbManager, &appSettings);
   Tsuki::SteamGridDbService steamGridDbService(&appSettings, &downloadManager);
+  Tsuki::EpicService epicService(&dbManager, &appSettings, &runnerManager,
+                                 &prefixManager, &steamGridDbService);
   Tsuki::DiagnosticsManager diagnosticsManager(&dbManager, &appSettings,
                                                &runnerManager, &prefixManager);
   Tsuki::LaunchPipeline launchPipeline(&dbManager, &appSettings, &runnerManager,
                                        &prefixManager, &controllerManager,
                                        &diagnosticsManager);
+  launchPipeline.setEpicService(&epicService);
   Tsuki::GameManager gameManager(&dbManager, &appSettings, &runnerManager,
                                  &prefixManager, &steamGridDbService,
                                  &launchPipeline);
+  epicService.setGameManager(&gameManager);
   Tsuki::UiController uiController(
       &dbManager, &appSettings, &downloadManager, &runnerManager,
       &prefixManager, &winetricksManager, &controllerManager,
-      &steamGridDbService, &launchPipeline, &diagnosticsManager, &gameManager);
+      &steamGridDbService, &launchPipeline, &diagnosticsManager, &gameManager,
+      &epicService);
 
   if (parser.isSet(launchOption)) {
     const QString gameId = parser.value(launchOption).trimmed();

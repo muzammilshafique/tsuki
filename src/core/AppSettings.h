@@ -90,6 +90,8 @@ class AppSettings : public QObject {
                  cardStyleChanged)
   Q_PROPERTY(bool showGameTitle READ showGameName WRITE setShowGameName NOTIFY
                  cardStyleChanged)
+  Q_PROPERTY(bool showEpicBadge READ showEpicBadge WRITE setShowEpicBadge NOTIFY
+                 cardStyleChanged)
   Q_PROPERTY(int leftClickBehavior READ leftClickBehavior WRITE
                  setLeftClickBehavior NOTIFY behaviorChanged)
   Q_PROPERTY(bool minimizeOnLaunch READ minimizeOnLaunch WRITE
@@ -104,6 +106,8 @@ class AppSettings : public QObject {
                  setDefaultPrefixLocation NOTIFY pathDefaultsChanged)
   Q_PROPERTY(QString defaultRunnerLocation READ defaultRunnerLocation WRITE
                  setDefaultRunnerLocation NOTIFY pathDefaultsChanged)
+  Q_PROPERTY(QString defaultEpicInstallLocation READ defaultEpicInstallLocation WRITE
+                 setDefaultEpicInstallLocation NOTIFY pathDefaultsChanged)
   Q_PROPERTY(bool mangohudDefault READ mangohudDefault WRITE setMangohudDefault
                  NOTIFY performanceDefaultsChanged)
   Q_PROPERTY(bool gamemodeDefault READ gamemodeDefault WRITE setGamemodeDefault
@@ -234,6 +238,8 @@ public:
   void setShowYear(bool s);
   bool showGameName() const { return m_showGameName; }
   void setShowGameName(bool s);
+  bool showEpicBadge() const { return m_showEpicBadge; }
+  void setShowEpicBadge(bool s);
   int leftClickBehavior() const {
     return m_leftClickBehavior;
   } // 0: Launch Game, 1: Open Game Details
@@ -250,6 +256,8 @@ public:
   void setDefaultPrefixLocation(const QString &path);
   QString defaultRunnerLocation() const { return m_defaultRunnerLocation; }
   void setDefaultRunnerLocation(const QString &path);
+  QString defaultEpicInstallLocation() const { return m_defaultEpicInstallLocation; }
+  void setDefaultEpicInstallLocation(const QString &path);
 
   bool mangohudDefault() const { return m_mangohudDefault; }
   void setMangohudDefault(bool v);
@@ -315,6 +323,7 @@ private:
   int m_tagPosition = 2; // 0: Below Title, 1: Above Title, 2: Badge on Poster
   bool m_showYear = true;
   bool m_showGameName = false;
+  bool m_showEpicBadge = true;
   int m_leftClickBehavior =
       0; // 0: Launch game directly (per spec), 1: Open details
   bool m_minimizeOnLaunch = false;
@@ -323,6 +332,7 @@ private:
   QString m_defaultRunnerId;
   QString m_defaultPrefixLocation;
   QString m_defaultRunnerLocation;
+  QString m_defaultEpicInstallLocation;
 
   bool m_mangohudDefault = false;
   bool m_gamemodeDefault = false;

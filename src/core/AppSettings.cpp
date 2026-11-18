@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStyleHints>
+#include <QUrl>
 #include <algorithm>
 #include <cmath>
 
@@ -92,6 +93,10 @@ AppSettings::AppSettings(QObject *parent)
           .toBool();
   m_defaultFilter =
       m_settings.value(QStringLiteral("appearance/defaultFilter"), -1).toInt();
+  if (m_defaultFilter == 4) {
+    m_defaultFilter = -1;
+    m_settings.setValue(QStringLiteral("appearance/defaultFilter"), -1);
+  }
   m_cardRadius =
       m_settings.value(QStringLiteral("appearance/cardRadius"), 12).toInt();
   m_thumbScaleTarget =
@@ -106,6 +111,9 @@ AppSettings::AppSettings(QObject *parent)
   m_showGameName =
       m_settings.value(QStringLiteral("appearance/showGameName"), false)
           .toBool();
+  m_showEpicBadge =
+      m_settings.value(QStringLiteral("appearance/showEpicBadge"), true)
+          .toBool();
   m_leftClickBehavior =
       m_settings.value(QStringLiteral("behavior/leftClickBehavior"), 0).toInt();
   m_minimizeOnLaunch =
@@ -117,6 +125,7 @@ AppSettings::AppSettings(QObject *parent)
 
   const QString defaultPrefixes = dataDir() + QStringLiteral("/prefixes");
   const QString defaultRunners = dataDir() + QStringLiteral("/runners");
+  const QString defaultEpicGames = QDir::homePath() + QStringLiteral("/Games/Epic");
   QDir().mkpath(defaultPrefixes);
   QDir().mkpath(defaultRunners);
 
@@ -130,6 +139,10 @@ AppSettings::AppSettings(QObject *parent)
   m_defaultRunnerLocation =
       m_settings
           .value(QStringLiteral("defaults/runnerLocation"), defaultRunners)
+          .toString();
+  m_defaultEpicInstallLocation =
+      m_settings
+          .value(QStringLiteral("defaults/epicInstallLocation"), defaultEpicGames)
           .toString();
   QDir().mkpath(m_defaultPrefixLocation);
   QDir().mkpath(m_defaultRunnerLocation);
@@ -797,6 +810,14 @@ void AppSettings::setShowGameName(bool s) {
   emit cardStyleChanged();
 }
 
+void AppSettings::setShowEpicBadge(bool s) {
+  if (m_showEpicBadge == s)
+    return;
+  m_showEpicBadge = s;
+  m_settings.setValue(QStringLiteral("appearance/showEpicBadge"), s);
+  emit cardStyleChanged();
+}
+
 void AppSettings::setLeftClickBehavior(int b) {
   if (m_leftClickBehavior == b)
     return;
@@ -844,6 +865,18 @@ void AppSettings::setDefaultRunnerLocation(const QString &path) {
   m_defaultRunnerLocation = path;
   QDir().mkpath(path);
   m_settings.setValue(QStringLiteral("defaults/runnerLocation"), path);
+  emit pathDefaultsChanged();
+}
+
+void AppSettings::setDefaultEpicInstallLocation(const QString &path) {
+  QString clean = path.trimmed();
+  if (clean.startsWith(QStringLiteral("file://"))) {
+    clean = QUrl(clean).toLocalFile();
+  }
+  if (m_defaultEpicInstallLocation == clean || clean.isEmpty())
+    return;
+  m_defaultEpicInstallLocation = clean;
+  m_settings.setValue(QStringLiteral("defaults/epicInstallLocation"), clean);
   emit pathDefaultsChanged();
 }
 

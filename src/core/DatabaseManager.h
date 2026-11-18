@@ -22,8 +22,21 @@ public:
     bool saveGame(const GameRecord& game);
     bool removeGame(const QString& gameId);
     std::optional<GameRecord> getGame(const QString& gameId) const;
+    std::optional<GameRecord> getGameByEpicAppName(const QString& appName) const;
     QList<GameRecord> getAllGames() const;
     bool updatePlaytime(const QString& gameId, qint64 additionalSeconds, qint64 lastPlayedEpoch);
+
+    // Epic Games Library Cache CRUD
+    bool saveEpicLibraryItem(const EpicLibraryItem& item);
+    bool saveEpicLibraryItems(const QList<EpicLibraryItem>& items);
+    std::optional<EpicLibraryItem> getEpicLibraryItem(const QString& appName) const;
+    QList<EpicLibraryItem> getAllEpicLibraryItems() const;
+    bool updateEpicLibraryArtwork(const QString& appName,
+                                  const QString& coverPath,
+                                  const QString& bannerPath,
+                                  const QString& logoPath);
+    bool updateEpicLibrarySizes(const QString& appName, qint64 downloadSize, qint64 installSize, const QString& buildVersion);
+    bool clearEpicLibrary();
 
     // Prefixes CRUD
     bool savePrefix(const PrefixRecord& prefix);
@@ -48,6 +61,7 @@ private:
 
     QSqlDatabase db() const;
     static GameRecord recordFromQuery(class QSqlQuery& q);
+    static EpicLibraryItem epicItemFromQuery(class QSqlQuery& q);
     static PrefixRecord prefixFromQuery(class QSqlQuery& q);
     static RunnerRecord runnerFromQuery(class QSqlQuery& q);
 };

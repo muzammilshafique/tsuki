@@ -8,11 +8,20 @@ Page {
     id: root
     objectName: "gameDetailPage"
     property string gameId: ""
+    property string epicAppName: ""
     property var gameData: ({})
+    property var epicData: ({})
     property int activeTab: 0
     property bool isSaving: false
     property int gamescopeStateDraft: -1
     property var gamescopeDraft: ({})
+
+    readonly property bool isEpicEntry: root.epicAppName.length > 0 || Boolean(root.gameData.isEpic)
+    readonly property bool isUninstalledEpic: root.isEpicEntry && root.gameId.length === 0
+    readonly property bool isEpicDownloading: Boolean(root.epicData && root.epicData.isDownloading)
+    readonly property bool isEpicPaused: Boolean(root.epicData && root.epicData.isPaused)
+    readonly property bool isEpicVerifying: Boolean(root.epicData && root.epicData.isVerifying)
+    readonly property var displayData: root.isUninstalledEpic ? root.epicData : root.gameData
 
     function formatGamescopeSummary() {
         let cfg = root.gamescopeDraft || ({})
@@ -99,7 +108,7 @@ Page {
     }
 
     function isAnyPopupOpen() {
-        if (actionsPopup.visible || artworkUrlDialog.visible || removeGameDialog.visible || gamescopeDialog.visible) return true
+        if (actionsPopup.visible || artworkUrlDialog.visible || removeGameDialog.visible || gamescopeDialog.visible || epicDownloadDialog.visible) return true
         if (typeof detailRunnerCombo !== "undefined" && detailRunnerCombo.popup.visible) return true
         if (typeof detailPrefixCombo !== "undefined" && detailPrefixCombo.popup.visible) return true
         if (typeof hudCombo !== "undefined" && hudCombo.popup.visible) return true
@@ -107,7 +116,7 @@ Page {
     }
 
     function cycleTab(delta, focusTabContent) {
-        if (!tabList || tabList.length === 0) return
+        if (root.isUninstalledEpic || !tabList || tabList.length === 0) return
         saveAllChanges()
         let curPos = 0
         for (let i = 0; i < tabList.length; i++) {
@@ -125,6 +134,15 @@ Page {
     }
 
     function getFocusGrid() {
+        if (root.isUninstalledEpic) {
+            let uRows = [[backBtn]]
+            if (actionsDropdownBtn.visible) {
+                uRows.push([primaryActionBtn, actionsDropdownBtn])
+            } else {
+                uRows.push([primaryActionBtn])
+            }
+            return uRows
+        }
         let rows = [
             [backBtn],
             [primaryActionBtn, actionsDropdownBtn],
@@ -136,6 +154,9 @@ Page {
             rows.push([workDirField, workDirBrowseBtn])
             if (!root.isNative) {
                 rows.push([detailRunnerCombo, detailPrefixCombo])
+                if (root.isEpicEntry && !root.isUninstalledEpic) {
+                    rows.push([epicOnlineAuthToggle])
+                }
             } else {
                 rows.push([nativeEnvWrap])
             }
@@ -321,11 +342,36 @@ Page {
     function reloadGame() {
         if (gameId.length > 0) {
             gameData = uiController.gameManager.getGameMap(gameId)
+            if (gameData && gameData.epicAppName && root.epicAppName.length === 0) {
+                root.epicAppName = gameData.epicAppName
+            }
             gamescopeStateDraft = (gameData.gamescopeState !== undefined) ? gameData.gamescopeState : -1
             gamescopeDraft = gameData.gamescope || ({})
             uiController.diagnosticsManager.selectedLogGameId = gameId
             if (typeof detailXboxToggle !== "undefined" && detailXboxToggle) {
                 detailXboxToggle.checked = (root.gameData.xboxEmulationState === 1)
+            }
+            if (typeof epicOnlineAuthToggle !== "undefined" && epicOnlineAuthToggle) {
+                epicOnlineAuthToggle.checked = !Boolean(root.gameData.epicOfflineMode)
+            }
+            if (typeof eosOverlayToggle !== "undefined" && eosOverlayToggle) {
+                eosOverlayToggle.checked = Boolean(root.gameData.enableEosOverlay)
+            }
+            if (typeof eacRuntimeToggle !== "undefined" && eacRuntimeToggle) {
+                eacRuntimeToggle.checked = Boolean(root.gameData.enableEacRuntime)
+            }
+            if (typeof battleyeRuntimeToggle !== "undefined" && battleyeRuntimeToggle) {
+                battleyeRuntimeToggle.checked = Boolean(root.gameData.enableBattlEyeRuntime)
+            }
+        }
+        if (root.epicAppName.length > 0 && uiController && uiController.epicService) {
+            root.epicData = uiController.epicService.getEpicGameMap(root.epicAppName)
+            if (root.gameId.length === 0 && root.epicData && root.epicData.installedGameId && root.epicData.installedGameId.length > 0) {
+                root.gameId = root.epicData.installedGameId
+                root.gameData = uiController.gameManager.getGameMap(root.gameId)
+                gamescopeStateDraft = (gameData.gamescopeState !== undefined) ? gameData.gamescopeState : -1
+                gamescopeDraft = gameData.gamescope || ({})
+                uiController.diagnosticsManager.selectedLogGameId = root.gameId
             }
         }
     }
@@ -352,6 +398,9 @@ Page {
 
     Component.onCompleted: {
         reloadGame()
+        if (root.isUninstalledEpic && uiController && uiController.epicService) {
+            uiController.epicService.fetchInstallInfo(root.epicAppName)
+        }
         focusPrimaryBtnTimer.restart()
     }
     Component.onDestruction: saveAllChanges()
@@ -375,6 +424,25 @@ Page {
     Connections {
         target: uiController.launchPipeline
         function onRunningGamesChanged() { root.reloadGame() }
+    }
+    Connections {
+        target: (uiController && uiController.epicService) ? uiController.epicService : null
+        function onDownloadStateChanged(appName) {
+            if (appName === root.epicAppName) {
+                root.epicData = uiController.epicService.getEpicGameMap(root.epicAppName)
+            }
+        }
+        function onInstallInfoReady(appName, dlSize, instSize) {
+            if (appName === root.epicAppName) {
+                root.epicData = uiController.epicService.getEpicGameMap(root.epicAppName)
+            }
+        }
+        function onDownloadFinished(appName, newGameId) {
+            if (appName === root.epicAppName && newGameId.length > 0) {
+                root.gameId = newGameId
+                root.reloadGame()
+            }
+        }
     }
 
     background: Rectangle { color: appSettings.surfaceContainerLowest }
@@ -496,6 +564,10 @@ Page {
             cpuAffinity: (typeof affinityField !== "undefined" && affinityField) ? affinityField.text.trim() : (root.gameData.cpuAffinity || ""),
             processPriority: (typeof priorityField !== "undefined" && priorityField) ? (Number(priorityField.text) || 0) : (root.gameData.processPriority || 0),
             xboxEmulationState: xboxEmuVal,
+            epicOfflineMode: (typeof epicOnlineAuthToggle !== "undefined" && epicOnlineAuthToggle) ? !epicOnlineAuthToggle.checked : Boolean(root.gameData.epicOfflineMode),
+            enableEosOverlay: (typeof eosOverlayToggle !== "undefined" && eosOverlayToggle) ? eosOverlayToggle.checked : Boolean(root.gameData.enableEosOverlay),
+            enableEacRuntime: (typeof eacRuntimeToggle !== "undefined" && eacRuntimeToggle) ? eacRuntimeToggle.checked : Boolean(root.gameData.enableEacRuntime),
+            enableBattlEyeRuntime: (typeof battleyeRuntimeToggle !== "undefined" && battleyeRuntimeToggle) ? battleyeRuntimeToggle.checked : Boolean(root.gameData.enableBattlEyeRuntime),
             preLaunchScript: (typeof preScriptField !== "undefined" && preScriptField) ? preScriptField.text.trim() : (root.gameData.preLaunchScript || ""),
             postExitScript: (typeof postScriptField !== "undefined" && postScriptField) ? postScriptField.text.trim() : (root.gameData.postExitScript || ""),
             environmentVariables: envMap,
@@ -540,7 +612,7 @@ Page {
                 Image {
                     id: bannerImg
                     anchors.fill: parent
-                    source: root.gameData.bannerPath || ""
+                    source: root.displayData.bannerPath || ""
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                 }
@@ -568,10 +640,10 @@ Page {
                     // Transparent Game Logo / Icon (Scales dynamically with window size)
                     Item {
                         id: gameLogoCard
-                        readonly property bool hasFullLogo: Boolean(root.gameData.logoPath && root.gameData.logoPath.length > 0)
+                        readonly property bool hasFullLogo: Boolean(root.displayData.logoPath && root.displayData.logoPath.length > 0)
                         readonly property string logoSource: hasFullLogo
-                            ? root.gameData.logoPath
-                            : (root.gameData.iconPath || "")
+                            ? root.displayData.logoPath
+                            : (root.displayData.iconPath || "")
                         readonly property bool hasVisual: Boolean(logoSource && logoSource.length > 0)
                         visible: hasVisual && gameLogoImg.status !== Image.Error
 
@@ -623,7 +695,7 @@ Page {
                     // Title
                     Label {
                         id: gameTitleLbl
-                        text: root.gameData.title || "Game Title"
+                        text: root.displayData.title || "Game Title"
                         color: appSettings.textColor
                         font.pixelSize: Math.max(26, Math.min(36, Math.round(root.width * 0.024)))
                         font.weight: Font.Bold
@@ -633,7 +705,7 @@ Page {
                         visible: appSettings.showGameName || !gameLogoCard.hasFullLogo
                     }
 
-                    // Bottom Row: Action (Play Now) + Metadata (Proton Tag, Playtime, Last Played)
+                    // Bottom Row: Action (Play Now / Download) + Metadata
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 16
@@ -643,6 +715,40 @@ Page {
                             id: splitButtonContainer
                             readonly property var heroActionItems: {
                                 let items = []
+                                if (root.isUninstalledEpic) {
+                                    if (root.isEpicDownloading) {
+                                        items.push({
+                                            name: Boolean(root.epicData.isImporting) ? "Cancel Import" : "Cancel Download",
+                                            symbol: "close",
+                                            destructive: true,
+                                            action: function() {
+                                                if (uiController && uiController.epicService) {
+                                                    uiController.epicService.cancelDownload(root.epicAppName, true)
+                                                }
+                                            }
+                                        })
+                                    } else {
+                                        items.push({
+                                            name: "Import Game",
+                                            symbol: "folder_open",
+                                            destructive: false,
+                                            action: function() {
+                                                epicImportDialog.openForApp(root.epicAppName)
+                                            }
+                                        })
+                                    }
+                                    return items
+                                }
+                                if (root.isEpicEntry && uiController && uiController.epicService) {
+                                    items.push({
+                                        name: "Verify Files",
+                                        symbol: "refresh",
+                                        destructive: false,
+                                        action: function() {
+                                            uiController.epicService.verifyGame(root.gameId)
+                                        }
+                                    })
+                                }
                                 if (!root.isNative) {
                                     items.push({
                                         name: "Winetricks",
@@ -704,10 +810,17 @@ Page {
                                 anchors.top: parent.top
                                 height: 44
 
-                                // 1. Leading Button: M3 Filled Play/Stop Action
+                                // 1. Leading Button: M3 Filled Play/Stop/Download Action
                                 Button {
                                     id: primaryActionBtn
-                                    text: root.gameData.isRunning ? "Stop Game" : "Play Now"
+                                    objectName: "detailPrimaryActionBtn"
+                                    text: {
+                                        if (root.isUninstalledEpic) {
+                                            if (root.isEpicDownloading) return root.isEpicPaused ? "Resume" : "Pause"
+                                            return "Download"
+                                        }
+                                        return root.gameData.isRunning ? "Stop Game" : "Play Now"
+                                    }
                                     font.pixelSize: 15
                                     font.weight: Font.DemiBold
                                     implicitHeight: 44
@@ -736,7 +849,7 @@ Page {
                                     scale: down ? 0.96 : (isBtnHovered ? 1.01 : 1.0)
                                     Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
 
-                                    // Leading Button Background (Split Pill Left)
+                                    // Leading Button Background (Split Pill Left or Full Pill when no dropdown)
                                     background: Item {
                                         implicitHeight: 44
                                         implicitWidth: primaryActionBtn.width
@@ -746,8 +859,8 @@ Page {
                                             anchors.fill: parent
                                             topLeftRadius: 22
                                             bottomLeftRadius: 22
-                                            topRightRadius: 4
-                                            bottomRightRadius: 4
+                                            topRightRadius: actionsDropdownBtn.visible ? 4 : 22
+                                            bottomRightRadius: actionsDropdownBtn.visible ? 4 : 22
                                             clip: true
 
                                             color: primaryActionBtn.down
@@ -792,8 +905,8 @@ Page {
                                             anchors.margins: -3
                                             topLeftRadius: 25
                                             bottomLeftRadius: 25
-                                            topRightRadius: 7
-                                            bottomRightRadius: 7
+                                            topRightRadius: actionsDropdownBtn.visible ? 7 : 25
+                                            bottomRightRadius: actionsDropdownBtn.visible ? 7 : 25
                                             color: Qt.rgba(0, 0, 0, 0)
                                             border.color: primaryActionBtn.effectiveColor
                                             border.width: 2
@@ -813,8 +926,14 @@ Page {
 
                                             YIcon {
                                                 size: 20
-                                                symbol: root.gameData.isRunning ? "stop" : "play_arrow"
-                                                filled: true
+                                                symbol: {
+                                                    if (root.isUninstalledEpic) {
+                                                        if (root.isEpicDownloading) return root.isEpicPaused ? "play_arrow" : "stop"
+                                                        return "download"
+                                                    }
+                                                    return root.gameData.isRunning ? "stop" : "play_arrow"
+                                                }
+                                                filled: !root.isUninstalledEpic || root.isEpicPaused
                                                 color: primaryActionBtn.foregroundColor
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
@@ -849,6 +968,16 @@ Page {
                                     }
 
                                     onClicked: {
+                                        if (root.isUninstalledEpic) {
+                                            if (!uiController || !uiController.epicService) return
+                                            if (root.isEpicDownloading) {
+                                                if (root.isEpicPaused) uiController.epicService.resumeDownload(root.epicAppName)
+                                                else uiController.epicService.pauseDownload(root.epicAppName)
+                                            } else {
+                                                epicDownloadDialog.openForApp(root.epicAppName)
+                                            }
+                                            return
+                                        }
                                         if (root.gameData.isRunning) {
                                             uiController.launchPipeline.stopGame(root.gameId)
                                         } else {
@@ -884,6 +1013,8 @@ Page {
                                 // 2. Trailing Button: M3 Morphing Chevron Dropdown Anchor
                                 Button {
                                     id: actionsDropdownBtn
+                                    objectName: "detailActionsDropdownBtn"
+                                    visible: splitButtonContainer.heroActionItems.length > 0
                                     flat: true
                                     implicitHeight: 44
                                     implicitWidth: 44
@@ -1243,7 +1374,10 @@ Page {
                                 Label {
                                     id: rTagLbl
                                     anchors.centerIn: parent
-                                    text: root.gameData.isRunning ? "RUNNING" : (root.gameData.runnerTag || (root.isNative ? "LINUX" : "WINE"))
+                                    text: {
+                                        if (root.isUninstalledEpic) return "EPIC GAMES"
+                                        return root.gameData.isRunning ? "RUNNING" : (root.gameData.runnerTag || (root.isNative ? "LINUX" : "WINE"))
+                                    }
                                     color: (root.gameData.isRunning || root.isNative)
                                         ? rTagRect.effectiveTagColor
                                         : appSettings.onSecondaryContainer
@@ -1256,7 +1390,16 @@ Page {
 
                             Label {
                                 id: playtimeLbl
-                                text: "Playtime: " + (root.gameData.playtimeFormatted || "Never played") + "  •  Last Played: " + (root.gameData.lastPlayedFormatted || "Never")
+                                text: {
+                                    if (root.isUninstalledEpic) {
+                                        let parts = []
+                                        if (root.epicData.developer && root.epicData.developer.length > 0) parts.push(root.epicData.developer)
+                                        if (root.epicData.downloadSizeFormatted && root.epicData.downloadSizeFormatted.length > 0) parts.push("Download: " + root.epicData.downloadSizeFormatted)
+                                        if (root.epicData.installSizeFormatted && root.epicData.installSizeFormatted.length > 0) parts.push("Install Size: " + root.epicData.installSizeFormatted)
+                                        return parts.length > 0 ? parts.join("  •  ") : "Not Installed"
+                                    }
+                                    return "Playtime: " + (root.gameData.playtimeFormatted || "Never played") + "  •  Last Played: " + (root.gameData.lastPlayedFormatted || "Never")
+                                }
                                 color: appSettings.textSecColor
                                 font.pixelSize: 13
                                 elide: Text.ElideRight
@@ -1271,9 +1414,169 @@ Page {
                 }
             }
 
+            // ── Active Epic Download / Verify Progress Card ──────────────────
+            Rectangle {
+                id: epicProgressCard
+                visible: root.isEpicDownloading
+                Layout.fillWidth: true
+                Layout.maximumWidth: 1020
+                Layout.alignment: Qt.AlignHCenter
+                Layout.leftMargin: 36
+                Layout.rightMargin: 36
+                Layout.topMargin: 12
+                implicitHeight: epicProgCol.implicitHeight + 36
+                radius: 20
+                color: appSettings.surfaceContainerLow
+                border.color: appSettings.accentColor
+                border.width: 1
+
+                ColumnLayout {
+                    id: epicProgCol
+                    anchors.fill: parent
+                    anchors.margins: 18
+                    spacing: 10
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        Label {
+                            text: (root.epicData.stage || "Downloading…") + " (" + Math.round(Number(root.epicData.progress || 0)) + "%)"
+                            color: appSettings.textColor
+                            font.family: "Rubik"
+                            font.pixelSize: 15
+                            font.weight: Font.DemiBold
+                            Layout.fillWidth: true
+                        }
+
+                        Label {
+                            text: (root.epicData.downloadedSizeStr || "0 B") +
+                                  (root.epicData.totalSizeStr ? (" / " + root.epicData.totalSizeStr) : "") +
+                                  (root.epicData.eta ? ("  •  " + root.epicData.eta) : "")
+                            color: appSettings.textSecColor
+                            font.pixelSize: 13
+                        }
+
+                        M3Button {
+                            visible: !root.isEpicVerifying && !Boolean(root.epicData.isImporting)
+                            text: root.isEpicPaused ? "Resume" : "Pause"
+                            iconSymbol: root.isEpicPaused ? "play_arrow" : "stop"
+                            buttonType: "tonal"
+                            onClicked: {
+                                if (!uiController || !uiController.epicService) return
+                                if (root.isEpicPaused) uiController.epicService.resumeDownload(root.epicAppName)
+                                else uiController.epicService.pauseDownload(root.epicAppName)
+                            }
+                        }
+
+                        M3Button {
+                            text: "Cancel"
+                            iconSymbol: "close"
+                            buttonType: "destructive"
+                            onClicked: {
+                                if (uiController && uiController.epicService) {
+                                    uiController.epicService.cancelDownload(root.epicAppName, true)
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 6
+                        radius: 3
+                        color: appSettings.surfaceContainerHighest
+
+                        Rectangle {
+                            height: parent.height
+                            width: parent.width * Math.max(0.0, Math.min(1.0, Number(root.epicData.progress || 0) / 100.0))
+                            radius: 3
+                            color: root.isEpicPaused ? "#f59e0b" : appSettings.accentColor
+                            Behavior on width { NumberAnimation { duration: 150 } }
+                        }
+                    }
+                }
+            }
+
+            // ── Uninstalled Epic Game Overview Card ──────────────────────────
+            Rectangle {
+                id: epicOverviewCard
+                objectName: "epicOverviewCard"
+                visible: root.isUninstalledEpic
+                Layout.fillWidth: true
+                Layout.maximumWidth: 1020
+                Layout.alignment: Qt.AlignHCenter
+                Layout.leftMargin: 36
+                Layout.rightMargin: 36
+                Layout.topMargin: 12
+                Layout.bottomMargin: 24
+                implicitHeight: epicOverviewCol.implicitHeight + 48
+                radius: 24
+                color: appSettings.surfaceContainerLow
+
+                ColumnLayout {
+                    id: epicOverviewCol
+                    anchors.fill: parent
+                    anchors.margins: 24
+                    spacing: 14
+
+                    Label {
+                        text: "Epic Games Overview"
+                        color: appSettings.accentColor
+                        font.family: "Rubik"
+                        font.pixelSize: 17
+                        font.weight: Font.DemiBold
+                    }
+
+                    Label {
+                        visible: Boolean(root.epicData.description && root.epicData.description.length > 0)
+                        text: root.epicData.description || ""
+                        color: appSettings.textColor
+                        font.pixelSize: 14
+                        lineHeight: 1.4
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+
+                    Label {
+                        visible: !root.epicData.description || root.epicData.description.length === 0
+                        text: "Ready to download from your Epic Games account. Click Download above to choose the install folder, Wine prefix, and Proton runner."
+                        color: appSettings.textSecColor
+                        font.pixelSize: 14
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 24
+
+                        ColumnLayout {
+                            spacing: 2
+                            Label { text: "App Name"; color: appSettings.textTerColor; font.pixelSize: 11 }
+                            Label { text: root.epicAppName; color: appSettings.textColor; font.family: "JetBrains Mono NF"; font.pixelSize: 13 }
+                        }
+
+                        ColumnLayout {
+                            visible: Boolean(root.epicData.buildVersion && root.epicData.buildVersion.length > 0)
+                            spacing: 2
+                            Label { text: "Build Version"; color: appSettings.textTerColor; font.pixelSize: 11 }
+                            Label { text: root.epicData.buildVersion || ""; color: appSettings.textColor; font.family: "JetBrains Mono NF"; font.pixelSize: 13 }
+                        }
+
+                        ColumnLayout {
+                            spacing: 2
+                            Label { text: "Compatibility"; color: appSettings.textTerColor; font.pixelSize: 11 }
+                            Label { text: "Windows · Wine / Proton"; color: appSettings.textColor; font.pixelSize: 13 }
+                        }
+                    }
+                }
+            }
+
             // ── Material 3 Expressive Sliding Pill Tabs Bar ─────────────────
             Item {
                 id: tabsBar
+                visible: !root.isUninstalledEpic
                 focus: true
                 activeFocusOnTab: false
                 readonly property bool isBarFocused: tabsBar.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
@@ -1463,6 +1766,7 @@ Page {
             // ── Tab Content Area ─────────────────────────────────────────────
             Item {
                 id: tabContentCard
+                visible: !root.isUninstalledEpic
                 Layout.fillWidth: true
                 Layout.maximumWidth: 1020
                 Layout.alignment: Qt.AlignHCenter
@@ -1798,6 +2102,169 @@ Page {
                                             }
                                             onSelected: root.saveAllChanges()
                                         }
+                                    }
+                                }
+
+                                // Epic Online Auth Toggle (for installed Epic Games)
+                                RowLayout {
+                                    visible: root.isEpicEntry && !root.isUninstalledEpic
+                                    Layout.fillWidth: true
+                                    spacing: 16
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label {
+                                            text: "Epic Online Authentication"
+                                            color: appSettings.textColor
+                                            font.pixelSize: 14
+                                            font.weight: Font.Medium
+                                        }
+                                        Label {
+                                            text: "Pass an Epic Games single-use auth exchange token when launching online"
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    Toggle {
+                                        id: epicOnlineAuthToggle
+                                        checked: !Boolean(root.gameData.epicOfflineMode)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                // EOS Social Overlay Toggle
+                                RowLayout {
+                                    visible: root.isEpicEntry && !root.isUninstalledEpic && !root.isNative
+                                    Layout.fillWidth: true
+                                    spacing: 12
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label {
+                                            text: "EOS Social Overlay"
+                                            color: appSettings.textColor
+                                            font.pixelSize: 14
+                                            font.weight: Font.Medium
+                                        }
+                                        Label {
+                                            text: (uiController && uiController.epicService && uiController.epicService.isInstallingEosOverlay)
+                                                ? ("Installing EOS Overlay… (" + Math.round(Number(uiController.epicService.eosOverlayProgress || 0)) + "%)")
+                                                : ((uiController && uiController.epicService && uiController.epicService.eosOverlayInstalled)
+                                                    ? "Enable Epic Online Services social overlay (friends & invites) in prefix"
+                                                    : "EOS Overlay is not installed yet — install once to enable Epic social overlay")
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    M3Button {
+                                        visible: Boolean(uiController && uiController.epicService && !uiController.epicService.eosOverlayInstalled)
+                                        enabled: Boolean(uiController && uiController.epicService && !uiController.epicService.isInstallingEosOverlay)
+                                        text: (uiController && uiController.epicService && uiController.epicService.isInstallingEosOverlay) ? "Installing…" : "Install"
+                                        buttonType: "tonal"
+                                        onClicked: if (uiController && uiController.epicService) uiController.epicService.installEosOverlay()
+                                    }
+
+                                    Toggle {
+                                        id: eosOverlayToggle
+                                        objectName: "eosOverlayToggle"
+                                        checked: Boolean(root.gameData.enableEosOverlay)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                // Proton EasyAntiCheat Runtime Toggle
+                                RowLayout {
+                                    visible: !root.isUninstalledEpic && !root.isNative
+                                    Layout.fillWidth: true
+                                    spacing: 12
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label {
+                                            text: "EasyAntiCheat Runtime (EAC)"
+                                            color: appSettings.textColor
+                                            font.pixelSize: 14
+                                            font.weight: Font.Medium
+                                        }
+                                        Label {
+                                            text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingEac)
+                                                ? "Downloading Proton EasyAntiCheat Runtime…"
+                                                : ((uiController && uiController.runnerManager && uiController.runnerManager.eacRuntimeAvailable)
+                                                    ? "Set PROTON_EAC_RUNTIME for online EasyAntiCheat multiplayer titles"
+                                                    : "EAC runtime not found (uses Steam or 1-click install below)")
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    M3Button {
+                                        visible: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.eacRuntimeAvailable)
+                                        enabled: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.isInstallingEac)
+                                        text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingEac) ? "Installing…" : "Install"
+                                        buttonType: "tonal"
+                                        onClicked: if (uiController && uiController.runnerManager) uiController.runnerManager.installAntiCheatRuntime("eac_runtime")
+                                    }
+
+                                    Toggle {
+                                        id: eacRuntimeToggle
+                                        objectName: "eacRuntimeToggle"
+                                        checked: Boolean(root.gameData.enableEacRuntime)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                // Proton BattlEye Runtime Toggle
+                                RowLayout {
+                                    visible: !root.isUninstalledEpic && !root.isNative
+                                    Layout.fillWidth: true
+                                    spacing: 12
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label {
+                                            text: "BattlEye Runtime"
+                                            color: appSettings.textColor
+                                            font.pixelSize: 14
+                                            font.weight: Font.Medium
+                                        }
+                                        Label {
+                                            text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingBattleye)
+                                                ? "Downloading Proton BattlEye Runtime…"
+                                                : ((uiController && uiController.runnerManager && uiController.runnerManager.battleyeRuntimeAvailable)
+                                                    ? "Set PROTON_BATTLEYE_RUNTIME for online BattlEye multiplayer titles"
+                                                    : "BattlEye runtime not found (uses Steam or 1-click install below)")
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    M3Button {
+                                        visible: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.battleyeRuntimeAvailable)
+                                        enabled: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.isInstallingBattleye)
+                                        text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingBattleye) ? "Installing…" : "Install"
+                                        buttonType: "tonal"
+                                        onClicked: if (uiController && uiController.runnerManager) uiController.runnerManager.installAntiCheatRuntime("battleye_runtime")
+                                    }
+
+                                    Toggle {
+                                        id: battleyeRuntimeToggle
+                                        objectName: "battleyeRuntimeToggle"
+                                        checked: Boolean(root.gameData.enableBattlEyeRuntime)
+                                        onToggled: root.saveAllChanges()
                                     }
                                 }
                             }
@@ -2988,7 +3455,25 @@ Page {
 
     RemoveGameDialog {
         id: removeGameDialog
-        onGameRemoved: stack.pop()
+        onGameRemoved: root.backRequested()
+    }
+
+    EpicDownloadDialog {
+        id: epicDownloadDialog
+        onDownloadStarted: {
+            if (uiController && uiController.epicService && root.epicAppName.length > 0) {
+                root.epicData = uiController.epicService.getEpicGameMap(root.epicAppName)
+            }
+        }
+    }
+
+    EpicImportDialog {
+        id: epicImportDialog
+        onImportStarted: {
+            if (uiController && uiController.epicService && root.epicAppName.length > 0) {
+                root.epicData = uiController.epicService.getEpicGameMap(root.epicAppName)
+            }
+        }
     }
 
     GamescopeDialog {

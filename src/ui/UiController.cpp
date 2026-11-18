@@ -23,6 +23,7 @@ UiController::UiController(DatabaseManager* db,
                            LaunchPipeline* launchPipeline,
                            DiagnosticsManager* diagMgr,
                            GameManager* gameMgr,
+                           EpicService* epicService,
                            QObject* parent)
     : QObject(parent)
     , m_db(db)
@@ -36,6 +37,7 @@ UiController::UiController(DatabaseManager* db,
     , m_launchPipeline(launchPipeline)
     , m_diagMgr(diagMgr)
     , m_gameMgr(gameMgr)
+    , m_epicSvc(epicService)
     , m_activeInputType((ctrlMgr && ctrlMgr->isConnected()) ? ctrlMgr->controllerType() : QStringLiteral("keyboard"))
 {
     if (QCoreApplication::instance()) {
@@ -80,6 +82,9 @@ UiController::UiController(DatabaseManager* db,
             [this](const QString&, const QString& title, const QString& summary, const QString& rec) {
                 emit toastRequested(QStringLiteral("%1: %2 — %3").arg(title, summary, rec), true);
             });
+    if (m_epicSvc) {
+        connect(m_epicSvc, &EpicService::operationStatus, this, &UiController::toastRequested);
+    }
 }
 
 UiController::~UiController() {

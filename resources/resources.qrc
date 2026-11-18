@@ -6,6 +6,8 @@
         <file alias="qml/components/NavigationHudBar.qml">../src/qml/components/NavigationHudBar.qml</file>
         <file alias="qml/components/AddGameDialog.qml">../src/qml/components/AddGameDialog.qml</file>
         <file alias="qml/components/GamescopeDialog.qml">../src/qml/components/GamescopeDialog.qml</file>
+        <file alias="qml/components/EpicDownloadDialog.qml">../src/qml/components/EpicDownloadDialog.qml</file>
+        <file alias="qml/components/EpicImportDialog.qml">../src/qml/components/EpicImportDialog.qml</file>
         <file alias="qml/components/WinetricksModal.qml">../src/qml/components/WinetricksModal.qml</file>
         <file alias="qml/components/M3Button.qml">../src/qml/components/M3Button.qml</file>
         <file alias="qml/components/M3TextField.qml">../src/qml/components/M3TextField.qml</file>
@@ -31,6 +33,7 @@
         <file alias="qml/home/TopBar.qml">../src/qml/home/TopBar.qml</file>
         <file alias="qml/home/MediaGrid.qml">../src/qml/home/MediaGrid.qml</file>
         <file alias="qml/pages/GameDetailPage.qml">../src/qml/pages/GameDetailPage.qml</file>
+        <file alias="qml/pages/EpicLibraryView.qml">../src/qml/pages/EpicLibraryView.qml</file>
         <file alias="qml/pages/RunnersView.qml">../src/qml/pages/RunnersView.qml</file>
         <file alias="qml/pages/PrefixesView.qml">../src/qml/pages/PrefixesView.qml</file>
         <file alias="qml/pages/DiagnosticsView.qml">../src/qml/pages/DiagnosticsView.qml</file>
@@ -44,6 +47,8 @@
         <file>icons/nav/favourite-filled.svg</file>
         <file>icons/nav/recent.svg</file>
         <file>icons/nav/recent-filled.svg</file>
+        <file>icons/nav/epic.svg</file>
+        <file>icons/nav/epic-filled.svg</file>
         <file>icons/nav/runner.svg</file>
         <file>icons/nav/runner-filled.svg</file>
         <file>icons/nav/prefixes.svg</file>

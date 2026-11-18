@@ -229,9 +229,24 @@ struct GameRecord {
     QString steamGridAppId;
 
     QString platform = QStringLiteral("windows"); // "windows" or "linux"
+    QString source = QStringLiteral("local");     // "local" or "epic"
+    QString epicAppName;
+    QString epicNamespace;
+    QString epicCatalogItemId;
+    QString epicBuildVersion;
+    QString epicInstallDir;
+    bool epicOfflineMode = false;
+    bool epicInPlaceImported = false;
+    bool enableEosOverlay = false;
+    bool enableEacRuntime = false;
+    bool enableBattlEyeRuntime = false;
 
     bool isNative() const {
         return platform == QStringLiteral("linux");
+    }
+
+    bool isEpic() const {
+        return source == QStringLiteral("epic") && !epicAppName.isEmpty();
     }
 
     bool isFavorite = false;
@@ -280,6 +295,11 @@ struct GameRecord {
         obj["gamescopeState"] = gamescopeState;
         obj["gamescope"] = gamescope.toJsonObject();
         obj["xboxEmulationState"] = xboxEmulationState;
+        obj["epicOfflineMode"] = epicOfflineMode;
+        obj["epicInPlaceImported"] = epicInPlaceImported;
+        obj["enableEosOverlay"] = enableEosOverlay;
+        obj["enableEacRuntime"] = enableEacRuntime;
+        obj["enableBattlEyeRuntime"] = enableBattlEyeRuntime;
         return QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
     }
 
@@ -310,6 +330,11 @@ struct GameRecord {
             gamescope = GamescopeConfig{};
         }
         xboxEmulationState = obj["xboxEmulationState"].toInt(0);
+        epicOfflineMode = obj["epicOfflineMode"].toBool(false);
+        epicInPlaceImported = obj["epicInPlaceImported"].toBool(false);
+        enableEosOverlay = obj["enableEosOverlay"].toBool(false);
+        enableEacRuntime = obj["enableEacRuntime"].toBool(false);
+        enableBattlEyeRuntime = obj["enableBattlEyeRuntime"].toBool(false);
     }
 
     static QString toFileUrlOrOriginal(const QString& path) {
@@ -369,6 +394,18 @@ struct GameRecord {
         map["addedTimestamp"] = addedTimestamp;
         map["platform"] = platform;
         map["isNative"] = isNative();
+        map["source"] = source.isEmpty() ? QStringLiteral("local") : source;
+        map["isEpic"] = isEpic();
+        map["epicAppName"] = epicAppName;
+        map["epicNamespace"] = epicNamespace;
+        map["epicCatalogItemId"] = epicCatalogItemId;
+        map["epicBuildVersion"] = epicBuildVersion;
+        map["epicInstallDir"] = epicInstallDir;
+        map["epicOfflineMode"] = epicOfflineMode;
+        map["epicInPlaceImported"] = epicInPlaceImported;
+        map["enableEosOverlay"] = enableEosOverlay;
+        map["enableEacRuntime"] = enableEacRuntime;
+        map["enableBattlEyeRuntime"] = enableBattlEyeRuntime;
         map["isRunning"] = isRunning;
 
         const QString effectiveRunnerTag = isNative() ? QStringLiteral("LINUX") : resolvedRunnerTag;
@@ -468,6 +505,67 @@ struct RunnerRecord {
         m["isProton"] = isProton();
         m["settings"] = settings;
         m["existsOnDisk"] = QFileInfo::exists(binaryPath);
+        return m;
+    }
+};
+
+struct EpicLibraryItem {
+    QString appName;
+    QString namespaceId;
+    QString catalogItemId;
+    QString title;
+    QString developer;
+    QString description;
+    QString coverUrl;
+    QString bannerUrl;
+    QString logoUrl;
+    QString coverPath;
+    QString bannerPath;
+    QString logoPath;
+    qint64 downloadSize = 0;
+    qint64 installSize = 0;
+    QString buildVersion;
+    qint64 lastSynced = 0;
+
+    static QString formatSize(qint64 bytes) {
+        if (bytes <= 0) return QString();
+        double b = static_cast<double>(bytes);
+        if (b < 1024.0) return QStringLiteral("%1 B").arg(bytes);
+        b /= 1024.0;
+        if (b < 1024.0) return QStringLiteral("%1 KB").arg(b, 0, 'f', 1);
+        b /= 1024.0;
+        if (b < 1024.0) return QStringLiteral("%1 MB").arg(b, 0, 'f', 1);
+        b /= 1024.0;
+        return QStringLiteral("%1 GB").arg(b, 0, 'f', 2);
+    }
+
+    QVariantMap toVariantMap(bool isInstalled = false, const QString& installedGameId = QString()) const {
+        QVariantMap m;
+        m["appName"] = appName;
+        m["epicAppName"] = appName;
+        m["namespaceId"] = namespaceId;
+        m["catalogItemId"] = catalogItemId;
+        m["title"] = title;
+        m["developer"] = developer;
+        m["description"] = description;
+        m["coverUrl"] = coverUrl;
+        m["bannerUrl"] = bannerUrl;
+        m["logoUrl"] = logoUrl;
+        m["coverPath"] = GameRecord::toFileUrlOrOriginal(!coverPath.isEmpty() ? coverPath : coverUrl);
+        m["rawCoverPath"] = coverPath;
+        m["bannerPath"] = GameRecord::toFileUrlOrOriginal(!bannerPath.isEmpty() ? bannerPath : bannerUrl);
+        m["rawBannerPath"] = bannerPath;
+        m["logoPath"] = GameRecord::toFileUrlOrOriginal(!logoPath.isEmpty() ? logoPath : logoUrl);
+        m["rawLogoPath"] = logoPath;
+        m["downloadSize"] = downloadSize;
+        m["installSize"] = installSize;
+        m["downloadSizeFormatted"] = formatSize(downloadSize);
+        m["installSizeFormatted"] = formatSize(installSize);
+        m["buildVersion"] = buildVersion;
+        m["lastSynced"] = lastSynced;
+        m["isInstalled"] = isInstalled;
+        m["installedGameId"] = installedGameId;
+        m["isEpic"] = true;
         return m;
     }
 };

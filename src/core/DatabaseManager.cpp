@@ -73,7 +73,33 @@ bool DatabaseManager::initialize() {
                 last_played_timestamp INTEGER DEFAULT 0,
                 added_timestamp INTEGER DEFAULT 0,
                 launch_config_json TEXT,
-                platform TEXT DEFAULT 'windows'
+                platform TEXT DEFAULT 'windows',
+                source TEXT DEFAULT 'local',
+                epic_app_name TEXT,
+                epic_namespace TEXT,
+                epic_catalog_item_id TEXT,
+                epic_build_version TEXT,
+                epic_install_dir TEXT
+            )
+        )"),
+        QStringLiteral(R"(
+            CREATE TABLE IF NOT EXISTS epic_library (
+                app_name TEXT PRIMARY KEY,
+                namespace_id TEXT NOT NULL,
+                catalog_item_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                developer TEXT,
+                description TEXT,
+                cover_url TEXT,
+                banner_url TEXT,
+                logo_url TEXT,
+                cover_path TEXT,
+                banner_path TEXT,
+                logo_path TEXT,
+                download_size INTEGER DEFAULT 0,
+                install_size INTEGER DEFAULT 0,
+                build_version TEXT,
+                last_synced INTEGER DEFAULT 0
             )
         )"),
         QStringLiteral(R"(
@@ -115,19 +141,31 @@ bool DatabaseManager::initialize() {
     // Ensure legacy controller_profiles table is removed cleanly
     q.exec(QStringLiteral("DROP TABLE IF EXISTS controller_profiles"));
 
-    // Ensure 'platform' column exists in 'games' table (migration for existing databases)
-    bool hasPlatform = false;
+    // Ensure 'platform' and Epic columns exist in 'games' table (migration for existing databases)
+    QSet<QString> existingCols;
     if (q.exec(QStringLiteral("PRAGMA table_info(games)"))) {
         while (q.next()) {
-            if (q.value(1).toString().compare(QStringLiteral("platform"), Qt::CaseInsensitive) == 0) {
-                hasPlatform = true;
-                break;
-            }
+            existingCols.insert(q.value(1).toString().toLower());
         }
     }
-    if (!hasPlatform) {
-        if (!q.exec(QStringLiteral("ALTER TABLE games ADD COLUMN platform TEXT DEFAULT 'windows'"))) {
-            qWarning() << "Failed to migrate games table for platform column:" << q.lastError().text();
+    struct ColumnMigration {
+        const char* name;
+        const char* sql;
+    };
+    static const ColumnMigration kMigrations[] = {
+        {"platform", "ALTER TABLE games ADD COLUMN platform TEXT DEFAULT 'windows'"},
+        {"source", "ALTER TABLE games ADD COLUMN source TEXT DEFAULT 'local'"},
+        {"epic_app_name", "ALTER TABLE games ADD COLUMN epic_app_name TEXT"},
+        {"epic_namespace", "ALTER TABLE games ADD COLUMN epic_namespace TEXT"},
+        {"epic_catalog_item_id", "ALTER TABLE games ADD COLUMN epic_catalog_item_id TEXT"},
+        {"epic_build_version", "ALTER TABLE games ADD COLUMN epic_build_version TEXT"},
+        {"epic_install_dir", "ALTER TABLE games ADD COLUMN epic_install_dir TEXT"}
+    };
+    for (const auto& m : kMigrations) {
+        if (!existingCols.contains(QLatin1String(m.name))) {
+            if (!q.exec(QLatin1String(m.sql))) {
+                qWarning() << "Failed to migrate games table for column" << m.name << ":" << q.lastError().text();
+            }
         }
     }
 
@@ -143,13 +181,15 @@ bool DatabaseManager::saveGame(const GameRecord& game) {
             runner_id, prefix_id, cover_path, banner_path, logo_path, icon_path,
             steamgrid_app_id, is_favorite, is_pinned,
             playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json,
-            platform
+            platform, source, epic_app_name, epic_namespace, epic_catalog_item_id,
+            epic_build_version, epic_install_dir
         ) VALUES (
             :id, :title, :executable_path, :working_directory, :launch_arguments,
             :runner_id, :prefix_id, :cover_path, :banner_path, :logo_path, :icon_path,
             :steamgrid_app_id, :is_favorite, :is_pinned,
             :playtime_seconds, :last_played_timestamp, :added_timestamp, :launch_config_json,
-            :platform
+            :platform, :source, :epic_app_name, :epic_namespace, :epic_catalog_item_id,
+            :epic_build_version, :epic_install_dir
         )
     )"));
     q.bindValue(QStringLiteral(":id"), game.id);
@@ -171,6 +211,12 @@ bool DatabaseManager::saveGame(const GameRecord& game) {
     q.bindValue(QStringLiteral(":added_timestamp"), game.addedTimestamp);
     q.bindValue(QStringLiteral(":launch_config_json"), game.launchConfigToJson());
     q.bindValue(QStringLiteral(":platform"), game.platform.isEmpty() ? QStringLiteral("windows") : game.platform);
+    q.bindValue(QStringLiteral(":source"), game.source.isEmpty() ? QStringLiteral("local") : game.source);
+    q.bindValue(QStringLiteral(":epic_app_name"), game.epicAppName);
+    q.bindValue(QStringLiteral(":epic_namespace"), game.epicNamespace);
+    q.bindValue(QStringLiteral(":epic_catalog_item_id"), game.epicCatalogItemId);
+    q.bindValue(QStringLiteral(":epic_build_version"), game.epicBuildVersion);
+    q.bindValue(QStringLiteral(":epic_install_dir"), game.epicInstallDir);
 
     if (!q.exec()) {
         qWarning() << "saveGame failed:" << q.lastError().text();
@@ -211,6 +257,15 @@ GameRecord DatabaseManager::recordFromQuery(QSqlQuery& q) {
     if (g.platform.isEmpty()) {
         g.platform = QStringLiteral("windows");
     }
+    g.source = q.value(19).toString();
+    if (g.source.isEmpty()) {
+        g.source = QStringLiteral("local");
+    }
+    g.epicAppName = q.value(20).toString();
+    g.epicNamespace = q.value(21).toString();
+    g.epicCatalogItemId = q.value(22).toString();
+    g.epicBuildVersion = q.value(23).toString();
+    g.epicInstallDir = q.value(24).toString();
     return g;
 }
 
@@ -222,10 +277,32 @@ std::optional<GameRecord> DatabaseManager::getGame(const QString& gameId) const 
                runner_id, prefix_id, cover_path, banner_path, logo_path, icon_path,
                steamgrid_app_id, is_favorite, is_pinned,
                playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json,
-               platform
+               platform, source, epic_app_name, epic_namespace, epic_catalog_item_id,
+               epic_build_version, epic_install_dir
         FROM games WHERE id = :id
     )"));
     q.bindValue(QStringLiteral(":id"), gameId);
+    if (q.exec() && q.next()) {
+        return recordFromQuery(q);
+    }
+    return std::nullopt;
+}
+
+std::optional<GameRecord> DatabaseManager::getGameByEpicAppName(const QString& appName) const {
+    if (appName.isEmpty()) return std::nullopt;
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral(R"(
+        SELECT id, title, executable_path, working_directory, launch_arguments,
+               runner_id, prefix_id, cover_path, banner_path, logo_path, icon_path,
+               steamgrid_app_id, is_favorite, is_pinned,
+               playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json,
+               platform, source, epic_app_name, epic_namespace, epic_catalog_item_id,
+               epic_build_version, epic_install_dir
+        FROM games WHERE epic_app_name = :app_name AND source = 'epic'
+        LIMIT 1
+    )"));
+    q.bindValue(QStringLiteral(":app_name"), appName);
     if (q.exec() && q.next()) {
         return recordFromQuery(q);
     }
@@ -241,7 +318,8 @@ QList<GameRecord> DatabaseManager::getAllGames() const {
                runner_id, prefix_id, cover_path, banner_path, logo_path, icon_path,
                steamgrid_app_id, is_favorite, is_pinned,
                playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json,
-               platform
+               platform, source, epic_app_name, epic_namespace, epic_catalog_item_id,
+               epic_build_version, epic_install_dir
         FROM games
         ORDER BY is_pinned DESC, last_played_timestamp DESC, added_timestamp DESC
     )"))) {
@@ -508,6 +586,160 @@ bool DatabaseManager::setAllGamesXboxEmulationState(bool enabled) {
         updateQ.exec();
     }
     return true;
+}
+
+EpicLibraryItem DatabaseManager::epicItemFromQuery(QSqlQuery& q) {
+    EpicLibraryItem item;
+    item.appName = q.value(0).toString();
+    item.namespaceId = q.value(1).toString();
+    item.catalogItemId = q.value(2).toString();
+    item.title = q.value(3).toString();
+    item.developer = q.value(4).toString();
+    item.description = q.value(5).toString();
+    item.coverUrl = q.value(6).toString();
+    item.bannerUrl = q.value(7).toString();
+    item.logoUrl = q.value(8).toString();
+    item.coverPath = q.value(9).toString();
+    item.bannerPath = q.value(10).toString();
+    item.logoPath = q.value(11).toString();
+    item.downloadSize = q.value(12).toLongLong();
+    item.installSize = q.value(13).toLongLong();
+    item.buildVersion = q.value(14).toString();
+    item.lastSynced = q.value(15).toLongLong();
+    return item;
+}
+
+bool DatabaseManager::saveEpicLibraryItem(const EpicLibraryItem& item) {
+    return saveEpicLibraryItems({item});
+}
+
+bool DatabaseManager::saveEpicLibraryItems(const QList<EpicLibraryItem>& items) {
+    if (items.isEmpty()) return true;
+    QMutexLocker locker(&m_mutex);
+    auto database = db();
+    if (!database.isOpen()) return false;
+    database.transaction();
+
+    QSqlQuery q(database);
+    q.prepare(QStringLiteral(R"(
+        INSERT OR REPLACE INTO epic_library (
+            app_name, namespace_id, catalog_item_id, title, developer, description,
+            cover_url, banner_url, logo_url, cover_path, banner_path, logo_path,
+            download_size, install_size, build_version, last_synced
+        ) VALUES (
+            :app_name, :namespace_id, :catalog_item_id, :title, :developer, :description,
+            :cover_url, :banner_url, :logo_url,
+            COALESCE(NULLIF(:cover_path, ''), (SELECT cover_path FROM epic_library WHERE app_name = :app_name)),
+            COALESCE(NULLIF(:banner_path, ''), (SELECT banner_path FROM epic_library WHERE app_name = :app_name)),
+            COALESCE(NULLIF(:logo_path, ''), (SELECT logo_path FROM epic_library WHERE app_name = :app_name)),
+            CASE WHEN :download_size > 0 THEN :download_size ELSE COALESCE((SELECT download_size FROM epic_library WHERE app_name = :app_name), 0) END,
+            CASE WHEN :install_size > 0 THEN :install_size ELSE COALESCE((SELECT install_size FROM epic_library WHERE app_name = :app_name), 0) END,
+            COALESCE(NULLIF(:build_version, ''), (SELECT build_version FROM epic_library WHERE app_name = :app_name)),
+            :last_synced
+        )
+    )"));
+
+    for (const EpicLibraryItem& item : items) {
+        q.bindValue(QStringLiteral(":app_name"), item.appName);
+        q.bindValue(QStringLiteral(":namespace_id"), item.namespaceId);
+        q.bindValue(QStringLiteral(":catalog_item_id"), item.catalogItemId);
+        q.bindValue(QStringLiteral(":title"), item.title);
+        q.bindValue(QStringLiteral(":developer"), item.developer);
+        q.bindValue(QStringLiteral(":description"), item.description);
+        q.bindValue(QStringLiteral(":cover_url"), item.coverUrl);
+        q.bindValue(QStringLiteral(":banner_url"), item.bannerUrl);
+        q.bindValue(QStringLiteral(":logo_url"), item.logoUrl);
+        q.bindValue(QStringLiteral(":cover_path"), item.coverPath);
+        q.bindValue(QStringLiteral(":banner_path"), item.bannerPath);
+        q.bindValue(QStringLiteral(":logo_path"), item.logoPath);
+        q.bindValue(QStringLiteral(":download_size"), item.downloadSize);
+        q.bindValue(QStringLiteral(":install_size"), item.installSize);
+        q.bindValue(QStringLiteral(":build_version"), item.buildVersion);
+        q.bindValue(QStringLiteral(":last_synced"), item.lastSynced);
+        if (!q.exec()) {
+            qWarning() << "saveEpicLibraryItems failed:" << q.lastError().text();
+            database.rollback();
+            return false;
+        }
+    }
+    return database.commit();
+}
+
+std::optional<EpicLibraryItem> DatabaseManager::getEpicLibraryItem(const QString& appName) const {
+    if (appName.isEmpty()) return std::nullopt;
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral(R"(
+        SELECT app_name, namespace_id, catalog_item_id, title, developer, description,
+               cover_url, banner_url, logo_url, cover_path, banner_path, logo_path,
+               download_size, install_size, build_version, last_synced
+        FROM epic_library WHERE app_name = :app_name
+    )"));
+    q.bindValue(QStringLiteral(":app_name"), appName);
+    if (q.exec() && q.next()) {
+        return epicItemFromQuery(q);
+    }
+    return std::nullopt;
+}
+
+QList<EpicLibraryItem> DatabaseManager::getAllEpicLibraryItems() const {
+    QMutexLocker locker(&m_mutex);
+    QList<EpicLibraryItem> list;
+    QSqlQuery q(db());
+    if (q.exec(QStringLiteral(R"(
+        SELECT app_name, namespace_id, catalog_item_id, title, developer, description,
+               cover_url, banner_url, logo_url, cover_path, banner_path, logo_path,
+               download_size, install_size, build_version, last_synced
+        FROM epic_library ORDER BY title COLLATE NOCASE ASC
+    )"))) {
+        while (q.next()) {
+            list.append(epicItemFromQuery(q));
+        }
+    }
+    return list;
+}
+
+bool DatabaseManager::updateEpicLibraryArtwork(const QString& appName,
+                                               const QString& coverPath,
+                                               const QString& bannerPath,
+                                               const QString& logoPath) {
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral(R"(
+        UPDATE epic_library
+        SET cover_path = CASE WHEN :cover != '' THEN :cover ELSE cover_path END,
+            banner_path = CASE WHEN :banner != '' THEN :banner ELSE banner_path END,
+            logo_path = CASE WHEN :logo != '' THEN :logo ELSE logo_path END
+        WHERE app_name = :app_name
+    )"));
+    q.bindValue(QStringLiteral(":cover"), coverPath);
+    q.bindValue(QStringLiteral(":banner"), bannerPath);
+    q.bindValue(QStringLiteral(":logo"), logoPath);
+    q.bindValue(QStringLiteral(":app_name"), appName);
+    return q.exec();
+}
+
+bool DatabaseManager::updateEpicLibrarySizes(const QString& appName, qint64 downloadSize, qint64 installSize, const QString& buildVersion) {
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral(R"(
+        UPDATE epic_library
+        SET download_size = CASE WHEN :dl > 0 THEN :dl ELSE download_size END,
+            install_size = CASE WHEN :inst > 0 THEN :inst ELSE install_size END,
+            build_version = CASE WHEN :bv != '' THEN :bv ELSE build_version END
+        WHERE app_name = :app_name
+    )"));
+    q.bindValue(QStringLiteral(":dl"), downloadSize);
+    q.bindValue(QStringLiteral(":inst"), installSize);
+    q.bindValue(QStringLiteral(":bv"), buildVersion);
+    q.bindValue(QStringLiteral(":app_name"), appName);
+    return q.exec();
+}
+
+bool DatabaseManager::clearEpicLibrary() {
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    return q.exec(QStringLiteral("DELETE FROM epic_library"));
 }
 
 } // namespace Tsuki

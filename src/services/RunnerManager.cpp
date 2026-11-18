@@ -16,6 +16,72 @@
 
 namespace Tsuki {
 
+namespace {
+
+QSet<QString> collectSteamLibraryRoots() {
+    QSet<QString> steamLibraries;
+    const QStringList steamRoots = {
+        QDir::homePath() + QStringLiteral("/.local/share/Steam"),
+        QDir::homePath() + QStringLiteral("/.steam/steam"),
+        QDir::homePath() + QStringLiteral("/.steam/root"),
+        QDir::homePath() + QStringLiteral("/.var/app/com.valvesoftware.Steam/data/Steam"),
+        QDir::homePath() + QStringLiteral("/snap/steam/common/.local/share/Steam")
+    };
+
+    for (const QString& sRoot : steamRoots) {
+        if (!QDir(sRoot).exists()) continue;
+        steamLibraries.insert(QDir::cleanPath(sRoot));
+
+        const QStringList vdfCandidates = {
+            sRoot + QStringLiteral("/config/libraryfolders.vdf"),
+            sRoot + QStringLiteral("/steamapps/libraryfolders.vdf")
+        };
+        for (const QString& vdfPath : vdfCandidates) {
+            QFile vdfFile(vdfPath);
+            if (!vdfFile.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+            const QString content = QString::fromUtf8(vdfFile.readAll());
+            vdfFile.close();
+
+            static const QRegularExpression pathRegex(QStringLiteral(R"rx("path"\s+"([^"]+)")rx"));
+            auto it = pathRegex.globalMatch(content);
+            while (it.hasNext()) {
+                const auto match = it.next();
+                const QString libPath = QDir::cleanPath(match.captured(1).trimmed());
+                if (!libPath.isEmpty() && QDir(libPath).exists()) {
+                    steamLibraries.insert(libPath);
+                }
+            }
+        }
+    }
+    return steamLibraries;
+}
+
+bool containsNonEmptyRuntimeFiles(const QString& dirPath) {
+    QDir d(dirPath);
+    if (!d.exists()) return false;
+    if (d.exists(QStringLiteral("v2")) || d.exists(QStringLiteral("v1"))) {
+        return true;
+    }
+    QDirIterator it(dirPath, {QStringLiteral("*.so"), QStringLiteral("*.dll")}, QDir::Files, QDirIterator::Subdirectories);
+    return it.hasNext();
+}
+
+QString unwrapExtractedRuntimeDir(const QString& candidate) {
+    if (!QDir(candidate).exists()) return QString();
+    QDir d(candidate);
+    if (d.exists(QStringLiteral("v2")) || d.exists(QStringLiteral("v1")) ||
+        !d.entryList({QStringLiteral("*.so")}, QDir::Files).isEmpty()) {
+        return QDir::cleanPath(candidate);
+    }
+    const QFileInfoList subDirs = d.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+    if (subDirs.size() == 1 && containsNonEmptyRuntimeFiles(subDirs.first().absoluteFilePath())) {
+        return QDir::cleanPath(subDirs.first().absoluteFilePath());
+    }
+    return containsNonEmptyRuntimeFiles(candidate) ? QDir::cleanPath(candidate) : QString();
+}
+
+} // namespace
+
 RunnerManager::RunnerManager(DatabaseManager* db, AppSettings* settings, DownloadManager* dl, QObject* parent)
     : QObject(parent)
     , m_db(db)
@@ -193,41 +259,7 @@ bool RunnerManager::isReleaseInstalled(const QString& tagName, const QString& na
 }
 
 void RunnerManager::scanSteamRunners() {
-    QSet<QString> steamLibraries;
-
-    const QStringList steamRoots = {
-        QDir::homePath() + QStringLiteral("/.local/share/Steam"),
-        QDir::homePath() + QStringLiteral("/.steam/steam"),
-        QDir::homePath() + QStringLiteral("/.steam/root"),
-        QDir::homePath() + QStringLiteral("/.var/app/com.valvesoftware.Steam/data/Steam"),
-        QDir::homePath() + QStringLiteral("/snap/steam/common/.local/share/Steam")
-    };
-
-    for (const QString& sRoot : steamRoots) {
-        if (!QDir(sRoot).exists()) continue;
-        steamLibraries.insert(QDir::cleanPath(sRoot));
-
-        const QStringList vdfCandidates = {
-            sRoot + QStringLiteral("/config/libraryfolders.vdf"),
-            sRoot + QStringLiteral("/steamapps/libraryfolders.vdf")
-        };
-        for (const QString& vdfPath : vdfCandidates) {
-            QFile vdfFile(vdfPath);
-            if (!vdfFile.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
-            const QString content = QString::fromUtf8(vdfFile.readAll());
-            vdfFile.close();
-
-            static const QRegularExpression pathRegex(QStringLiteral(R"rx("path"\s+"([^"]+)")rx"));
-            auto it = pathRegex.globalMatch(content);
-            while (it.hasNext()) {
-                const auto match = it.next();
-                const QString libPath = QDir::cleanPath(match.captured(1).trimmed());
-                if (!libPath.isEmpty() && QDir(libPath).exists()) {
-                    steamLibraries.insert(libPath);
-                }
-            }
-        }
-    }
+    const QSet<QString> steamLibraries = collectSteamLibraryRoots();
 
     for (const QString& libRoot : steamLibraries) {
         const QString commonDir = libRoot + QStringLiteral("/steamapps/common");
@@ -657,6 +689,149 @@ bool RunnerManager::updateRunnerSettings(const QString& runnerId, const QVariant
     rec->settings = settings;
     const bool ok = m_db->saveRunner(*rec);
     if (ok) emit runnersChanged();
+    return ok;
+}
+
+QString RunnerManager::resolveEacRuntimePath() {
+    QStringList candidates = {
+        AppSettings::toolsDir() + QStringLiteral("/runtimes/eac_runtime"),
+        QDir::homePath() + QStringLiteral("/.config/heroic/tools/runtimes/eac_runtime"),
+        QDir::homePath() + QStringLiteral("/.var/app/com.heroicgameslauncher.hgl/config/heroic/tools/runtimes/eac_runtime")
+    };
+    const QSet<QString> steamLibraries = collectSteamLibraryRoots();
+    for (const QString& lib : steamLibraries) {
+        candidates.append(lib + QStringLiteral("/steamapps/common/Proton EasyAntiCheat Runtime"));
+    }
+
+    for (const QString& cand : candidates) {
+        const QString resolved = unwrapExtractedRuntimeDir(cand);
+        if (!resolved.isEmpty()) return resolved;
+    }
+    return QString();
+}
+
+QString RunnerManager::resolveBattlEyeRuntimePath() {
+    QStringList candidates = {
+        AppSettings::toolsDir() + QStringLiteral("/runtimes/battleye_runtime"),
+        AppSettings::toolsDir() + QStringLiteral("/runtimes/battleeye_runtime"),
+        QDir::homePath() + QStringLiteral("/.config/heroic/tools/runtimes/battleye_runtime"),
+        QDir::homePath() + QStringLiteral("/.var/app/com.heroicgameslauncher.hgl/config/heroic/tools/runtimes/battleye_runtime")
+    };
+    const QSet<QString> steamLibraries = collectSteamLibraryRoots();
+    for (const QString& lib : steamLibraries) {
+        candidates.append(lib + QStringLiteral("/steamapps/common/Proton BattlEye Runtime"));
+    }
+
+    for (const QString& cand : candidates) {
+        const QString resolved = unwrapExtractedRuntimeDir(cand);
+        if (!resolved.isEmpty()) return resolved;
+    }
+    return QString();
+}
+
+QString RunnerManager::ensureSpaceSafeRuntimePath(const QString& runtimeDir, const QString& linkName) {
+    if (runtimeDir.isEmpty()) return QString();
+    if (!runtimeDir.contains(QLatin1Char(' '))) return runtimeDir;
+
+    const QString runtimesBase = AppSettings::toolsDir() + QStringLiteral("/runtimes");
+    QDir().mkpath(runtimesBase);
+    const QString linkPath = runtimesBase + QStringLiteral("/") + linkName;
+    if (linkPath.contains(QLatin1Char(' '))) return runtimeDir;
+
+    QFileInfo linkFi(linkPath);
+    if (linkFi.isSymLink()) {
+        if (QDir::cleanPath(linkFi.symLinkTarget()) == QDir::cleanPath(runtimeDir)) {
+            return linkPath;
+        }
+        QFile::remove(linkPath);
+    } else if (linkFi.exists()) {
+        return runtimeDir;
+    }
+
+    if (QFile::link(runtimeDir, linkPath)) {
+        return linkPath;
+    }
+    return runtimeDir;
+}
+
+void RunnerManager::installAntiCheatRuntime(const QString& runtimeName) {
+    const bool isEac = (runtimeName == QLatin1String("eac_runtime"));
+    const bool isBe = (runtimeName == QLatin1String("battleye_runtime"));
+    if (!isEac && !isBe) return;
+    if ((isEac && m_isInstallingEac) || (isBe && m_isInstallingBattleye)) return;
+
+    auto setInstalling = [this, isEac, isBe](bool val) {
+        if (isEac) m_isInstallingEac = val;
+        if (isBe) m_isInstallingBattleye = val;
+        emit antiCheatRuntimesChanged();
+    };
+    setInstalling(true);
+
+    auto startArchiveDownload = [this, runtimeName, isEac, setInstalling](const QString& url) {
+        const QString destDir = AppSettings::toolsDir() + QStringLiteral("/runtimes/") + runtimeName;
+        const QString archivePath = AppSettings::cacheDir() + QStringLiteral("/") + runtimeName + QStringLiteral(".tar.xz");
+        const QString taskId = QStringLiteral("runtime-") + runtimeName;
+        const QString title = isEac ? QStringLiteral("Proton EasyAntiCheat Runtime")
+                                    : QStringLiteral("Proton BattlEye Runtime");
+
+        QDir(destDir).removeRecursively();
+        QDir().mkpath(destDir);
+        emit runnerOperationStatus(QStringLiteral("Downloading %1…").arg(title), false);
+
+        m_dl->enqueueDownload(taskId,
+                              title,
+                              QUrl(url),
+                              archivePath,
+                              destDir,
+                              [this, title, setInstalling](bool ok, const QString& msg) {
+                                  setInstalling(false);
+                                  emit antiCheatRuntimesChanged();
+                                  if (ok) {
+                                      emit runnerOperationStatus(QStringLiteral("%1 installed successfully.").arg(title), false);
+                                  } else {
+                                      emit runnerOperationStatus(QStringLiteral("Failed to install %1: %2").arg(title, msg), true);
+                                  }
+                              });
+    };
+
+    const QString fallbackUrl = isEac
+        ? QStringLiteral("https://github.com/lutris/buildbot/releases/download/2022.06.23/eac_runtime-20240114.tar.xz")
+        : QStringLiteral("https://github.com/lutris/buildbot/releases/download/2024-05-21/battleeye_runtime.tar.xz");
+
+    QNetworkRequest req{QUrl(QStringLiteral("https://lutris.net/api/runtimes"))};
+    req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("TsukiLauncher/1.0"));
+    QNetworkReply* reply = m_nam.get(req);
+    connect(reply, &QNetworkReply::finished, this, [reply, runtimeName, fallbackUrl, startArchiveDownload]() {
+        QString url = fallbackUrl;
+        if (reply->error() == QNetworkReply::NoError && reply->isOpen()) {
+            const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+            if (doc.isArray()) {
+                for (const QJsonValue& v : doc.array()) {
+                    const QJsonObject obj = v.toObject();
+                    if (obj.value(QStringLiteral("name")).toString() == runtimeName) {
+                        const QString u = obj.value(QStringLiteral("url")).toString().trimmed();
+                        if (!u.isEmpty()) url = u;
+                        break;
+                    }
+                }
+            }
+        }
+        reply->deleteLater();
+        startArchiveDownload(url);
+    });
+}
+
+bool RunnerManager::removeAntiCheatRuntime(const QString& runtimeName) {
+    if (runtimeName != QLatin1String("eac_runtime") && runtimeName != QLatin1String("battleye_runtime")) {
+        return false;
+    }
+    const QString target = AppSettings::toolsDir() + QStringLiteral("/runtimes/") + runtimeName;
+    if (!QDir(target).exists()) return false;
+    const bool ok = QDir(target).removeRecursively();
+    if (ok) {
+        emit antiCheatRuntimesChanged();
+        emit runnerOperationStatus(QStringLiteral("Removed %1.").arg(runtimeName), false);
+    }
     return ok;
 }
 

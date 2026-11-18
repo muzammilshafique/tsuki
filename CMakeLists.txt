@@ -9,6 +9,7 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+find_package(ZLIB REQUIRED)
 
 find_package(Qt6 REQUIRED COMPONENTS
     Core
@@ -48,6 +49,10 @@ set(TSUKI_CORE_SOURCES
     src/services/DiagnosticsManager.cpp
     src/services/LaunchPipeline.h
     src/services/LaunchPipeline.cpp
+    src/services/EpicManifestParser.h
+    src/services/EpicManifestParser.cpp
+    src/services/EpicService.h
+    src/services/EpicService.cpp
     src/services/GameManager.h
     src/services/GameManager.cpp
     src/ui/UiController.h
@@ -68,6 +73,7 @@ target_link_libraries(tsuki_core PUBLIC
     Qt6::Svg
     Qt6::Concurrent
     PkgConfig::SDL2
+    ZLIB::ZLIB
 )
 
 # Leave TSUKI_VERSION empty by default so updates to project(tsuki VERSION ...)

@@ -10,9 +10,13 @@
 #include <QObject>
 #include <QProcess>
 #include <QMap>
+#include <QSet>
 #include <QStringList>
+#include <optional>
 
 namespace Tsuki {
+
+class EpicService;
 
 struct LaunchPlan {
     QString program;
@@ -43,17 +47,23 @@ public:
     QStringList runningGameIds() const { return m_running.keys(); }
     int runningCount() const { return m_running.size(); }
     Q_INVOKABLE bool isGameRunning(const QString& gameId) const { return m_running.contains(gameId); }
+    void setEpicService(EpicService* epicSvc) { m_epicService = epicSvc; }
 
     // Build launch plan (testable without spawning processes)
     bool isGamescopeEnabled(const GameRecord& game) const;
     GamescopeConfig resolveEffectiveGamescopeConfig(const GameRecord& game) const;
     static QStringList buildGamescopeArguments(const GamescopeConfig& cfg, bool useMangohud);
+    static QStringList buildEpicLaunchArgs(const GameRecord& game,
+                                           const QString& exchangeCode = QString(),
+                                           const QString& accountId = QString(),
+                                           const QString& displayName = QString());
     Q_INVOKABLE QString formatGamescopePreview(const QVariantMap& cfgMap,
                                                bool useMangohud,
                                                const QString& targetCommand = QString()) const;
     LaunchPlan buildLaunchPlan(const GameRecord& game,
                                const RunnerRecord& runner,
-                               const PrefixRecord& prefix) const;
+                               const PrefixRecord& prefix,
+                               const QStringList& extraEpicArgs = QStringList()) const;
     LaunchPlan buildNativeLaunchPlan(const GameRecord& game) const;
 
     Q_INVOKABLE bool launchGame(const QString& gameId);
@@ -91,9 +101,15 @@ private:
     PrefixManager* m_prefixMgr;
     ControllerManager* m_controllerMgr;
     DiagnosticsManager* m_diagMgr;
+    EpicService* m_epicService = nullptr;
 
     QMap<QString, RunningSession*> m_running;
+    QSet<QString> m_pendingEpicLaunches;
 
+    bool startLaunchProcess(const GameRecord& game,
+                            const std::optional<RunnerRecord>& runnerOpt,
+                            const PrefixRecord& prefix,
+                            const LaunchPlan& plan);
     void executeScript(const QString& scriptPathOrCmd, const QString& workingDir, const QProcessEnvironment& env, const QString& gameId);
     void terminateGameSession(const QString& gameId, bool waitForExit);
     void handleSessionTermination(const QString& gameId, int exitCode, bool isFailedToStart, const QString& errorString);

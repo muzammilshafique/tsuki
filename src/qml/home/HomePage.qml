@@ -7,7 +7,7 @@ import "../pages"
 Page {
     id: page
 
-    signal gameDetailsRequested(string gameId)
+    signal gameDetailsRequested(string gameId, string epicAppName)
     signal settingsRequested()
     property string activeSection: "library"
 
@@ -31,6 +31,7 @@ Page {
 
     function focusActiveSectionContent() {
         if (page.activeSection === "library") grid.forceFocus()
+        else if (page.activeSection === "epic") epicView.forceFocus()
         else if (page.activeSection === "runners") runnersView.forceFocus()
         else if (page.activeSection === "prefixes") prefixesView.forceFocus()
         else if (page.activeSection === "diagnostics") diagnosticsView.forceFocus()
@@ -40,7 +41,7 @@ Page {
         const tabs = [
             { navIdx: 0, section: "library",     filter: -1 },
             { navIdx: 1, section: "library",     filter: 3 },
-            { navIdx: 2, section: "library",     filter: 4 },
+            { navIdx: 2, section: "epic",        filter: -1 },
             { navIdx: 4, section: "prefixes",    filter: -1 },
             { navIdx: 5, section: "runners",     filter: -1 },
             { navIdx: 6, section: "diagnostics", filter: -1 }
@@ -195,11 +196,19 @@ Page {
                     anchors.topMargin: 16
                     anchors.bottomMargin: 24
                     model: uiController.searchModel
-                    onGameDetailsRequested: (gameId) => page.gameDetailsRequested(gameId)
+                    onGameDetailsRequested: (gameId) => page.gameDetailsRequested(gameId, "")
                     onWinetricksRequested: (prefixId, title) => winetricksModal.openForPrefix(prefixId, title)
                     onAddGameRequested: topBar.openAddMenu()
                     onFocusSidebarRequested: sidebar.forceActiveFocus()
                     onFocusTopBarRequested: topBar.forceSearchFocus()
+                }
+
+                EpicLibraryView {
+                    id: epicView
+                    visible: page.activeSection === "epic"
+                    anchors.fill: parent
+                    onGameDetailsRequested: (gameId, epicAppName) => page.gameDetailsRequested(gameId, epicAppName)
+                    onFocusSidebarRequested: sidebar.forceActiveFocus()
                 }
 
                 RunnersView {

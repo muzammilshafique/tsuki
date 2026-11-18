@@ -1,4 +1,5 @@
 #include "LaunchPipeline.h"
+#include "EpicService.h"
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -10,6 +11,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUuid>
+#include <memory>
 #include <signal.h>
 #include <unistd.h>
 
@@ -304,9 +306,35 @@ QString LaunchPipeline::formatGamescopePreview(const QVariantMap& cfgMap,
     return parts.join(QLatin1Char(' '));
 }
 
+QStringList LaunchPipeline::buildEpicLaunchArgs(const GameRecord& game,
+                                               const QString& exchangeCode,
+                                               const QString& accountId,
+                                               const QString& displayName)
+{
+    QStringList args;
+    if (!game.isEpic()) return args;
+    if (!exchangeCode.isEmpty()) {
+        args << QStringLiteral("-AUTH_LOGIN=unused")
+             << QStringLiteral("-AUTH_PASSWORD=") + exchangeCode
+             << QStringLiteral("-AUTH_TYPE=exchangecode");
+    }
+    args << QStringLiteral("-epicapp=") + game.epicAppName
+         << QStringLiteral("-epicenv=Prod")
+         << QStringLiteral("-EpicPortal")
+         << QStringLiteral("-epiclocale=en");
+    if (!displayName.isEmpty()) {
+        args << QStringLiteral("-epicusername=") + displayName;
+    }
+    if (!accountId.isEmpty()) {
+        args << QStringLiteral("-epicuserid=") + accountId;
+    }
+    return args;
+}
+
 LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
                                            const RunnerRecord& runner,
-                                           const PrefixRecord& prefix) const
+                                           const PrefixRecord& prefix,
+                                           const QStringList& extraEpicArgs) const
 {
     LaunchPlan plan;
     plan.prefixPath = prefix.path;
@@ -391,6 +419,22 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
         env.insert(QStringLiteral("ULWGL_ID"), QStringLiteral("tsuki-") + game.id);
     }
 
+    // Proton Anti-Cheat Runtimes (EAC & BattlEye)
+    if (game.enableEacRuntime) {
+        const QString eacDir = RunnerManager::resolveEacRuntimePath();
+        if (!eacDir.isEmpty()) {
+            env.insert(QStringLiteral("PROTON_EAC_RUNTIME"),
+                       RunnerManager::ensureSpaceSafeRuntimePath(eacDir, QStringLiteral("steam_eac_runtime")));
+        }
+    }
+    if (game.enableBattlEyeRuntime) {
+        const QString beDir = RunnerManager::resolveBattlEyeRuntimePath();
+        if (!beDir.isEmpty()) {
+            env.insert(QStringLiteral("PROTON_BATTLEYE_RUNTIME"),
+                       RunnerManager::ensureSpaceSafeRuntimePath(beDir, QStringLiteral("steam_battleye_runtime")));
+        }
+    }
+
     // Controller SDL config injection
     if (plan.useXboxEmulation) {
         const QString sdlCfg = m_controllerMgr->buildSdlGameControllerConfig();
@@ -439,6 +483,10 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
             fullCmd << QStringLiteral("explorer") << QStringLiteral("/desktop=Tsuki,%1").arg(res);
         }
         fullCmd << game.executablePath;
+    }
+
+    if (!extraEpicArgs.isEmpty()) {
+        fullCmd.append(extraEpicArgs);
     }
 
     if (!game.launchArguments.trimmed().isEmpty()) {
@@ -528,8 +576,8 @@ void LaunchPipeline::executeScript(const QString& scriptPathOrCmd,
 }
 
 bool LaunchPipeline::launchGame(const QString& gameId) {
-    if (m_running.contains(gameId)) {
-        return true; // Already running
+    if (m_running.contains(gameId) || m_pendingEpicLaunches.contains(gameId)) {
+        return true; // Already running or launching
     }
 
     auto gameOpt = m_db->getGame(gameId);
@@ -560,13 +608,10 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
             QFile::setPermissions(game.executablePath, perms | QFile::ExeUser | QFile::ExeGroup | QFile::ExeOther);
         }
     }
-    LaunchPlan plan;
     std::optional<RunnerRecord> runnerOpt;
     PrefixRecord prefix;
 
-    if (isNative) {
-        plan = buildNativeLaunchPlan(game);
-    } else {
+    if (!isNative) {
         runnerOpt = m_runnerMgr->resolveRunner(game.runnerId);
         if (!runnerOpt.has_value()) {
             const QString msg = QStringLiteral("No Wine or Proton runner available. Please install or detect a runner in Runners.");
@@ -605,8 +650,57 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
             }
         }
 
-        plan = buildLaunchPlan(game, *runnerOpt, prefix);
+        // Configure EOS Social Overlay registry inside target Wine/Proton prefix
+        if (game.enableEosOverlay && m_epicService && m_epicService->isEosOverlayInstalled()) {
+            PrefixManager::configureEosOverlayRegistry(prefix.path, m_epicService->eosOverlayPath(), true);
+        } else if (!game.enableEosOverlay && !prefix.path.isEmpty() && QDir(prefix.path).exists()) {
+            PrefixManager::configureEosOverlayRegistry(prefix.path, QString(), false);
+        }
     }
+
+    if (!isNative && game.isEpic() && m_epicService && m_epicService->isSignedIn() && !game.epicOfflineMode) {
+        m_pendingEpicLaunches.insert(gameId);
+        auto fired = std::make_shared<bool>(false);
+
+        auto proceed = [this, fired, game, runnerOpt, prefix, gameId](const QString& code) {
+            if (*fired) return;
+            *fired = true;
+            if (!m_pendingEpicLaunches.remove(gameId)) return;
+            const QStringList epicArgs = buildEpicLaunchArgs(
+                game,
+                code,
+                m_epicService ? m_epicService->accountId() : QString(),
+                m_epicService ? m_epicService->accountDisplayName() : QString());
+            const LaunchPlan plan = buildLaunchPlan(game, *runnerOpt, prefix, epicArgs);
+            startLaunchProcess(game, runnerOpt, prefix, plan);
+        };
+
+        QTimer::singleShot(3500, this, [proceed]() {
+            proceed(QString());
+        });
+
+        m_epicService->requestExchangeCode([proceed](bool ok, const QString& code) {
+            proceed(ok ? code : QString());
+        });
+        return true;
+    }
+
+    const QStringList offlineEpicArgs = (!isNative && game.isEpic())
+                                            ? buildEpicLaunchArgs(game)
+                                            : QStringList();
+    const LaunchPlan plan = isNative
+                                ? buildNativeLaunchPlan(game)
+                                : buildLaunchPlan(game, *runnerOpt, prefix, offlineEpicArgs);
+    return startLaunchProcess(game, runnerOpt, prefix, plan);
+}
+
+bool LaunchPipeline::startLaunchProcess(const GameRecord& game,
+                                        const std::optional<RunnerRecord>& runnerOpt,
+                                        const PrefixRecord& prefix,
+                                        const LaunchPlan& rawPlan) {
+    const QString gameId = game.id;
+    const bool isNative = game.isNative();
+    LaunchPlan plan = rawPlan;
 
     QString header;
     if (isNative) {
@@ -647,6 +741,18 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
     }
 
     m_diagMgr->startNewGameLog(gameId, header);
+
+    if (!isNative) {
+        if (game.enableEosOverlay && (!m_epicService || !m_epicService->isEosOverlayInstalled())) {
+            m_diagMgr->appendGameLog(gameId, QStringLiteral("[Tsuki] Warning: EOS Overlay is enabled for this game, but EOS Overlay is not installed.\n"));
+        }
+        if (game.enableEacRuntime && !plan.environment.contains(QStringLiteral("PROTON_EAC_RUNTIME"))) {
+            m_diagMgr->appendGameLog(gameId, QStringLiteral("[Tsuki] Warning: EasyAntiCheat Runtime is enabled, but 'eac_runtime' / Steam Proton EasyAntiCheat Runtime was not found.\n"));
+        }
+        if (game.enableBattlEyeRuntime && !plan.environment.contains(QStringLiteral("PROTON_BATTLEYE_RUNTIME"))) {
+            m_diagMgr->appendGameLog(gameId, QStringLiteral("[Tsuki] Warning: BattlEye Runtime is enabled, but 'battleye_runtime' / Steam Proton BattlEye Runtime was not found.\n"));
+        }
+    }
 
     // Start or share Xbox controller emulation
     if (plan.useXboxEmulation) {
@@ -792,6 +898,7 @@ void LaunchPipeline::updateEmulationLifecycle() {
 }
 
 void LaunchPipeline::terminateGameSession(const QString& gameId, bool waitForExit) {
+    m_pendingEpicLaunches.remove(gameId);
     RunningSession* sess = m_running.value(gameId, nullptr);
     if (!sess) return;
 

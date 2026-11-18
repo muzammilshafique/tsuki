@@ -1591,6 +1591,18 @@ Page {
                                                     onToggled: (c) => appSettings.minimizeOnLaunch = c
                                                 }
                                             }
+
+                                            SettingTile {
+                                                label: "Epic Badge"
+                                                infoTip: "Display Epic Games icon badge on installed Epic library cards"
+                                                searchKeywords: "Epic Games Badge Icon Library Card"
+                                                tabIndex: 1
+                                                inlineControl: true
+                                                controlItem: Toggle {
+                                                    checked: appSettings.showEpicBadge
+                                                    onToggled: (c) => appSettings.showEpicBadge = c
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -1868,6 +1880,137 @@ Page {
                                                             settingsPage.backRequested()
                                                         }
                                                     }
+                                                }
+                                            }
+                                        }
+
+                                        SettingTile {
+                                            id: epicDirRow
+                                            label: "Epic Games Folder"
+                                            infoTip: "Default installation folder for downloaded Epic Games titles"
+                                            searchKeywords: "Epic Games Install Directory folder path"
+                                            tabIndex: 3
+                                            inlineControl: false
+                                            fillControlWidth: true
+                                            controlItem: RowLayout {
+                                                spacing: 8
+                                                M3TextField {
+                                                    Layout.fillWidth: true
+                                                    text: appSettings.defaultEpicInstallLocation
+                                                    onCommit: (val) => appSettings.defaultEpicInstallLocation = val
+                                                }
+                                                M3Button {
+                                                    id: epicDirBrowseBtn
+                                                    text: "Browse…"
+                                                    iconSource: "qrc:/tsuki_app/icons/actions/folder.svg"
+                                                    buttonType: "tonal"
+                                                    onClicked: {
+                                                        if (!uiController) return
+                                                        let p = uiController.selectFolder("Select Default Epic Games Folder", appSettings.defaultEpicInstallLocation)
+                                                        if (p && p.length > 0) appSettings.defaultEpicInstallLocation = p
+                                                    }
+                                                    Keys.onLeftPressed: (event) => { event.accepted = true; epicDirRow.forceActiveFocus() }
+                                                    Keys.onUpPressed: (event) => { event.accepted = true; settingsPage.focusPrevSettingRow() }
+                                                    Keys.onDownPressed: (event) => { event.accepted = true; settingsPage.focusNextSettingRow() }
+                                                    Keys.onEscapePressed: (event) => { event.accepted = true; settingsPage.backRequested() }
+                                                    Keys.onPressed: (event) => {
+                                                        if (event.key === Qt.Key_Backspace) {
+                                                            event.accepted = true
+                                                            settingsPage.backRequested()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    SettingsSection {
+                                        sectionTitle: "Online & Anti-Cheat Runtimes"
+                                        showDivider: true
+
+                                        SettingTile {
+                                            label: "EOS Overlay"
+                                            infoTip: "Epic Online Services overlay for friends list, invites, and cross-play"
+                                            searchKeywords: "Epic EOS Overlay Online Multiplayer Friends"
+                                            tabIndex: 3
+                                            inlineControl: true
+                                            controlItem: RowLayout {
+                                                spacing: 8
+                                                Label {
+                                                    text: (uiController && uiController.epicService && uiController.epicService.isInstallingEosOverlay)
+                                                        ? (Math.round(Number(uiController.epicService.eosOverlayProgress || 0)) + "%")
+                                                        : ((uiController && uiController.epicService && uiController.epicService.eosOverlayInstalled)
+                                                            ? (uiController.epicService.eosOverlayVersion || "Installed")
+                                                            : "Not Installed")
+                                                    color: (uiController && uiController.epicService && uiController.epicService.eosOverlayInstalled) ? appSettings.accentColor : appSettings.textSecColor
+                                                    font.pixelSize: 12
+                                                    font.weight: Font.Medium
+                                                }
+                                                M3Button {
+                                                    text: (uiController && uiController.epicService && uiController.epicService.eosOverlayInstalled) ? "Update" : "Install"
+                                                    enabled: Boolean(uiController && uiController.epicService && !uiController.epicService.isInstallingEosOverlay)
+                                                    buttonType: "tonal"
+                                                    onClicked: if (uiController && uiController.epicService) uiController.epicService.installEosOverlay()
+                                                }
+                                                M3Button {
+                                                    visible: Boolean(uiController && uiController.epicService && uiController.epicService.eosOverlayInstalled)
+                                                    text: "Remove"
+                                                    buttonType: "destructive"
+                                                    onClicked: if (uiController && uiController.epicService) uiController.epicService.removeEosOverlay()
+                                                }
+                                            }
+                                        }
+
+                                        SettingTile {
+                                            label: "EAC Runtime"
+                                            infoTip: "Proton EasyAntiCheat runtime (detected from Steam/Heroic or installed directly)"
+                                            searchKeywords: "EasyAntiCheat EAC Proton Runtime Online Multiplayer"
+                                            tabIndex: 3
+                                            inlineControl: true
+                                            controlItem: RowLayout {
+                                                spacing: 8
+                                                Label {
+                                                    text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingEac)
+                                                        ? "Downloading…"
+                                                        : ((uiController && uiController.runnerManager && uiController.runnerManager.eacRuntimeAvailable)
+                                                            ? "Ready"
+                                                            : "Not Found")
+                                                    color: (uiController && uiController.runnerManager && uiController.runnerManager.eacRuntimeAvailable) ? appSettings.accentColor : appSettings.textSecColor
+                                                    font.pixelSize: 12
+                                                    font.weight: Font.Medium
+                                                }
+                                                M3Button {
+                                                    text: (uiController && uiController.runnerManager && uiController.runnerManager.eacRuntimeAvailable) ? "Reinstall" : "Install"
+                                                    enabled: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.isInstallingEac)
+                                                    buttonType: "tonal"
+                                                    onClicked: if (uiController && uiController.runnerManager) uiController.runnerManager.installAntiCheatRuntime("eac_runtime")
+                                                }
+                                            }
+                                        }
+
+                                        SettingTile {
+                                            label: "BattlEye"
+                                            infoTip: "Proton BattlEye runtime (detected from Steam/Heroic or installed directly)"
+                                            searchKeywords: "BattlEye Proton Runtime AntiCheat Online Multiplayer"
+                                            tabIndex: 3
+                                            inlineControl: true
+                                            controlItem: RowLayout {
+                                                spacing: 8
+                                                Label {
+                                                    text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingBattleye)
+                                                        ? "Downloading…"
+                                                        : ((uiController && uiController.runnerManager && uiController.runnerManager.battleyeRuntimeAvailable)
+                                                            ? "Ready"
+                                                            : "Not Found")
+                                                    color: (uiController && uiController.runnerManager && uiController.runnerManager.battleyeRuntimeAvailable) ? appSettings.accentColor : appSettings.textSecColor
+                                                    font.pixelSize: 12
+                                                    font.weight: Font.Medium
+                                                }
+                                                M3Button {
+                                                    text: (uiController && uiController.runnerManager && uiController.runnerManager.battleyeRuntimeAvailable) ? "Reinstall" : "Install"
+                                                    enabled: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.isInstallingBattleye)
+                                                    buttonType: "tonal"
+                                                    onClicked: if (uiController && uiController.runnerManager) uiController.runnerManager.installAntiCheatRuntime("battleye_runtime")
                                                 }
                                             }
                                         }

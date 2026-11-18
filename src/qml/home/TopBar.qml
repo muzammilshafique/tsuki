@@ -153,7 +153,6 @@ Rectangle {
 
                 placeholderText: {
                     if (uiController.searchModel.filterType === 3) return "Search favourite games…"
-                    if (uiController.searchModel.filterType === 4) return "Search recently played games…"
                     return "Search games in library…"
                 }
                 placeholderTextColor: appSettings.textTerColor

@@ -54,7 +54,10 @@ QHash<int, QByteArray> GameListModel::roleNames() const {
           {PrefixIdRole, "prefixId"},
           {ExecutablePathRole, "executablePath"},
           {PlatformRole, "platform"},
-          {IsNativeRole, "isNative"}};
+          {IsNativeRole, "isNative"},
+          {SourceRole, "source"},
+          {IsEpicRole, "isEpic"},
+          {EpicAppNameRole, "epicAppName"}};
 }
 
 QVariant GameListModel::data(const QModelIndex &index, int role) const {
@@ -120,6 +123,12 @@ QVariant GameListModel::data(const QModelIndex &index, int role) const {
     return g.platform;
   case IsNativeRole:
     return g.isNative();
+  case SourceRole:
+    return g.source;
+  case IsEpicRole:
+    return g.isEpic();
+  case EpicAppNameRole:
+    return g.epicAppName;
   default:
     return QVariant();
   }
@@ -182,8 +191,6 @@ void GameListModel::reload() {
     if (m_filterType == 2 && !running)
       continue;
     if (m_filterType == 3 && !g.isFavorite)
-      continue;
-    if (m_filterType == 4 && g.lastPlayedTimestamp <= 0)
       continue;
 
     if (!q.isEmpty() && !g.title.toLower().contains(q) &&
@@ -529,6 +536,95 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         return rec.id;
       }
 
+      QString GameManager::registerEpicGame(
+          const QString &appName, const QString &namespaceId,
+          const QString &catalogItemId, const QString &title,
+          const QString &executablePath, const QString &installDir,
+          const QString &launchArguments, const QString &buildVersion,
+          const QString &runnerId, const QString &prefixMode,
+          const QString &customPrefixName, const QString &customPrefixLocation,
+          const QString &prefixArch, const QString &coverPath,
+          const QString &bannerPath, const QString &logoPath,
+          bool inPlaceImported) {
+        if (appName.trimmed().isEmpty()) {
+          return QString();
+        }
+
+        QString safeIdPart = appName.trimmed();
+        safeIdPart.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_-]")),
+                           QStringLiteral("_"));
+        const QString gameId = QStringLiteral("epic-") + safeIdPart;
+
+        auto existing = m_db->getGameByEpicAppName(appName);
+        GameRecord rec = existing.has_value() ? *existing : GameRecord{};
+        if (rec.id.isEmpty()) {
+          rec.id = gameId;
+          rec.addedTimestamp = QDateTime::currentSecsSinceEpoch();
+          rec.xboxEmulationState =
+              m_settings ? (m_settings->xboxEmulationDefault() ? 1 : 0) : 0;
+        }
+
+        rec.source = QStringLiteral("epic");
+        rec.platform = QStringLiteral("windows");
+        rec.epicAppName = appName.trimmed();
+        rec.epicNamespace = namespaceId.trimmed();
+        rec.epicCatalogItemId = catalogItemId.trimmed();
+        rec.epicBuildVersion = buildVersion.trimmed();
+        rec.epicInstallDir = QDir::cleanPath(installDir.trimmed());
+        rec.epicInPlaceImported = inPlaceImported;
+        rec.title = title.trimmed().isEmpty() ? appName : title.trimmed();
+        rec.executablePath = executablePath.trimmed();
+        rec.workingDirectory = !rec.executablePath.isEmpty()
+                                   ? QFileInfo(rec.executablePath).absolutePath()
+                                   : rec.epicInstallDir;
+        rec.launchArguments = launchArguments.trimmed();
+        rec.runnerId = runnerId;
+
+        if (prefixMode == QStringLiteral("dedicated")) {
+          const QString pfxName =
+              customPrefixName.trimmed().isEmpty()
+                  ? m_prefixMgr->suggestShortPrefixName(rec.title)
+                  : customPrefixName.trimmed();
+          rec.prefixId = m_prefixMgr->createPrefix(
+              pfxName, customPrefixLocation,
+              prefixArch.isEmpty() ? QStringLiteral("win64") : prefixArch,
+              QStringLiteral("win10"), runnerId, false);
+        } else if (!prefixMode.isEmpty()) {
+          rec.prefixId = prefixMode;
+        } else {
+          rec.prefixId = QStringLiteral("default-prefix");
+        }
+
+        const bool hasCover = !coverPath.isEmpty() && QFileInfo::exists(coverPath);
+        const bool hasBanner =
+            !bannerPath.isEmpty() && QFileInfo::exists(bannerPath);
+        const bool hasLogo = !logoPath.isEmpty() && QFileInfo::exists(logoPath);
+
+        rec.coverPath =
+            hasCover
+                ? coverPath
+                : SteamGridDbService::generateFallbackPoster(rec.id, rec.title);
+        rec.bannerPath =
+            hasBanner
+                ? bannerPath
+                : SteamGridDbService::generateFallbackBanner(rec.id, rec.title);
+        if (hasLogo) {
+          rec.logoPath = logoPath;
+        }
+
+        m_db->saveGame(rec);
+        m_model->reload();
+        emit gamesChanged();
+        emit gameAdded(rec.id, rec.title);
+        emit gameOperationStatus(
+            QStringLiteral("Installed '%1' to Library.").arg(rec.title), false);
+
+        if (!hasCover || !hasBanner) {
+          refreshArtworkFromSteamGridDb(rec.id);
+        }
+        return rec.id;
+      }
+
       bool GameManager::updateGameDetails(const QString &gameId,
                                           const QVariantMap &updates) {
         auto opt = m_db->getGame(gameId);
@@ -605,6 +701,18 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         if (updates.contains(QStringLiteral("xboxEmulationState")))
           g.xboxEmulationState =
               updates.value(QStringLiteral("xboxEmulationState")).toInt();
+        if (updates.contains(QStringLiteral("epicOfflineMode")))
+          g.epicOfflineMode =
+              updates.value(QStringLiteral("epicOfflineMode")).toBool();
+        if (updates.contains(QStringLiteral("enableEosOverlay")))
+          g.enableEosOverlay =
+              updates.value(QStringLiteral("enableEosOverlay")).toBool();
+        if (updates.contains(QStringLiteral("enableEacRuntime")))
+          g.enableEacRuntime =
+              updates.value(QStringLiteral("enableEacRuntime")).toBool();
+        if (updates.contains(QStringLiteral("enableBattlEyeRuntime")))
+          g.enableBattlEyeRuntime =
+              updates.value(QStringLiteral("enableBattlEyeRuntime")).toBool();
         if (updates.contains(QStringLiteral("environmentVariables")))
           g.environmentVariables =
               updates.value(QStringLiteral("environmentVariables")).toMap();
@@ -635,6 +743,10 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
             g.gamescopeState == orig.gamescopeState &&
             g.gamescope == orig.gamescope &&
             g.xboxEmulationState == orig.xboxEmulationState &&
+            g.epicOfflineMode == orig.epicOfflineMode &&
+            g.enableEosOverlay == orig.enableEosOverlay &&
+            g.enableEacRuntime == orig.enableEacRuntime &&
+            g.enableBattlEyeRuntime == orig.enableBattlEyeRuntime &&
             g.environmentVariables == orig.environmentVariables &&
             g.dllOverrides == orig.dllOverrides) {
           return true;
@@ -810,7 +922,8 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
       }
 
       bool GameManager::removeGame(const QString &gameId,
-                                   bool deleteDedicatedPrefix) {
+                                   bool deleteDedicatedPrefix,
+                                   bool deleteGameFiles) {
         auto opt = m_db->getGame(gameId);
         if (!opt.has_value())
           return false;
@@ -825,16 +938,28 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
           m_prefixMgr->deletePrefix(g.prefixId, true);
         }
 
-        // Note: Per specification, removing a game from the library NEVER
-        // deletes the game's actual files!
+        bool deletedDiskFiles = false;
+        if (deleteGameFiles && g.isEpic() && !g.epicInstallDir.isEmpty()) {
+          const QString cleanDir = QDir::cleanPath(g.epicInstallDir);
+          const QString homeClean = QDir::cleanPath(QDir::homePath());
+          if (!cleanDir.isEmpty() && cleanDir != QStringLiteral("/") &&
+              cleanDir != homeClean && QDir(cleanDir).exists()) {
+            deletedDiskFiles = QDir(cleanDir).removeRecursively();
+          }
+        }
+
         const bool ok = m_db->removeGame(gameId);
         if (ok) {
           m_model->reload();
           emit gamesChanged();
           emit gameOperationStatus(
-              QStringLiteral(
-                  "Removed '%1' from library (game files preserved).")
-                  .arg(g.title),
+              deletedDiskFiles
+                  ? QStringLiteral(
+                        "Uninstalled '%1' and deleted game files from disk.")
+                        .arg(g.title)
+                  : QStringLiteral(
+                        "Removed '%1' from library (game files preserved).")
+                        .arg(g.title),
               false);
         }
         return ok;

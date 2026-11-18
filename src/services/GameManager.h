@@ -44,7 +44,10 @@ public:
         PrefixIdRole,
         ExecutablePathRole,
         PlatformRole,
-        IsNativeRole
+        IsNativeRole,
+        SourceRole,
+        IsEpicRole,
+        EpicAppNameRole
     };
 
     explicit GameListModel(DatabaseManager* db,
@@ -123,6 +126,24 @@ public:
                                       const QString& workingDirectory = QString(),
                                       const QString& launchArguments = QString());
 
+    Q_INVOKABLE QString registerEpicGame(const QString& appName,
+                                         const QString& namespaceId,
+                                         const QString& catalogItemId,
+                                         const QString& title,
+                                         const QString& executablePath,
+                                         const QString& installDir,
+                                         const QString& launchArguments = QString(),
+                                         const QString& buildVersion = QString(),
+                                         const QString& runnerId = QString(),
+                                         const QString& prefixMode = QStringLiteral("default-prefix"),
+                                         const QString& customPrefixName = QString(),
+                                         const QString& customPrefixLocation = QString(),
+                                         const QString& prefixArch = QStringLiteral("win64"),
+                                         const QString& coverPath = QString(),
+                                         const QString& bannerPath = QString(),
+                                         const QString& logoPath = QString(),
+                                         bool inPlaceImported = false);
+
     Q_INVOKABLE bool updateGameDetails(const QString& gameId, const QVariantMap& updates);
     Q_INVOKABLE bool setGameArtwork(const QString& gameId,
                                     const QString& coverPath,
@@ -131,7 +152,7 @@ public:
                                     const QString& iconPath);
     Q_INVOKABLE void setGameArtworkFromUrl(const QString& gameId, const QString& type, const QString& url);
     Q_INVOKABLE void refreshArtworkFromSteamGridDb(const QString& gameId);
-    Q_INVOKABLE bool removeGame(const QString& gameId, bool deleteDedicatedPrefix = false);
+    Q_INVOKABLE bool removeGame(const QString& gameId, bool deleteDedicatedPrefix = false, bool deleteGameFiles = false);
 
     Q_INVOKABLE void togglePin(const QString& gameId);
     Q_INVOKABLE void toggleFavorite(const QString& gameId);

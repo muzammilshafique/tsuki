@@ -408,6 +408,106 @@ bool PrefixManager::writeRegistryDllOverrides(const QString& prefixPath, const Q
     return false;
 }
 
+bool PrefixManager::configureEosOverlayRegistry(const QString& prefixPath,
+                                                const QString& overlayDir,
+                                                bool enable) {
+    if (prefixPath.trimmed().isEmpty()) return false;
+    QDir().mkpath(prefixPath);
+
+    QStringList regCandidates = {
+        prefixPath + QStringLiteral("/user.reg"),
+        prefixPath + QStringLiteral("/pfx/user.reg")
+    };
+    QStringList uniqueRegPaths;
+    QSet<QString> seenCanonical;
+    for (const QString& p : regCandidates) {
+        const QFileInfo fi(p);
+        const QString canon = fi.exists() ? fi.canonicalFilePath() : QDir::cleanPath(p);
+        if (!seenCanonical.contains(canon)) {
+            seenCanonical.insert(canon);
+            uniqueRegPaths.append(p);
+        }
+    }
+
+    QString wineOverlayPath = QDir::cleanPath(overlayDir);
+    wineOverlayPath.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    if (wineOverlayPath.startsWith(QLatin1Char('/'))) {
+        wineOverlayPath = QStringLiteral("Z:") + wineOverlayPath;
+    }
+    wineOverlayPath.replace(QLatin1Char('"'), QString());
+
+    bool anyOk = false;
+    for (int i = 0; i < uniqueRegPaths.size(); ++i) {
+        const QString& regPath = uniqueRegPaths.at(i);
+        // Only touch primary user.reg on enable if neither exists yet, or touch existing files on disable
+        const bool exists = QFileInfo::exists(regPath);
+        if (!exists && (!enable || i > 0)) {
+            continue;
+        }
+
+        QFile file(regPath);
+        QString content;
+        if (exists && file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            content = QString::fromUtf8(file.readAll());
+            file.close();
+        } else if (enable) {
+            content = QStringLiteral("WINE REGISTRY Version 2\n;; All keys relative to \\\\User\\\\S-1-5-21-0-0-0-1000\n\n");
+        } else {
+            continue;
+        }
+
+        const QRegularExpression sectionRe(
+            QStringLiteral("\\[Software\\\\\\\\Epic Games\\\\\\\\EOS\\][^\\[]*"),
+            QRegularExpression::CaseInsensitiveOption);
+
+        if (enable && !wineOverlayPath.isEmpty()) {
+            const QString overlayLine = QStringLiteral("\"OverlayPath\"=\"%1\"").arg(wineOverlayPath);
+            QRegularExpressionMatch match = sectionRe.match(content);
+            if (match.hasMatch()) {
+                QString sec = match.captured(0);
+                const QRegularExpression valRe(
+                    QStringLiteral("\"OverlayPath\"\\s*=\\s*\"[^\"]*\""),
+                    QRegularExpression::CaseInsensitiveOption);
+                if (sec.contains(valRe)) {
+                    sec.replace(valRe, overlayLine);
+                } else {
+                    if (!sec.endsWith(QLatin1Char('\n'))) sec.append(QLatin1Char('\n'));
+                    sec.append(overlayLine + QStringLiteral("\n\n"));
+                }
+                content.replace(match.capturedStart(0), match.capturedLength(0), sec);
+            } else {
+                content.append(QStringLiteral("\n[Software\\\\Epic Games\\\\EOS] %1\n%2\n")
+                                   .arg(QDateTime::currentSecsSinceEpoch())
+                                   .arg(overlayLine));
+            }
+        } else {
+            // Remove OverlayPath from section cleanly when disabling EOS overlay
+            QRegularExpressionMatch match = sectionRe.match(content);
+            if (!match.hasMatch()) {
+                anyOk = true;
+                continue;
+            }
+            QString sec = match.captured(0);
+            const QRegularExpression lineRe(
+                QStringLiteral("\"OverlayPath\"\\s*=\\s*\"[^\"]*\"\\r?\\n?"),
+                QRegularExpression::CaseInsensitiveOption);
+            if (!sec.contains(lineRe)) {
+                anyOk = true;
+                continue;
+            }
+            sec.remove(lineRe);
+            content.replace(match.capturedStart(0), match.capturedLength(0), sec);
+        }
+
+        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+            file.write(content.toUtf8());
+            file.close();
+            anyOk = true;
+        }
+    }
+    return anyOk;
+}
+
 bool PrefixManager::setDllOverride(const QString& prefixId, const QString& dllName, const QString& mode) {
     auto pfx = m_db->getPrefix(prefixId);
     if (!pfx.has_value() || dllName.trimmed().isEmpty()) return false;
