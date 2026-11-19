@@ -113,11 +113,32 @@ regenerate_srcinfo() {
     fi
 }
 
+export GIT_TERMINAL_PROMPT=0
+
+retry_cmd() {
+    local attempts="$1"
+    local delay_sec="$2"
+    shift 2
+    local attempt=1
+    while true; do
+        if "$@"; then
+            return 0
+        fi
+        if (( attempt >= attempts )); then
+            echo "Error: Command failed after ${attempts} attempts: $*" >&2
+            return 1
+        fi
+        echo "Warning: Attempt ${attempt}/${attempts} failed; retrying in ${delay_sec}s..." >&2
+        sleep "${delay_sec}"
+        attempt=$((attempt + 1))
+    done
+}
+
 REPO_URL="${AUR_REPO_BASE%/}/${PKG_NAME}.git"
 REPO_DIR="${WORK_DIR}/repo"
 
 echo "=== Cloning AUR repository ${REPO_URL} ==="
-git clone "${REPO_URL}" "${REPO_DIR}"
+retry_cmd 3 5 git clone "${REPO_URL}" "${REPO_DIR}"
 cd "${REPO_DIR}"
 
 HAS_HEAD=0
@@ -217,5 +238,5 @@ else
 fi
 
 git commit -m "${COMMIT_MSG}"
-git push -u origin "HEAD:refs/heads/${AUR_BRANCH}"
+retry_cmd 3 5 git push -u origin "HEAD:refs/heads/${AUR_BRANCH}"
 echo "=== Published ${PKG_NAME} (${FINAL_FULL_VER}) to ${REPO_URL} (${AUR_BRANCH}) ==="

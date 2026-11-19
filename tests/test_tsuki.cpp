@@ -135,6 +135,8 @@ class TestTsuki : public QObject {
   Q_OBJECT
 
 private slots:
+  void initTestCase() { AppSettings::registerApplicationFonts(); }
+
   void testDatabaseCrudAndPlaytime() {
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());
@@ -3067,7 +3069,8 @@ private slots:
     auto *standaloneTitle = tileObj->findChild<QQuickItem *>(
         QStringLiteral("settingTileTitleLabel"));
     QVERIFY(standaloneTitle != nullptr);
-    QCOMPARE(standaloneTitle->property("truncated").toBool(), false);
+    QTRY_VERIFY(standaloneTitle->width() > 0);
+    QTRY_COMPARE(standaloneTitle->property("truncated").toBool(), false);
     tipObj.reset();
     tileObj.reset();
     sectionObj.reset();
@@ -3130,13 +3133,15 @@ private slots:
             QStringLiteral("settingTileTitleLabel"));
         for (QQuickItem *lbl : titleLabels) {
           if (lbl->isVisible()) {
-            QVERIFY2(!lbl->property("truncated").toBool(),
-                     qPrintable(
-                         QStringLiteral("Truncated label on tab %1 (%2x%3): %4")
-                             .arg(t)
-                             .arg(sz.width())
-                             .arg(sz.height())
-                             .arg(lbl->property("text").toString())));
+            // Wait for Qt Quick layout polish after tab visibility transitions
+            QTRY_VERIFY2(
+                lbl->width() > 0 && !lbl->property("truncated").toBool(),
+                qPrintable(
+                    QStringLiteral("Truncated label on tab %1 (%2x%3): %4")
+                        .arg(t)
+                        .arg(sz.width())
+                        .arg(sz.height())
+                        .arg(lbl->property("text").toString())));
           }
         }
       }

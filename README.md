@@ -42,17 +42,56 @@ yay -S tsuki-bin
 yay -S tsuki-git
 ```
 
-Support for Ubuntu/Debian (`.deb`) and Fedora (`.rpm`) will be added later.
+Support is also provided for **AppImage**, **Ubuntu / Debian (`.deb`)**, and **Fedora (`.rpm`)**:
+
+### AppImage (Universal Linux)
+
+Download the `.AppImage` from the [Releases](https://github.com/muzammilshafique/tsuki/releases) page (works on most distributions including Ubuntu 22.04+, Debian 12+, Fedora, Arch, and SteamOS):
+
+```bash
+chmod +x ./Tsuki-*-x86_64.AppImage
+./Tsuki-*-x86_64.AppImage
+```
+
+### Ubuntu / Debian
+
+Download the `.deb` package from the [Releases](https://github.com/muzammilshafique/tsuki/releases) page (requires Qt 6.8+, e.g. Ubuntu 25.10+ / 26.04 LTS or Debian 13 Trixie) and install it:
+
+```bash
+sudo apt install ./tsuki_*_amd64.deb
+```
+
+### Fedora
+
+Download the `.rpm` package from the [Releases](https://github.com/muzammilshafique/tsuki/releases) page and install it:
+
+```bash
+sudo dnf install ./tsuki-*.x86_64.rpm
+```
 
 ## Building from Source
 
-### Dependencies (Arch Linux)
+### Dependencies
+
+**Arch Linux:**
 
 ```bash
-sudo pacman -S cmake ninja pkgconf qt6-base qt6-declarative qt6-svg sdl2 hicolor-icon-theme tar ttf-jetbrains-mono-nerd
+sudo pacman -S cmake ninja pkgconf qt6-base qt6-declarative qt6-svg sdl2 zlib hicolor-icon-theme tar
 ```
 
-Optional runtime packages: `wine`, `winetricks`, `mangohud`, `gamemode`, `7zip`, `vulkan-icd-loader`.
+**Ubuntu / Debian:**
+
+```bash
+sudo apt install cmake ninja-build pkg-config g++ qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-qpa-plugins qt6-svg-plugins libqt6sql6-sqlite qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts qml6-module-qtquick-effects libsdl2-dev zlib1g-dev libgl-dev hicolor-icon-theme tar
+```
+
+**Fedora:**
+
+```bash
+sudo dnf install cmake ninja-build gcc-c++ pkgconf-pkg-config qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel 'pkgconfig(sdl2)' 'pkgconfig(zlib)' hicolor-icon-theme tar
+```
+
+Optional runtime packages: `wine`, `winetricks`, `mangohud`, `gamemode`, `7zip` (`p7zip`), `vulkan-icd-loader` (`vulkan-tools` / `vulkan-loader`), and `ttf-jetbrains-mono-nerd` (Arch).
 
 ### Build, Test, and Install
 

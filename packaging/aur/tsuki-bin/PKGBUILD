@@ -13,15 +13,16 @@ depends=(
     'glibc'
     'gcc-libs'
     'libglvnd'
+    'zlib'
     'qt6-base'
     'qt6-declarative'
     'qt6-svg'
     'sdl2'
     'hicolor-icon-theme'
     'tar'
-    'ttf-jetbrains-mono-nerd'
 )
 optdepends=(
+    'ttf-jetbrains-mono-nerd: Nerd Font monospace glyphs in diagnostic paths and logs'
     'wine: Windows game compatibility via system Wine'
     'winetricks: Windows runtime component installer'
     'mangohud: In-game FPS and performance overlay'

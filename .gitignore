@@ -4,6 +4,9 @@ build-*/
 dist/
 *.pkg.tar.zst
 *.pkg.tar.zst.sig
+*.deb
+*.rpm
+*.AppImage
 packaging/**/src/
 packaging/**/pkg/
 packaging/**/*.tar.gz

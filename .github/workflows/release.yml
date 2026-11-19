@@ -33,14 +33,14 @@ jobs:
           pacman -Sy --noconfirm archlinux-keyring
           pacman -Syu --noconfirm \
             sudo git cmake ninja pkgconf \
-            qt6-base qt6-declarative qt6-svg sdl2 \
-            hicolor-icon-theme tar zstd ttf-jetbrains-mono-nerd \
+            qt6-base qt6-declarative qt6-svg sdl2 zlib \
+            hicolor-icon-theme tar zstd \
             desktop-file-utils appstream
           # Host workspace is bind-mounted as the runner user (UID 1001), while container steps run as root/builduser
           git config --system --add safe.directory '*'
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -95,13 +95,11 @@ jobs:
           pacman -Qip "${PKG_FILE}"
           pacman -Qlp "${PKG_FILE}"
 
-          # Install and test application execution
           pacman -U --noconfirm "${PKG_FILE}"
           QT_QPA_PLATFORM=offscreen tsuki --version
           QT_QPA_PLATFORM=offscreen tsuki --help
           QT_QPA_PLATFORM=offscreen tsuki --smoke-test
 
-          # Verify installed desktop integration, icons, udev rules, and license
           test -f /usr/share/applications/io.github.muzammilshafique.tsuki.desktop
           test -f /usr/share/metainfo/io.github.muzammilshafique.tsuki.metainfo.xml
           test -f /usr/share/icons/hicolor/scalable/apps/io.github.muzammilshafique.tsuki.svg
@@ -109,7 +107,6 @@ jobs:
           test -f /usr/lib/modules-load.d/tsuki-uinput.conf
           test -f /usr/share/licenses/tsuki/LICENSE
 
-          # Test clean uninstall
           pacman -R --noconfirm tsuki
           hash -r
           if [[ -e /usr/bin/tsuki ]] || command -v tsuki >/dev/null 2>&1; then
@@ -147,11 +144,7 @@ jobs:
           test -n "${BIN_PKG}"
           pacman -Qip "${BIN_PKG}"
           pacman -Qlp "${BIN_PKG}"
-          pacman -U --noconfirm "${BIN_PKG}"
-          QT_QPA_PLATFORM=offscreen tsuki --smoke-test
-          pacman -R --noconfirm tsuki-bin
 
-          # Keep only the clean AUR source files for upload
           rm -f aur-tsuki-bin/*.pkg.tar.zst
 
       - name: Generate & Verify AUR tsuki-git Package Files
@@ -175,14 +168,14 @@ jobs:
           grep -qxF $'\tpkgver = '"${{ steps.vars.outputs.git_pkgver }}" aur-tsuki-git/.SRCINFO
 
       - name: Upload Arch Package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: arch-package
           path: dist/*.pkg.tar.zst
           if-no-files-found: error
 
       - name: Upload Updated AUR tsuki-bin Files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aur-tsuki-bin
           path: |
@@ -193,7 +186,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Updated AUR tsuki-git Files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: aur-tsuki-git
           path: |
@@ -203,41 +196,301 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  # Ubuntu (.deb) and Fedora (.rpm) packaging jobs will be added here later.
+  package-deb:
+    name: Package Debian / Ubuntu (.deb)
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie
+    steps:
+      - name: Prepare Debian container and install packaging dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates git cmake ninja-build pkg-config g++ \
+            dpkg-dev binutils file \
+            qt6-base-dev qt6-declarative-dev qt6-svg-dev \
+            qt6-qpa-plugins qt6-svg-plugins libqt6sql6-sqlite \
+            qml6-module-qtquick qml6-module-qtquick-controls \
+            qml6-module-qtquick-layouts qml6-module-qtquick-effects \
+            libsdl2-dev zlib1g-dev libgl-dev hicolor-icon-theme tar
+          git config --system --add safe.directory '*'
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Determine Version
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="${{ github.event.inputs.tag || 'v0.1.1' }}"
+          fi
+          RAW_VERSION="${TAG#v}"
+          echo "raw_version=${RAW_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Debian / Ubuntu Package
+        env:
+          VERSION: ${{ steps.vars.outputs.raw_version }}
+        run: ./packaging/debian/build-deb.sh "${GITHUB_WORKSPACE}/dist"
+
+      - name: Verify Debian Package & Test Install/Uninstall
+        run: |
+          DEB_FILE=$(find dist -maxdepth 1 -name "*.deb" | head -n 1)
+          test -n "${DEB_FILE}"
+          echo "Inspecting Debian package: ${DEB_FILE}"
+          dpkg-deb -I "${DEB_FILE}"
+          dpkg-deb -c "${DEB_FILE}"
+
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get install -y "./${DEB_FILE}"
+          QT_QPA_PLATFORM=offscreen tsuki --version
+          QT_QPA_PLATFORM=offscreen tsuki --help
+          QT_QPA_PLATFORM=offscreen tsuki --smoke-test
+
+          test -f /usr/share/applications/io.github.muzammilshafique.tsuki.desktop
+          test -f /usr/share/metainfo/io.github.muzammilshafique.tsuki.metainfo.xml
+          test -f /usr/share/icons/hicolor/scalable/apps/io.github.muzammilshafique.tsuki.svg
+          test -f /usr/lib/udev/rules.d/70-tsuki-uinput.rules
+          test -f /usr/lib/modules-load.d/tsuki-uinput.conf
+          test -f /usr/share/doc/tsuki/copyright
+
+          apt-get purge -y tsuki
+          hash -r
+          if [[ -e /usr/bin/tsuki ]] || command -v tsuki >/dev/null 2>&1; then
+            echo "Error: tsuki binary still exists after package removal!" >&2
+            exit 1
+          fi
+
+      - name: Upload Debian / Ubuntu Package
+        uses: actions/upload-artifact@v7
+        with:
+          name: deb-package
+          path: dist/*.deb
+          if-no-files-found: error
+
+  package-rpm:
+    name: Package Fedora (.rpm)
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    steps:
+      - name: Prepare Fedora container and install packaging dependencies
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            git cmake ninja-build gcc-c++ pkgconf-pkg-config \
+            rpm-build tar \
+            qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
+            'pkgconfig(sdl2)' 'pkgconfig(zlib)' \
+            hicolor-icon-theme
+          git config --system --add safe.directory '*'
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Determine Version
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="${{ github.event.inputs.tag || 'v0.1.1' }}"
+          fi
+          RAW_VERSION="${TAG#v}"
+          echo "raw_version=${RAW_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Fedora RPM Package
+        env:
+          VERSION: ${{ steps.vars.outputs.raw_version }}
+        run: ./packaging/fedora/build-rpm.sh "${GITHUB_WORKSPACE}/dist"
+
+      - name: Verify Fedora RPM Package & Test Install/Uninstall
+        run: |
+          RPM_FILE=$(find dist -maxdepth 1 -name "*.rpm" | head -n 1)
+          test -n "${RPM_FILE}"
+          echo "Inspecting Fedora RPM package: ${RPM_FILE}"
+          rpm -qip "${RPM_FILE}"
+          rpm -qlp "${RPM_FILE}"
+
+          dnf install -y "./${RPM_FILE}"
+          QT_QPA_PLATFORM=offscreen tsuki --version
+          QT_QPA_PLATFORM=offscreen tsuki --help
+          QT_QPA_PLATFORM=offscreen tsuki --smoke-test
+
+          test -f /usr/share/applications/io.github.muzammilshafique.tsuki.desktop
+          test -f /usr/share/metainfo/io.github.muzammilshafique.tsuki.metainfo.xml
+          test -f /usr/share/icons/hicolor/scalable/apps/io.github.muzammilshafique.tsuki.svg
+          test -f /usr/lib/udev/rules.d/70-tsuki-uinput.rules
+          test -f /usr/lib/modules-load.d/tsuki-uinput.conf
+          test -f /usr/share/licenses/tsuki/LICENSE
+
+          dnf remove -y tsuki
+          hash -r
+          if [[ -e /usr/bin/tsuki ]] || command -v tsuki >/dev/null 2>&1; then
+            echo "Error: tsuki binary still exists after package removal!" >&2
+            exit 1
+          fi
+
+      - name: Upload Fedora RPM Package
+        uses: actions/upload-artifact@v7
+        with:
+          name: rpm-package
+          path: dist/*.rpm
+          if-no-files-found: error
+
+  package-appimage:
+    name: Package AppImage (.AppImage)
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:22.04
+    steps:
+      - name: Prepare Ubuntu 22.04 container and install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git python3 python3-pip p7zip-full file \
+            desktop-file-utils g++ pkg-config \
+            libsdl2-dev zlib1g-dev \
+            libgl1 libegl1 libgl-dev libegl-dev libopengl-dev libvulkan-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libfontconfig1 libfreetype6 libdbus-1-3 libxrender1 libxi6 libsm6 libice6 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0 libx11-xcb1 \
+            libssl3 libsqlite3-0 hicolor-icon-theme tar
+          python3 -m pip install --no-cache-dir --upgrade pip
+          python3 -m pip install --no-cache-dir aqtinstall cmake ninja
+          python3 -m aqt install-qt --outputdir /opt/qt linux desktop 6.8.3 linux_gcc_64 -m qtshadertools qtimageformats
+          git config --system --add safe.directory '*'
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Determine Version
+        id: vars
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="${{ github.event.inputs.tag || 'v0.1.1' }}"
+          fi
+          RAW_VERSION="${TAG#v}"
+          echo "raw_version=${RAW_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build AppImage
+        env:
+          VERSION: ${{ steps.vars.outputs.raw_version }}
+          QT_DIR: /opt/qt/6.8.3/gcc_64
+        run: ./packaging/appimage/build-appimage.sh "${GITHUB_WORKSPACE}/dist"
+
+      - name: Verify AppImage Execution
+        run: |
+          APPIMAGE_FILE=$(find dist -maxdepth 1 -name "*.AppImage" | head -n 1)
+          test -n "${APPIMAGE_FILE}"
+          ls -lh "${APPIMAGE_FILE}"
+          TEST_HOME="$(mktemp -d)"
+          trap 'rm -rf "${TEST_HOME}"' EXIT
+          mkdir -p "${TEST_HOME}/.config" "${TEST_HOME}/.local/share" "${TEST_HOME}/.cache"
+          HOME="${TEST_HOME}" \
+          XDG_CONFIG_HOME="${TEST_HOME}/.config" \
+          XDG_DATA_HOME="${TEST_HOME}/.local/share" \
+          XDG_CACHE_HOME="${TEST_HOME}/.cache" \
+          APPIMAGE_EXTRACT_AND_RUN=1 \
+          QT_QPA_PLATFORM=offscreen \
+          "./${APPIMAGE_FILE}" --version
+          HOME="${TEST_HOME}" \
+          XDG_CONFIG_HOME="${TEST_HOME}/.config" \
+          XDG_DATA_HOME="${TEST_HOME}/.local/share" \
+          XDG_CACHE_HOME="${TEST_HOME}/.cache" \
+          APPIMAGE_EXTRACT_AND_RUN=1 \
+          QT_QPA_PLATFORM=offscreen \
+          "./${APPIMAGE_FILE}" --help
+          HOME="${TEST_HOME}" \
+          XDG_CONFIG_HOME="${TEST_HOME}/.config" \
+          XDG_DATA_HOME="${TEST_HOME}/.local/share" \
+          XDG_CACHE_HOME="${TEST_HOME}/.cache" \
+          APPIMAGE_EXTRACT_AND_RUN=1 \
+          QT_QPA_PLATFORM=offscreen \
+          "./${APPIMAGE_FILE}" --smoke-test
+
+      - name: Upload AppImage Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: appimage-package
+          path: dist/*.AppImage
+          if-no-files-found: error
 
   release:
     name: GitHub Release & Artifacts
     needs:
       - package-arch
+      - package-deb
+      - package-rpm
+      - package-appimage
     runs-on: ubuntu-latest
     steps:
       - name: Download Arch package artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: arch-package
           path: release-artifacts
 
-      - name: Download AUR tsuki-bin artifact
-        uses: actions/download-artifact@v4
+      - name: Download Debian / Ubuntu package artifact
+        uses: actions/download-artifact@v8
         with:
-          name: aur-tsuki-bin
-          path: aur-tsuki-bin
+          name: deb-package
+          path: release-artifacts
 
-      - name: Download AUR tsuki-git artifact
-        uses: actions/download-artifact@v4
+      - name: Download Fedora RPM package artifact
+        uses: actions/download-artifact@v8
         with:
-          name: aur-tsuki-git
-          path: aur-tsuki-git
+          name: rpm-package
+          path: release-artifacts
 
-      - name: Verify Package & Generate Checksums
+      - name: Download AppImage artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: appimage-package
+          path: release-artifacts
+
+      - name: Cross-verify .deb and .AppImage on Ubuntu runner
+        run: |
+          DEB_FILE=$(find release-artifacts -maxdepth 1 -name "*.deb" | head -n 1)
+          APPIMAGE_FILE=$(find release-artifacts -maxdepth 1 -name "*.AppImage" | head -n 1)
+          test -n "${DEB_FILE}"
+          test -n "${APPIMAGE_FILE}"
+
+          sudo apt-get update
+          sudo apt-get install -y "./${DEB_FILE}"
+          QT_QPA_PLATFORM=offscreen tsuki --version
+          QT_QPA_PLATFORM=offscreen tsuki --smoke-test
+          sudo apt-get purge -y tsuki
+
+          chmod +x "${APPIMAGE_FILE}"
+          APPIMAGE_EXTRACT_AND_RUN=1 QT_QPA_PLATFORM=offscreen "./${APPIMAGE_FILE}" --version
+          APPIMAGE_EXTRACT_AND_RUN=1 QT_QPA_PLATFORM=offscreen "./${APPIMAGE_FILE}" --smoke-test
+
+      - name: Verify All Packages & Generate Checksums
+        id: pkgs
         run: |
           ls -la release-artifacts/
-          if ! ls release-artifacts/*.pkg.tar.zst 1>/dev/null 2>&1; then
-            echo "::error::Missing required Arch Linux (.pkg.tar.zst) package!"
+          ARCH_PKG=$(find release-artifacts -maxdepth 1 -name "*.pkg.tar.zst" -printf "%f\n" | head -n 1)
+          DEB_PKG=$(find release-artifacts -maxdepth 1 -name "*.deb" -printf "%f\n" | head -n 1)
+          RPM_PKG=$(find release-artifacts -maxdepth 1 -name "*.rpm" -printf "%f\n" | head -n 1)
+          APPIMAGE_PKG=$(find release-artifacts -maxdepth 1 -name "*.AppImage" -printf "%f\n" | head -n 1)
+
+          if [[ -z "${ARCH_PKG}" || -z "${DEB_PKG}" || -z "${RPM_PKG}" || -z "${APPIMAGE_PKG}" ]]; then
+            echo "::error::Missing required release package(s)! arch=${ARCH_PKG:-none} deb=${DEB_PKG:-none} rpm=${RPM_PKG:-none} appimage=${APPIMAGE_PKG:-none}"
             exit 1
           fi
+
+          echo "arch_pkg=${ARCH_PKG}" >> "$GITHUB_OUTPUT"
+          echo "deb_pkg=${DEB_PKG}" >> "$GITHUB_OUTPUT"
+          echo "rpm_pkg=${RPM_PKG}" >> "$GITHUB_OUTPUT"
+          echo "appimage_pkg=${APPIMAGE_PKG}" >> "$GITHUB_OUTPUT"
+
           cd release-artifacts
-          sha256sum *.pkg.tar.zst > SHA256SUMS
+          sha256sum *.pkg.tar.zst *.deb *.rpm *.AppImage > SHA256SUMS
           echo "Generated SHA256SUMS:"
           cat SHA256SUMS
 
@@ -248,23 +501,37 @@ jobs:
 
           Native Linux Game Launcher for Wine, Proton, and native titles.
 
-          ### Arch Linux Installation
+          ### Installation
 
-          #### Option 1: Direct Pacman Package (`.pkg.tar.zst`)
-          Download `tsuki-${{ needs.package-arch.outputs.pkgver }}-${{ needs.package-arch.outputs.upstream_pkgrel }}-x86_64.pkg.tar.zst` from the assets below and install it with `pacman`:
+          #### Universal Linux (`.AppImage`)
+          Works on most modern Linux distributions (including Ubuntu 22.04+, Debian 12+, Fedora, Arch, and SteamOS):
           ```bash
-          sudo pacman -U ./tsuki-${{ needs.package-arch.outputs.pkgver }}-${{ needs.package-arch.outputs.upstream_pkgrel }}-x86_64.pkg.tar.zst
+          chmod +x ./${{ steps.pkgs.outputs.appimage_pkg }}
+          ./${{ steps.pkgs.outputs.appimage_pkg }}
           ```
 
-          #### Option 2: AUR
-          - **Prebuilt binary (`tsuki-bin`)**: `yay -S tsuki-bin` or `paru -S tsuki-bin`
-          - **Latest git (`tsuki-git`)**: `yay -S tsuki-git` or `paru -S tsuki-git`
+          #### Arch Linux
+          - **Direct Pacman Package (`.pkg.tar.zst`)**:
+            ```bash
+            sudo pacman -U ./${{ steps.pkgs.outputs.arch_pkg }}
+            ```
+          - **AUR**:
+            - Prebuilt binary: `yay -S tsuki-bin` or `paru -S tsuki-bin`
+            - Latest git: `yay -S tsuki-git` or `paru -S tsuki-git`
 
-          > Ubuntu (`.deb`) and Fedora (`.rpm`) packages will be added in a future release.
+          #### Ubuntu / Debian (`.deb` — Ubuntu 25.10+ / 26.04 LTS & Debian 13+)
+          ```bash
+          sudo apt install ./${{ steps.pkgs.outputs.deb_pkg }}
+          ```
+
+          #### Fedora (`.rpm`)
+          ```bash
+          sudo dnf install ./${{ steps.pkgs.outputs.rpm_pkg }}
+          ```
 
           ### Controller Emulation (`/dev/uinput`)
 
-          The Arch package automatically installs `/usr/lib/udev/rules.d/70-tsuki-uinput.rules` and `/usr/lib/modules-load.d/tsuki-uinput.conf` to grant active desktop session users access to `/dev/uinput` for virtual Xbox 360 controller emulation via systemd `uaccess` without root privileges.
+          The `.pkg.tar.zst`, `.deb`, and `.rpm` packages automatically install `/usr/lib/udev/rules.d/70-tsuki-uinput.rules` and `/usr/lib/modules-load.d/tsuki-uinput.conf` to grant active desktop session users access to `/dev/uinput` for virtual Xbox 360 controller emulation via systemd `uaccess` without root privileges. (AppImage users can copy those files from `packaging/udev/` if `/dev/uinput` is not already writable.)
 
           ### Integrity Checksums (SHA-256)
           ```
@@ -274,45 +541,18 @@ jobs:
           ```
           EOF
 
-      - name: Write AUR Summary
-        run: |
-          {
-            echo "### Generated AUR \`tsuki-bin\` Files"
-            echo ""
-            echo "On \`v*\` tag pushes, \`publish-aur\` automatically publishes both \`tsuki-bin\` and \`tsuki-git\` to the AUR after the GitHub Release is created."
-            echo ""
-            echo "#### \`tsuki-bin/PKGBUILD\`"
-            echo '```bash'
-            cat aur-tsuki-bin/PKGBUILD
-            echo '```'
-            echo ""
-            echo "#### \`tsuki-bin/.SRCINFO\`"
-            echo '```ini'
-            cat aur-tsuki-bin/.SRCINFO
-            echo '```'
-            echo ""
-            echo "### Generated AUR \`tsuki-git\` Files"
-            echo ""
-            echo "#### \`tsuki-git/PKGBUILD\`"
-            echo '```bash'
-            cat aur-tsuki-git/PKGBUILD
-            echo '```'
-            echo ""
-            echo "#### \`tsuki-git/.SRCINFO\`"
-            echo '```ini'
-            cat aur-tsuki-git/.SRCINFO
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.package-arch.outputs.tag }}
           name: Tsuki ${{ needs.package-arch.outputs.tag }}
           body_path: RELEASE_NOTES.md
           files: |
             release-artifacts/*.pkg.tar.zst
+            release-artifacts/*.deb
+            release-artifacts/*.rpm
+            release-artifacts/*.AppImage
             release-artifacts/SHA256SUMS
           fail_on_unmatched_files: true
           draft: false
@@ -328,43 +568,51 @@ jobs:
     container:
       image: archlinux:base-devel
     steps:
-      - name: Verify AUR SSH secret is configured
+      - name: Check AUR SSH secret configuration
+        id: auth_check
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
           if [[ -z "${AUR_SSH_PRIVATE_KEY}" ]]; then
-            echo "::error::Missing repository secret AUR_SSH_PRIVATE_KEY. Add your AUR SSH private key in GitHub Settings -> Secrets and variables -> Actions."
-            exit 1
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::AUR_SSH_PRIVATE_KEY is not configured; skipping AUR publish."
+            echo "AUR publish skipped because \`AUR_SSH_PRIVATE_KEY\` secret is not configured." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install git, OpenSSH, and curl
+        if: steps.auth_check.outputs.enabled == 'true'
         run: |
           sed -i 's/^#DisableSandbox/DisableSandbox/' /etc/pacman.conf
           pacman -Sy --noconfirm archlinux-keyring
           pacman -Syu --noconfirm git openssh curl
-          # Host workspace is bind-mounted as the runner user (UID 1001), while container steps run as root
           git config --system --add safe.directory '*'
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        if: steps.auth_check.outputs.enabled == 'true'
+        uses: actions/checkout@v7
 
       - name: Setup Non-Root Build User
-        run: |
-          useradd -m -s /bin/bash builduser
+        if: steps.auth_check.outputs.enabled == 'true'
+        run: useradd -m -s /bin/bash builduser
 
       - name: Download AUR tsuki-bin artifact
-        uses: actions/download-artifact@v4
+        if: steps.auth_check.outputs.enabled == 'true'
+        uses: actions/download-artifact@v8
         with:
           name: aur-tsuki-bin
           path: aur-tsuki-bin
 
       - name: Download AUR tsuki-git artifact
-        uses: actions/download-artifact@v4
+        if: steps.auth_check.outputs.enabled == 'true'
+        uses: actions/download-artifact@v8
         with:
           name: aur-tsuki-git
           path: aur-tsuki-git
 
       - name: Verify published GitHub Release asset for tsuki-bin
+        if: steps.auth_check.outputs.enabled == 'true'
         run: |
           ASSET_URL=$(awk -F' = ' '/^\tsource_x86_64 = /{print $2; exit}' aur-tsuki-bin/.SRCINFO | sed 's/^[^:]*:://')
           EXPECTED_SHA=$(awk -F' = ' '/^\tsha256sums_x86_64 = /{print $2; exit}' aur-tsuki-bin/.SRCINFO)
@@ -382,6 +630,7 @@ jobs:
           echo "Verified live release asset ${ASSET_URL} (sha256=${ACTUAL_SHA})"
 
       - name: Configure AUR SSH authentication
+        if: steps.auth_check.outputs.enabled == 'true'
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
@@ -401,6 +650,7 @@ jobs:
           chmod 644 /root/.ssh/known_hosts
 
       - name: Publish tsuki-bin and tsuki-git to AUR
+        if: steps.auth_check.outputs.enabled == 'true'
         env:
           GIT_SSH_COMMAND: ssh -F /dev/null -i /root/.ssh/aur -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile=/root/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes
           AUR_GIT_NAME: ${{ vars.AUR_GIT_NAME || 'Muzammil Shafique' }}
@@ -438,4 +688,3 @@ jobs:
       - name: Clean up SSH credentials
         if: always()
         run: rm -rf /root/.ssh
-
