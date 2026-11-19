@@ -2167,7 +2167,7 @@ Page {
                                                             id: verLbl
                                                             objectName: "aboutVersionLabel"
                                                             anchors.centerIn: parent
-                                                            text: "v" + (Qt.application.version || "0.1.1")
+                                                            text: "v" + (Qt.application.version || "0.2.0")
                                                             color: appSettings.onSecondaryContainer
                                                             font.family: "JetBrains Mono NF"
                                                             font.pixelSize: 11

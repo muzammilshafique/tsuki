@@ -3079,7 +3079,7 @@ private slots:
     // labels, keyboard cycling, and cross-tab search
 #if !TSUKI_VERSION_OVERRIDDEN
     QCOMPARE(QStringLiteral(TSUKI_VERSION),
-             QStringLiteral(TSUKI_PROJECT_VERSION));
+             QStringLiteral(TSUKI_DEFAULT_VERSION));
 #endif
     const QString prevAppVersion = QCoreApplication::applicationVersion();
     const auto restoreAppVersion = qScopeGuard(

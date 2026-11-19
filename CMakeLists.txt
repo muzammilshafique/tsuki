@@ -1,5 +1,20 @@
 cmake_minimum_required(VERSION 3.24)
-project(tsuki VERSION 0.1.1 LANGUAGES CXX)
+
+# Single source of truth for the application version lives in the root VERSION file.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" _tsuki_file_version)
+string(STRIP "${_tsuki_file_version}" _tsuki_file_version)
+if(_tsuki_file_version STREQUAL "")
+    message(FATAL_ERROR "VERSION file must not be empty")
+endif()
+string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" _tsuki_cmake_version "${_tsuki_file_version}")
+if(_tsuki_cmake_version STREQUAL "")
+    set(_tsuki_cmake_version "0.0.0")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/VERSION"
+)
+
+project(tsuki VERSION ${_tsuki_cmake_version} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -76,22 +91,22 @@ target_link_libraries(tsuki_core PUBLIC
     ZLIB::ZLIB
 )
 
-# Leave TSUKI_VERSION empty by default so updates to project(tsuki VERSION ...)
+# Leave TSUKI_VERSION empty by default so updates to the root VERSION file
 # propagate without getting pinned in CMakeCache; packagers can still pass
 # -DTSUKI_VERSION=<ver> on the CLI. Also migrate any stale cached default left
 # behind by older CMakeLists that stored PROJECT_VERSION directly in the cache.
 if(DEFINED TSUKI_VERSION AND NOT TSUKI_VERSION STREQUAL "")
     get_property(_tsuki_ver_help CACHE TSUKI_VERSION PROPERTY HELPSTRING)
-    if(_tsuki_ver_help STREQUAL "Application display version" AND TSUKI_VERSION VERSION_LESS PROJECT_VERSION)
-        set(TSUKI_VERSION "" CACHE STRING "Optional override for application display version (defaults to PROJECT_VERSION)" FORCE)
+    if(_tsuki_ver_help STREQUAL "Application display version" AND TSUKI_VERSION VERSION_LESS _tsuki_file_version)
+        set(TSUKI_VERSION "" CACHE STRING "Optional override for application display version (defaults to VERSION file)" FORCE)
     endif()
 endif()
-set(TSUKI_VERSION "" CACHE STRING "Optional override for application display version (defaults to PROJECT_VERSION)")
+set(TSUKI_VERSION "" CACHE STRING "Optional override for application display version (defaults to VERSION file)")
 if(NOT TSUKI_VERSION STREQUAL "")
     set(_TSUKI_EFFECTIVE_VERSION "${TSUKI_VERSION}")
     set(_TSUKI_VERSION_OVERRIDDEN 1)
 else()
-    set(_TSUKI_EFFECTIVE_VERSION "${PROJECT_VERSION}")
+    set(_TSUKI_EFFECTIVE_VERSION "${_tsuki_file_version}")
     set(_TSUKI_VERSION_OVERRIDDEN 0)
 endif()
 
@@ -112,6 +127,7 @@ add_executable(tsuki_tests
 target_compile_definitions(tsuki_tests PRIVATE
     TSUKI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     TSUKI_VERSION="${_TSUKI_EFFECTIVE_VERSION}"
+    TSUKI_DEFAULT_VERSION="${_tsuki_file_version}"
     TSUKI_PROJECT_VERSION="${PROJECT_VERSION}"
     TSUKI_VERSION_OVERRIDDEN=${_TSUKI_VERSION_OVERRIDDEN}
 )

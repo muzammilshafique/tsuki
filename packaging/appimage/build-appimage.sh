@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RAW_VERSION="${VERSION:-$(git -C "${ROOT_DIR}" describe --tags --abbrev=0 2>/dev/null || echo '0.1.1')}"
+DEFAULT_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/VERSION" 2>/dev/null || git -C "${ROOT_DIR}" describe --tags --abbrev=0 2>/dev/null || echo '0.2.0')"
+RAW_VERSION="${VERSION:-${DEFAULT_VERSION}}"
 RAW_VERSION="${RAW_VERSION#v}"
 ARCH="${APPIMAGE_ARCH:-x86_64}"
 OUTPUT_DIR="${1:-${ROOT_DIR}/dist}"
@@ -41,6 +42,40 @@ if [[ -z "${QMAKE_BIN}" ]]; then
 fi
 export QMAKE="${QMAKE_BIN}"
 QT_PLUGINS_DIR="$("${QMAKE}" -query QT_INSTALL_PLUGINS)"
+
+# Stage a filtered Qt plugins tree so linuxdeploy-plugin-qt does not try to deploy
+# unused SQL drivers (e.g. libqsqlmysql.so needing libmysqlclient.so.21).
+STAGED_QT_PLUGINS="${WORK_DIR}/qt-plugins"
+mkdir -p "${STAGED_QT_PLUGINS}"
+for entry in "${QT_PLUGINS_DIR}"/*; do
+    [[ -e "${entry}" ]] || continue
+    name="$(basename "${entry}")"
+    if [[ "${name}" == "sqldrivers" ]]; then
+        if [[ -f "${entry}/libqsqlite.so" ]]; then
+            mkdir -p "${STAGED_QT_PLUGINS}/sqldrivers"
+            cp -a "${entry}/libqsqlite.so" "${STAGED_QT_PLUGINS}/sqldrivers/libqsqlite.so"
+        fi
+    else
+        ln -sf "${entry}" "${STAGED_QT_PLUGINS}/${name}"
+    fi
+done
+
+mkdir -p "${WORK_DIR}/bin"
+QMAKE_WRAPPER="${WORK_DIR}/bin/qmake"
+cat << EOF > "${QMAKE_WRAPPER}"
+#!/usr/bin/env bash
+if [[ "\${1:-}" == "-query" ]]; then
+    if [[ "\${2:-}" == "QT_INSTALL_PLUGINS" ]]; then
+        printf '%s\n' "${STAGED_QT_PLUGINS}"
+    else
+        "${QMAKE_BIN}" "\$@" | sed "s|^QT_INSTALL_PLUGINS:.*|QT_INSTALL_PLUGINS:${STAGED_QT_PLUGINS}|"
+    fi
+else
+    exec "${QMAKE_BIN}" "\$@"
+fi
+EOF
+chmod +x "${QMAKE_WRAPPER}"
+export QMAKE="${QMAKE_WRAPPER}"
 
 cmake -S "${ROOT_DIR}" -B "${WORK_DIR}/build" \
     -G Ninja \
