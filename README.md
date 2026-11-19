@@ -1,6 +1,6 @@
 # Tsuki
 
-A Linux game launcher for Wine, Proton, and native Linux games, written in C++20 and Qt 6 / QML.
+A Linux game launcher for Wine, Proton, native Linux games, and the Epic Games Store, written in C++20 and Qt 6 / QML.
 
 ## Screenshots
 
@@ -10,15 +10,21 @@ A Linux game launcher for Wine, Proton, and native Linux games, written in C++20
 
 ## Features
 
-- Manage Windows games (Wine / Proton) and native Linux games in one library
-- Download and manage Proton-GE and Proton-CachyOS runners, or use system Wine
+- Manage Windows games (Wine / Proton), native Linux games, and Epic Games titles in one library
+- **Native Epic Games Store integration** (100% C++20/Qt6 — zero `QtWebEngine` or external CLI required):
+  - External-browser OAuth token sign-in and persistent session refresh
+  - Native binary/JSON manifest parsing and multi-threaded zlib/SHA-1 chunk downloading, pause/resume, and file verification
+  - **Import existing installations** (e.g. Heroic Games Launcher folders) with **Copy**, **Move**, or **Keep in Place** transfer modes, runner/prefix selection, and optional disk cleanup when uninstalling
+  - Online multiplayer support via OAuth exchange codes, native **EOS Social Overlay** installation & prefix registry management, and toggleable Epic library badges
+- Download and manage Proton-GE and Proton-CachyOS runners, or use system Wine and Steam Proton installations
+- Auto-detect or 1-click install **Proton EasyAntiCheat (EAC)** and **BattlEye** anti-cheat runtimes
 - Create, clone, back up, and restore isolated Wine prefixes
 - Built-in Winetricks component installer
 - Automatic cover, banner, logo, and icon fetching via SteamGridDB
 - Virtual Xbox 360 controller emulation over `/dev/uinput` (with udev rule included)
-- Optional MangoHud and Feral GameMode integration
+- Optional MangoHud, Feral GameMode, and Gamescope microcompositor integration
 - System diagnostics and per-game launch logs
-- Proper Gamepad navigation support for the app (supports PS and Xbox gamepad)
+- Full Keyboard & Gamepad navigation support across the launcher (PlayStation and Xbox prompts)
 
 ## Installation
 
@@ -91,7 +97,7 @@ sudo apt install cmake ninja-build pkg-config g++ qt6-base-dev qt6-declarative-d
 sudo dnf install cmake ninja-build gcc-c++ pkgconf-pkg-config qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel 'pkgconfig(sdl2)' 'pkgconfig(zlib)' hicolor-icon-theme tar
 ```
 
-Optional runtime packages: `wine`, `winetricks`, `mangohud`, `gamemode`, `7zip` (`p7zip`), `vulkan-icd-loader` (`vulkan-tools` / `vulkan-loader`), and `ttf-jetbrains-mono-nerd` (Arch).
+Optional runtime packages: `wine`, `winetricks`, `mangohud`, `gamemode`, `gamescope`, `7zip` (`p7zip`), `vulkan-icd-loader` (`vulkan-tools` / `vulkan-loader`), and `ttf-jetbrains-mono-nerd` (Arch).
 
 ### Build, Test, and Install
 
