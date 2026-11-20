@@ -2,6 +2,8 @@
     <qresource prefix="/tsuki_app">
         <file alias="qml/Main.qml">../src/qml/Main.qml</file>
         <file alias="qml/components/YIcon.qml">../src/qml/components/YIcon.qml</file>
+        <file alias="qml/components/RoundedCover.qml">../src/qml/components/RoundedCover.qml</file>
+        <file alias="shaders/rounded_cover.frag.qsb">shaders/rounded_cover.frag.qsb</file>
         <file alias="qml/components/GamepadPrompt.qml">../src/qml/components/GamepadPrompt.qml</file>
         <file alias="qml/components/NavigationHudBar.qml">../src/qml/components/NavigationHudBar.qml</file>
         <file alias="qml/components/AddGameDialog.qml">../src/qml/components/AddGameDialog.qml</file>

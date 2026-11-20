@@ -89,9 +89,9 @@ Item {
                 Behavior on border.color { ColorAnimation { duration: 150 } }
                 Behavior on scale { NumberAnimation { duration: 120 } }
 
-                Keys.onReturnPressed: (event) => { event.accepted = true; scanRotateAnim.restart(); uiController.runnerManager.detectInstalledRunners() }
-                Keys.onEnterPressed: (event) => { event.accepted = true; scanRotateAnim.restart(); uiController.runnerManager.detectInstalledRunners() }
-                Keys.onSpacePressed: (event) => { event.accepted = true; scanRotateAnim.restart(); uiController.runnerManager.detectInstalledRunners() }
+                Keys.onReturnPressed: (event) => { event.accepted = true; scanRotateAnim.restart(); uiController.runnerManager.detectInstalledRunners(); uiController.runnerManager.fetchAvailableReleases(root.selectedReleaseCat, true) }
+                Keys.onEnterPressed: (event) => { event.accepted = true; scanRotateAnim.restart(); uiController.runnerManager.detectInstalledRunners(); uiController.runnerManager.fetchAvailableReleases(root.selectedReleaseCat, true) }
+                Keys.onSpacePressed: (event) => { event.accepted = true; scanRotateAnim.restart(); uiController.runnerManager.detectInstalledRunners(); uiController.runnerManager.fetchAvailableReleases(root.selectedReleaseCat, true) }
                 Keys.onDownPressed: (event) => {
                     event.accepted = true
                     if (installedList.count === 0 && dlSection.visible && dlRepeater.count > 0) {
@@ -147,6 +147,7 @@ Item {
                     onClicked: {
                         scanRotateAnim.restart()
                         uiController.runnerManager.detectInstalledRunners()
+                        uiController.runnerManager.fetchAvailableReleases(root.selectedReleaseCat, true)
                     }
                 }
             }

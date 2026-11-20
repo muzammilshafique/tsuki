@@ -23,6 +23,11 @@ Item {
     readonly property bool hasTitleBelow: appSettings.titleVisibility === 0
     readonly property int metaHeight: hasTitleBelow ? (appSettings.tagPosition === 0 || appSettings.tagPosition === 1 ? 52 : 32) : 0
     readonly property int columns: Math.max(1, Math.floor(epicGrid.width / epicGrid.cellWidth))
+    readonly property int coverSourceWidth: Math.max(
+        192,
+        Math.min(512, Math.ceil((Math.max(160, epicGrid.cellWidth - 16) * Math.max(1.0, Screen.devicePixelRatio)) / 64) * 64)
+    )
+    readonly property int coverSourceHeight: Math.round(coverSourceWidth * 1.5)
 
     readonly property var sortOptions: [
         { label: "Title (A → Z)",     mode: 0 },
@@ -47,11 +52,20 @@ Item {
         }
     }
 
-    onVisibleChanged: {
+    function maybeSyncInitialLibrary() {
         if (visible && isSignedIn && epicModel && epicModel.count === 0 && !isSyncing) {
             epicSvc.syncLibrary()
         }
     }
+
+    Component.onCompleted: {
+        if (root.epicModel && root.epicModel.searchQuery && epicSearchField.text !== root.epicModel.searchQuery) {
+            epicSearchField.text = root.epicModel.searchQuery
+        }
+        maybeSyncInitialLibrary()
+    }
+
+    onVisibleChanged: maybeSyncInitialLibrary()
 
     // ═══════════════════════════════════════════════════════════════════════════
     // SIGNED-OUT VIEW: Heroic-Style Browser Token Login (No WebEngine)
@@ -639,6 +653,7 @@ Item {
                     readonly property bool isMouseActive: (!uiController || !uiController.isKeyboardNavActive) && eHoverMouse.containsMouse
                     readonly property bool isTvFocused: Boolean(uiController && uiController.isKeyboardNavActive) && eCell.GridView.isCurrentItem && epicGrid.activeFocus
                     readonly property bool isHoveredOrFocused: isTvFocused || isMouseActive
+                    readonly property bool isCardBlurred: appSettings.titleVisibility === 1 && isHoveredOrFocused
                     z: isTvFocused ? 50 : (isMouseActive ? 20 : 1)
 
                     Item {
@@ -660,8 +675,9 @@ Item {
                             anchors.margins: 1
                             radius: Math.max(0, root.cardRadius - 1)
                             color: "white"
+                            antialiasing: true
                             visible: false
-                            layer.enabled: true
+                            layer.enabled: eCardContent.needsBlurLayer
                             layer.smooth: true
                         }
 
@@ -669,7 +685,13 @@ Item {
                             id: eCardContent
                             anchors.fill: parent
                             anchors.margins: 1
-                            layer.enabled: true
+                            property real blurAmount: eCell.isCardBlurred ? 1.0 : 0.0
+                            property real blurBrightness: eCell.isCardBlurred ? -0.25 : 0.0
+                            Behavior on blurAmount { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                            Behavior on blurBrightness { NumberAnimation { duration: 180 } }
+                            readonly property bool needsBlurLayer: eCell.isCardBlurred || blurAmount > 0.01
+
+                            layer.enabled: needsBlurLayer
                             layer.smooth: true
                             layer.effect: MultiEffect {
                                 autoPaddingEnabled: false
@@ -677,13 +699,18 @@ Item {
                                 maskSource: eMask
                                 maskThresholdMin: 0.5
                                 maskSpreadAtMin: 1.0
-                                blurEnabled: appSettings.titleVisibility === 1 && eCell.isHoveredOrFocused
-                                blur: (appSettings.titleVisibility === 1 && eCell.isHoveredOrFocused) ? 1.0 : 0.0
-                                blurMax: (appSettings.titleVisibility === 1 && eCell.isHoveredOrFocused) ? 28 : 0
-                                brightness: (appSettings.titleVisibility === 1 && eCell.isHoveredOrFocused) ? -0.25 : 0.0
+                                blurEnabled: true
+                                blur: eCardContent.blurAmount
+                                blurMax: 28
+                                brightness: eCardContent.blurBrightness
                             }
 
-                            Rectangle { anchors.fill: parent; color: appSettings.surfaceColor }
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: Math.max(0, root.cardRadius - 1)
+                                color: appSettings.surfaceColor
+                                antialiasing: true
+                            }
 
                             // Bottom metadata (when titleVisibility === 0)
                             Item {
@@ -755,18 +782,16 @@ Item {
                             Item {
                                 anchors { left: parent.left; right: parent.right; top: parent.top }
                                 anchors.bottom: eMetaArea.visible ? eMetaArea.top : parent.bottom
-                                clip: true
 
-                                Rectangle { anchors.fill: parent; color: appSettings.surfaceAltColor }
-
-                                Image {
+                                RoundedCover {
                                     id: eCoverImg
                                     anchors.fill: parent
                                     source: eCell.coverPath
-                                    sourceSize.width: 320; sourceSize.height: 480
-                                    fillMode: Image.PreserveAspectCrop; asynchronous: true
-                                    smooth: true; mipmap: true
-                                    visible: status === Image.Ready
+                                    sourceWidth: root.coverSourceWidth
+                                    sourceHeight: root.coverSourceHeight
+                                    topRadius: Math.max(0, root.cardRadius - 1)
+                                    bottomRadius: root.metaHeight > 0 ? 0 : Math.max(0, root.cardRadius - 1)
+                                    placeholderColor: appSettings.surfaceAltColor
                                 }
 
                                 YIcon {
@@ -781,12 +806,21 @@ Item {
                                 // Live download progress strip at bottom of poster
                                 Rectangle {
                                     visible: eCell.isDownloading
-                                    anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                                    anchors {
+                                        left: parent.left
+                                        right: parent.right
+                                        bottom: parent.bottom
+                                        leftMargin: root.metaHeight === 0 ? Math.min(root.cardRadius * 0.5, 6) : 0
+                                        rightMargin: root.metaHeight === 0 ? Math.min(root.cardRadius * 0.5, 6) : 0
+                                        bottomMargin: root.metaHeight === 0 ? 2 : 0
+                                    }
                                     height: 5
+                                    radius: root.metaHeight === 0 ? 2.5 : 0
                                     color: Qt.rgba(0, 0, 0, 0.65)
                                     Rectangle {
                                         height: parent.height
                                         width: parent.width * Math.max(0.0, Math.min(1.0, eCell.downloadProgress / 100.0))
+                                        radius: parent.radius
                                         color: eCell.isPaused ? "#f59e0b" : appSettings.accentColor
                                     }
                                 }

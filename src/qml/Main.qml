@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "home"
-import "pages"
 import "components"
 
 ApplicationWindow {
@@ -82,56 +81,102 @@ ApplicationWindow {
 
         initialItem: HomePage {
             id: homePage
+            externalModalOpen: window.isWinetricksOpen
             onGameDetailsRequested: function(gameId, epicAppName) {
-                stack.push(detailPageComponent, { gameId: gameId || "", epicAppName: epicAppName || "" })
+                window.openGameDetailPage(gameId, epicAppName)
             }
             onSettingsRequested: {
-                stack.push(settingsPageComponent)
+                window.openSettingsPage()
+            }
+            onWinetricksRequested: function(prefixId, title) {
+                window.openWinetricks(prefixId, title)
             }
         }
     }
 
-    Component {
-        id: settingsPageComponent
-        SettingsPage {
-            onBackRequested: stack.pop()
+    property string _pendingWtPrefixId: ""
+    property string _pendingWtTitle: ""
+    readonly property bool isWinetricksOpen: Boolean(winetricksLoader.item && winetricksLoader.item.visible)
+
+    function openSettingsPage() {
+        if (stack.currentItem && stack.currentItem.objectName === "settingsPage") return
+        const item = stack.push(Qt.resolvedUrl("pages/SettingsPage.qml"))
+        if (item) {
+            item.backRequested.connect(function() { stack.pop() })
         }
     }
 
-    Component {
-        id: detailPageComponent
-        GameDetailPage {
-            onBackRequested: stack.pop()
-            onWinetricksRequested: function(prefixId, gameTitle) {
-                globalWinetricksModal.openForPrefix(prefixId, gameTitle)
+    function openGameDetailPage(gameId, epicAppName) {
+        const item = stack.push(Qt.resolvedUrl("pages/GameDetailPage.qml"), {
+            gameId: gameId || "",
+            epicAppName: epicAppName || ""
+        })
+        if (item) {
+            item.externalModalOpen = Qt.binding(function() { return window.isWinetricksOpen })
+            item.backRequested.connect(function() { stack.pop() })
+            item.winetricksRequested.connect(function(prefixId, gameTitle) {
+                window.openWinetricks(prefixId, gameTitle)
+            })
+        }
+    }
+
+    function openWinetricks(prefixId, title) {
+        _pendingWtPrefixId = prefixId || "default-prefix"
+        _pendingWtTitle = title || "Default"
+        if (winetricksLoader.item) {
+            winetricksLoader.item.openForPrefix(_pendingWtPrefixId, _pendingWtTitle)
+        } else {
+            winetricksLoader.active = true
+        }
+    }
+
+    Loader {
+        id: winetricksLoader
+        anchors.fill: parent
+        active: false
+        source: active ? Qt.resolvedUrl("components/WinetricksModal.qml") : ""
+        onLoaded: {
+            if (item) {
+                item.openForPrefix(window._pendingWtPrefixId, window._pendingWtTitle)
             }
         }
     }
 
-    WinetricksModal {
-        id: globalWinetricksModal
+    Connections {
+        target: winetricksLoader.item
+        function onClosed() {
+            Qt.callLater(function() {
+                if (!winetricksLoader.item || !winetricksLoader.item.visible) {
+                    winetricksLoader.active = false
+                }
+                if (stack.currentItem
+                        && typeof stack.currentItem.focusActiveSectionContent === "function"
+                        && !(stack.currentItem.isAnyModalOpen && stack.currentItem.isAnyModalOpen())) {
+                    stack.currentItem.focusActiveSectionContent()
+                }
+            })
+        }
     }
 
     Connections {
         target: uiController ? uiController.controllerManager : null
         function onSettingsActionRequested() {
-            if (globalWinetricksModal.visible) return
-            if (stack.currentItem && stack.currentItem.objectName === "settingsPage") return
-            stack.push(settingsPageComponent)
+            if (window.isWinetricksOpen) return
+            window.openSettingsPage()
         }
     }
 
     Shortcut {
         sequence: "Tab"
         context: Qt.ApplicationShortcut
-        enabled: !globalWinetricksModal.visible
+        enabled: !window.isWinetricksOpen
                  && !(stack.currentItem && stack.currentItem.isAnyModalOpen && stack.currentItem.isAnyModalOpen())
                  && !(stack.currentItem && stack.currentItem.isModalOpen)
                  && !(stack.currentItem && stack.currentItem.isTextInputActive && stack.currentItem.isTextInputActive())
                  && (stack.currentItem ? stack.currentItem.objectName !== "settingsPage" : true)
         onActivated: {
             if (uiController) uiController.setKeyboardNavActive(true)
-            stack.push(settingsPageComponent)
+            window.openSettingsPage()
         }
     }
 

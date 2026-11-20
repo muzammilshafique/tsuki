@@ -15,6 +15,7 @@ Page {
     property bool isSaving: false
     property int gamescopeStateDraft: -1
     property var gamescopeDraft: ({})
+    property bool externalModalOpen: false
 
     readonly property bool isEpicEntry: root.epicAppName.length > 0 || Boolean(root.gameData.isEpic)
     readonly property bool isUninstalledEpic: root.isEpicEntry && root.gameId.length === 0
@@ -108,7 +109,7 @@ Page {
     }
 
     function isAnyPopupOpen() {
-        if (actionsPopup.visible || artworkUrlDialog.visible || removeGameDialog.visible || gamescopeDialog.visible || epicDownloadDialog.visible) return true
+        if (root.externalModalOpen || actionsPopup.visible || artworkUrlDialog.visible || removeGameDialog.visible || gamescopeDialog.visible || epicDownloadDialog.visible || epicImportDialog.visible) return true
         if (typeof detailRunnerCombo !== "undefined" && detailRunnerCombo.popup.visible) return true
         if (typeof detailPrefixCombo !== "undefined" && detailPrefixCombo.popup.visible) return true
         if (typeof hudCombo !== "undefined" && hudCombo.popup.visible) return true
@@ -613,6 +614,7 @@ Page {
                     id: bannerImg
                     anchors.fill: parent
                     source: root.displayData.bannerPath || ""
+                    sourceSize.width: 1920
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                 }
@@ -683,6 +685,8 @@ Page {
                             id: gameLogoImg
                             anchors.fill: parent
                             source: gameLogoCard.logoSource
+                            sourceSize.width: 640
+                            sourceSize.height: 260
                             fillMode: Image.PreserveAspectFit
                             horizontalAlignment: Image.AlignLeft
                             verticalAlignment: Image.AlignBottom
@@ -1226,7 +1230,7 @@ Page {
                                     border.width: 0
                                     radius: 16
 
-                                    layer.enabled: true
+                                    layer.enabled: actionsPopup.visible
                                     layer.effect: MultiEffect {
                                         shadowEnabled: true
                                         shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.45 : 0.18)
@@ -3049,6 +3053,8 @@ Page {
                                         Image {
                                             anchors.fill: parent
                                             source: root.gameData.coverPath || ""
+                                            sourceSize.width: 96
+                                            sourceSize.height: 144
                                             fillMode: Image.PreserveAspectCrop
                                             asynchronous: true
                                         }
@@ -3105,6 +3111,8 @@ Page {
                                         Image {
                                             anchors.fill: parent
                                             source: root.gameData.bannerPath || ""
+                                            sourceSize.width: 192
+                                            sourceSize.height: 96
                                             fillMode: Image.PreserveAspectCrop
                                             asynchronous: true
                                         }
@@ -3161,6 +3169,8 @@ Page {
                                         Image {
                                             anchors.fill: parent
                                             source: root.gameData.logoPath || ""
+                                            sourceSize.width: 160
+                                            sourceSize.height: 96
                                             fillMode: Image.PreserveAspectFit
                                             asynchronous: true
                                         }
@@ -3217,6 +3227,8 @@ Page {
                                         Image {
                                             anchors.fill: parent
                                             source: root.gameData.iconPath || ""
+                                            sourceSize.width: 96
+                                            sourceSize.height: 96
                                             fillMode: Image.PreserveAspectCrop
                                             asynchronous: true
                                         }
@@ -3392,7 +3404,7 @@ Page {
             Behavior on color { ColorAnimation { duration: 150 } }
             Behavior on scale { NumberAnimation { duration: 100 } }
 
-            layer.enabled: true
+            layer.enabled: backBtn.visible
             layer.effect: MultiEffect {
                 shadowEnabled: true
                 shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.50 : 0.20)

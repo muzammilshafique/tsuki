@@ -2,21 +2,36 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
-import "../pages"
 
 Page {
     id: page
 
     signal gameDetailsRequested(string gameId, string epicAppName)
     signal settingsRequested()
+    signal winetricksRequested(string prefixId, string title)
     property string activeSection: "library"
+    property bool externalModalOpen: false
+    property string _pendingFocusSection: ""
+    property string _pendingAddGamePlatform: "windows"
+    property string _runnersCategory: "proton-ge"
+
+    readonly property bool isAddGameOpen: Boolean(addGameDialogLoader.item && addGameDialogLoader.item.visible)
 
     function openWinetricks(prefixId, title) {
-        winetricksModal.openForPrefix(prefixId, title)
+        page.winetricksRequested(prefixId, title)
+    }
+
+    function openAddGameDialog(platform) {
+        _pendingAddGamePlatform = (platform === "linux") ? "linux" : "windows"
+        if (addGameDialogLoader.item) {
+            addGameDialogLoader.item.resetAndOpen(_pendingAddGamePlatform)
+        } else {
+            addGameDialogLoader.active = true
+        }
     }
 
     function isAnyModalOpen() {
-        return addGameDialog.visible || winetricksModal.visible || (topBar.visible && topBar.isAddMenuOpen)
+        return page.isAddGameOpen || page.externalModalOpen || (topBar.visible && topBar.isAddMenuOpen)
     }
 
     function isTextInputActive() {
@@ -29,12 +44,28 @@ Page {
         return s.indexOf("TextInput") !== -1 || s.indexOf("TextField") !== -1 || s.indexOf("TextArea") !== -1 || s.indexOf("TextEdit") !== -1
     }
 
+    function _focusLoaderSection(sec, loader) {
+        if (loader && loader.item && typeof loader.item.forceFocus === "function") {
+            _pendingFocusSection = ""
+            loader.item.forceFocus()
+        } else {
+            _pendingFocusSection = sec
+        }
+    }
+
     function focusActiveSectionContent() {
-        if (page.activeSection === "library") grid.forceFocus()
-        else if (page.activeSection === "epic") epicView.forceFocus()
-        else if (page.activeSection === "runners") runnersView.forceFocus()
-        else if (page.activeSection === "prefixes") prefixesView.forceFocus()
-        else if (page.activeSection === "diagnostics") diagnosticsView.forceFocus()
+        if (page.activeSection === "library") {
+            _pendingFocusSection = ""
+            grid.forceFocus()
+        } else if (page.activeSection === "epic") {
+            _focusLoaderSection("epic", epicLoader)
+        } else if (page.activeSection === "runners") {
+            _focusLoaderSection("runners", runnersLoader)
+        } else if (page.activeSection === "prefixes") {
+            _focusLoaderSection("prefixes", prefixesLoader)
+        } else if (page.activeSection === "diagnostics") {
+            _focusLoaderSection("diagnostics", diagnosticsLoader)
+        }
     }
 
     function cycleTab(delta) {
@@ -133,7 +164,7 @@ Page {
 
     Shortcut {
         sequences: ["Ctrl+N"]
-        enabled: page.visible && !addGameDialog.visible && !winetricksModal.visible
+        enabled: page.visible && !page.isAddGameOpen && !page.externalModalOpen
         onActivated: {
             if (page.activeSection !== "library") {
                 page.activeSection = "library"
@@ -177,7 +208,7 @@ Page {
                 onSearchRequested: (query) => {
                     uiController.search(query, sidebar.currentFilter)
                 }
-                onAddGameRequested: (platform) => addGameDialog.resetAndOpen(platform)
+                onAddGameRequested: (platform) => page.openAddGameDialog(platform)
                 onFocusGridRequested: grid.forceFocus()
                 onFocusSidebarRequested: sidebar.forceActiveFocus()
             }
@@ -197,56 +228,128 @@ Page {
                     anchors.bottomMargin: 24
                     model: uiController.searchModel
                     onGameDetailsRequested: (gameId) => page.gameDetailsRequested(gameId, "")
-                    onWinetricksRequested: (prefixId, title) => winetricksModal.openForPrefix(prefixId, title)
+                    onWinetricksRequested: (prefixId, title) => page.openWinetricks(prefixId, title)
                     onAddGameRequested: topBar.openAddMenu()
                     onFocusSidebarRequested: sidebar.forceActiveFocus()
                     onFocusTopBarRequested: topBar.forceSearchFocus()
                 }
 
-                EpicLibraryView {
-                    id: epicView
-                    visible: page.activeSection === "epic"
+                Loader {
+                    id: epicLoader
                     anchors.fill: parent
-                    onGameDetailsRequested: (gameId, epicAppName) => page.gameDetailsRequested(gameId, epicAppName)
-                    onFocusSidebarRequested: sidebar.forceActiveFocus()
+                    active: page.activeSection === "epic"
+                    visible: active
+                    source: active ? Qt.resolvedUrl("../pages/EpicLibraryView.qml") : ""
+                    onLoaded: {
+                        if (page._pendingFocusSection === "epic" && item) {
+                            page._pendingFocusSection = ""
+                            Qt.callLater(function() { if (epicLoader.item) epicLoader.item.forceFocus() })
+                        }
+                    }
+                }
+                Connections {
+                    target: epicLoader.item
+                    function onGameDetailsRequested(gameId, epicAppName) {
+                        page.gameDetailsRequested(gameId, epicAppName)
+                    }
+                    function onFocusSidebarRequested() { sidebar.forceActiveFocus() }
                 }
 
-                RunnersView {
-                    id: runnersView
-                    visible: page.activeSection === "runners"
+                Loader {
+                    id: runnersLoader
                     anchors.fill: parent
-                    onFocusSidebarRequested: sidebar.forceActiveFocus()
+                    active: page.activeSection === "runners"
+                    visible: active
+                    onActiveChanged: {
+                        if (active) {
+                            setSource(Qt.resolvedUrl("../pages/RunnersView.qml"), {
+                                selectedReleaseCat: page._runnersCategory
+                            })
+                        } else {
+                            setSource("")
+                        }
+                    }
+                    onLoaded: {
+                        if (page._pendingFocusSection === "runners" && item) {
+                            page._pendingFocusSection = ""
+                            Qt.callLater(function() { if (runnersLoader.item) runnersLoader.item.forceFocus() })
+                        }
+                    }
+                }
+                Connections {
+                    target: runnersLoader.item
+                    function onFocusSidebarRequested() { sidebar.forceActiveFocus() }
+                    function onSelectedReleaseCatChanged() {
+                        if (runnersLoader.item) {
+                            page._runnersCategory = runnersLoader.item.selectedReleaseCat
+                        }
+                    }
                 }
 
-                PrefixesView {
-                    id: prefixesView
-                    visible: page.activeSection === "prefixes"
+                Loader {
+                    id: prefixesLoader
                     anchors.fill: parent
-                    onWinetricksRequested: (prefixId, name) => winetricksModal.openForPrefix(prefixId, name)
-                    onFocusSidebarRequested: sidebar.forceActiveFocus()
+                    active: page.activeSection === "prefixes"
+                    visible: active
+                    source: active ? Qt.resolvedUrl("../pages/PrefixesView.qml") : ""
+                    onLoaded: {
+                        if (page._pendingFocusSection === "prefixes" && item) {
+                            page._pendingFocusSection = ""
+                            Qt.callLater(function() { if (prefixesLoader.item) prefixesLoader.item.forceFocus() })
+                        }
+                    }
+                }
+                Connections {
+                    target: prefixesLoader.item
+                    function onWinetricksRequested(prefixId, name) { page.openWinetricks(prefixId, name) }
+                    function onFocusSidebarRequested() { sidebar.forceActiveFocus() }
                 }
 
-                DiagnosticsView {
-                    id: diagnosticsView
-                    visible: page.activeSection === "diagnostics"
+                Loader {
+                    id: diagnosticsLoader
                     anchors.fill: parent
-                    onFocusSidebarRequested: sidebar.forceActiveFocus()
+                    active: page.activeSection === "diagnostics"
+                    visible: active
+                    source: active ? Qt.resolvedUrl("../pages/DiagnosticsView.qml") : ""
+                    onLoaded: {
+                        if (page._pendingFocusSection === "diagnostics" && item) {
+                            page._pendingFocusSection = ""
+                            Qt.callLater(function() { if (diagnosticsLoader.item) diagnosticsLoader.item.forceFocus() })
+                        }
+                    }
+                }
+                Connections {
+                    target: diagnosticsLoader.item
+                    function onFocusSidebarRequested() { sidebar.forceActiveFocus() }
                 }
             }
         }
     }
 
-    AddGameDialog {
-        id: addGameDialog
-        onClosed: {
-            if (!winetricksModal.visible && !topBar.isAddMenuOpen) {
-                page.focusActiveSectionContent()
+    Loader {
+        id: addGameDialogLoader
+        anchors.fill: parent
+        active: false
+        source: active ? Qt.resolvedUrl("../components/AddGameDialog.qml") : ""
+        onLoaded: {
+            if (item) {
+                item.resetAndOpen(page._pendingAddGamePlatform)
             }
         }
     }
 
-    WinetricksModal {
-        id: winetricksModal
+    Connections {
+        target: addGameDialogLoader.item
+        function onClosed() {
+            Qt.callLater(function() {
+                if (!addGameDialogLoader.item || !addGameDialogLoader.item.visible) {
+                    addGameDialogLoader.active = false
+                }
+                if (!page.externalModalOpen && !topBar.isAddMenuOpen) {
+                    page.focusActiveSectionContent()
+                }
+            })
+        }
     }
 }
 

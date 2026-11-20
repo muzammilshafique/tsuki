@@ -127,7 +127,7 @@ Item {
             Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
             Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
 
-            layer.enabled: true
+            layer.enabled: root.visible
             layer.effect: MultiEffect {
                 shadowEnabled: true
                 shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.40 : 0.18)
@@ -354,7 +354,7 @@ Item {
                             scale: itemMA.pressed ? 0.97 : 1.0
                             Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
 
-                            layer.enabled: true
+                            layer.enabled: menuPopup.visible
                             layer.effect: MultiEffect {
                                 shadowEnabled: true
                                 shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.42 : 0.16)

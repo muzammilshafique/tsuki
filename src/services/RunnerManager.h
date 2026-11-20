@@ -4,6 +4,7 @@
 #include "../core/DatabaseManager.h"
 #include "../core/AppSettings.h"
 #include "DownloadManager.h"
+#include <QHash>
 #include <QObject>
 #include <QNetworkAccessManager>
 #include <QVariantList>
@@ -53,7 +54,8 @@ public:
     Q_INVOKABLE bool removeAntiCheatRuntime(const QString& runtimeName);
 
     Q_INVOKABLE void detectInstalledRunners();
-    Q_INVOKABLE void fetchAvailableReleases(const QString& category = QStringLiteral("proton-ge"));
+    Q_INVOKABLE void fetchAvailableReleases(const QString& category = QStringLiteral("proton-ge"),
+                                            bool forceRefresh = false);
     Q_INVOKABLE void downloadRelease(const QString& category,
                                      const QString& tagName,
                                      const QString& downloadUrl,
@@ -80,6 +82,9 @@ private:
     DownloadManager* m_dl;
     QNetworkAccessManager m_nam;
     QVariantList m_availableReleases;
+    QHash<QString, QVariantList> m_releaseCache;
+    QHash<QString, qint64> m_releaseCacheTimeMs;
+    QString m_activeReleaseCategory = QStringLiteral("proton-ge");
     bool m_isFetchingReleases = false;
     bool m_isInstallingEac = false;
     bool m_isInstallingBattleye = false;

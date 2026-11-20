@@ -242,7 +242,7 @@ Item {
             border.width: 0
             radius: 16
 
-            layer.enabled: true
+            layer.enabled: popup.visible
             layer.effect: MultiEffect {
                 shadowEnabled: true
                 shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.45 : 0.18)

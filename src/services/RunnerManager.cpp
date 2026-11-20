@@ -1,4 +1,5 @@
 #include "RunnerManager.h"
+#include <QDateTime>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QDir>
@@ -505,7 +506,26 @@ void RunnerManager::populateFallbackReleases(const QString& category) {
     emit availableReleasesChanged();
 }
 
-void RunnerManager::fetchAvailableReleases(const QString& category) {
+void RunnerManager::fetchAvailableReleases(const QString& category, bool forceRefresh) {
+    m_activeReleaseCategory = category;
+
+    constexpr qint64 kReleaseCacheTtlMs = 5 * 60 * 1000;
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (!forceRefresh && m_releaseCache.contains(category) &&
+        (nowMs - m_releaseCacheTimeMs.value(category, 0)) < kReleaseCacheTtlMs) {
+        QVariantList cached = m_releaseCache.value(category);
+        for (QVariant& entryVar : cached) {
+            QVariantMap m = entryVar.toMap();
+            m["isInstalled"] = isReleaseInstalled(m.value(QStringLiteral("tagName")).toString(),
+                                                  m.value(QStringLiteral("name")).toString());
+            entryVar = m;
+        }
+        m_releaseCache[category] = cached;
+        m_availableReleases = cached;
+        emit availableReleasesChanged();
+        return;
+    }
+
     populateFallbackReleases(category);
 
     QString apiUrl;
@@ -588,8 +608,12 @@ void RunnerManager::fetchAvailableReleases(const QString& category) {
         }
 
         if (!fetched.isEmpty()) {
-            m_availableReleases = fetched;
-            emit availableReleasesChanged();
+            m_releaseCache[category] = fetched;
+            m_releaseCacheTimeMs[category] = QDateTime::currentMSecsSinceEpoch();
+            if (m_activeReleaseCategory == category) {
+                m_availableReleases = fetched;
+                emit availableReleasesChanged();
+            }
         }
     });
 }

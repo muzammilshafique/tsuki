@@ -4494,6 +4494,180 @@ private slots:
     QCOMPARE(beTgl->property("checked").toBool(), true);
     detailObj.reset();
   }
+
+  void testLazyQmlTabsModalsAndZeroFboCards() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+
+    DatabaseManager db(tmpDir.filePath(QStringLiteral("lazy_ram.db")));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    settings.setDatabaseManager(&db);
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dl);
+    ControllerManager ctrlMgr(&db, &settings);
+    SteamGridDbService sgdb(&settings, &dl);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
+    EpicService epicSvc(&db, &settings, &runnerMgr, &prefixMgr, &sgdb);
+    pipeline.setEpicService(&epicSvc);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+    epicSvc.setGameManager(&gm);
+    UiController uiCtrl(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
+                        &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm, &epicSvc);
+
+    // Seed one local game so MediaGrid instantiates a RoundedCover card delegate
+    const QString exePath = tmpDir.filePath(QStringLiteral("demo.sh"));
+    QFile exeFile(exePath);
+    QVERIFY(exeFile.open(QIODevice::WriteOnly));
+    exeFile.write("#!/bin/sh\nexit 0\n");
+    exeFile.close();
+    const QString gameId =
+        gm.addNativeGame(QStringLiteral("Demo Game"), exePath, tmpDir.path());
+    QVERIFY(!gameId.isEmpty());
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
+                                             &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"),
+                                             &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
+                                             &uiCtrl);
+
+    QStringList qmlErrors;
+    QObject::connect(
+        &engine, &QQmlEngine::warnings, &engine,
+        [&](const QList<QQmlError> &warnings) {
+          for (const QQmlError &err : warnings) {
+            const QString txt = err.toString();
+            if (txt.contains(QStringLiteral("ReferenceError")) ||
+                txt.contains(QStringLiteral("TypeError")) ||
+                txt.contains(QStringLiteral("Binding loop")) ||
+                txt.contains(QStringLiteral("Required property"))) {
+              qmlErrors << txt;
+            }
+          }
+        });
+
+    // 1. Load Main.qml and verify secondary tabs & modals start unloaded
+    QQmlComponent mainComp(&engine,
+                           QUrl(QStringLiteral("qrc:/tsuki_app/qml/Main.qml")));
+    QVERIFY2(mainComp.isReady(), qPrintable(mainComp.errorString()));
+    std::unique_ptr<QObject> mainObj(mainComp.create());
+    QVERIFY(mainObj != nullptr);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(mainObj->property("isWinetricksOpen").toBool(), false);
+    // Secondary views must not be instantiated at startup
+    QVERIFY(mainObj->findChild<QQuickItem *>(QStringLiteral("epicLibraryView")) ==
+            nullptr);
+
+    // 2. Opening Winetricks lazy-loads the single global modal and sets HomePage externalModalOpen
+    QVERIFY(QMetaObject::invokeMethod(
+        mainObj.get(), "openWinetricks",
+        Q_ARG(QVariant, QVariant(QStringLiteral("default-prefix"))),
+        Q_ARG(QVariant, QVariant(QStringLiteral("Default")))));
+    QTRY_COMPARE(mainObj->property("isWinetricksOpen").toBool(), true);
+
+    // 3. URL-based StackView push for SettingsPage and GameDetailPage works cleanly
+    QVERIFY(QMetaObject::invokeMethod(mainObj.get(), "openSettingsPage"));
+    QCoreApplication::processEvents();
+    QVERIFY(mainObj->findChild<QQuickItem *>(QStringLiteral("settingsPage")) !=
+            nullptr);
+
+    QVERIFY(QMetaObject::invokeMethod(
+        mainObj.get(), "openGameDetailPage",
+        Q_ARG(QVariant, QVariant(gameId)),
+        Q_ARG(QVariant, QVariant(QString()))));
+    QCoreApplication::processEvents();
+    QVERIFY(mainObj->findChild<QQuickItem *>(QStringLiteral("gameDetailPage")) !=
+            nullptr);
+
+    if (auto *win = qobject_cast<QQuickWindow *>(mainObj.get())) {
+      win->close();
+    }
+    mainObj.reset();
+    QCoreApplication::processEvents();
+
+    // 4. Standalone HomePage tab cycling & lazy AddGameDialog open/close
+    QQuickWindow testWin;
+    testWin.resize(1280, 820);
+    testWin.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&testWin));
+
+    QQmlComponent homeComp(
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/home/HomePage.qml")));
+    QVERIFY2(homeComp.isReady(), qPrintable(homeComp.errorString()));
+    std::unique_ptr<QObject> homeObj(homeComp.create());
+    QVERIFY(homeObj != nullptr);
+    auto *homeItem = qobject_cast<QQuickItem *>(homeObj.get());
+    QVERIFY(homeItem != nullptr);
+    homeItem->setParentItem(testWin.contentItem());
+    homeItem->setSize(QSizeF(1280, 820));
+    QCoreApplication::processEvents();
+
+    // Cycle through all 6 tab positions (library, favs, epic, prefixes, runners, diagnostics, back to library)
+    for (int step = 0; step < 6; ++step) {
+      QVERIFY(QMetaObject::invokeMethod(homeObj.get(), "cycleTab",
+                                        Q_ARG(QVariant, QVariant(1))));
+      QCoreApplication::processEvents();
+    }
+    QCOMPARE(homeObj->property("activeSection").toString(),
+             QStringLiteral("library"));
+    QTRY_VERIFY(homeObj->findChild<QQuickItem *>(QStringLiteral("epicLibraryView")) ==
+                nullptr);
+
+    // externalModalOpen blocks HomePage.isAnyModalOpen()
+    homeObj->setProperty("externalModalOpen", true);
+    QVariant modalOpenVar;
+    QVERIFY(QMetaObject::invokeMethod(homeObj.get(), "isAnyModalOpen",
+                                      Q_RETURN_ARG(QVariant, modalOpenVar)));
+    QCOMPARE(modalOpenVar.toBool(), true);
+    homeObj->setProperty("externalModalOpen", false);
+
+    // Lazy AddGameDialog opens on demand and unloads cleanly after Escape
+    QCOMPARE(homeObj->property("isAddGameOpen").toBool(), false);
+    QVERIFY(QMetaObject::invokeMethod(
+        homeObj.get(), "openAddGameDialog",
+        Q_ARG(QVariant, QVariant(QStringLiteral("windows")))));
+    QTRY_COMPARE(homeObj->property("isAddGameOpen").toBool(), true);
+    QTest::keyClick(&testWin, Qt::Key_Escape);
+    QTRY_COMPARE(homeObj->property("isAddGameOpen").toBool(), false);
+
+    homeObj.reset();
+    QCoreApplication::processEvents();
+
+    // 5. RoundedCover compiles & loads cleanly inside MediaGrid with lazy actionOverlay
+    QQmlComponent gridComp(
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/home/MediaGrid.qml")));
+    QVERIFY2(gridComp.isReady(), qPrintable(gridComp.errorString()));
+    std::unique_ptr<QObject> gridObj(gridComp.createWithInitialProperties(
+        {{QStringLiteral("model"), QVariant::fromValue(gm.model())}}));
+    QVERIFY(gridObj != nullptr);
+    auto *gridItem = qobject_cast<QQuickItem *>(gridObj.get());
+    QVERIFY(gridItem != nullptr);
+    gridItem->setParentItem(testWin.contentItem());
+    gridItem->setSize(QSizeF(1000, 720));
+    QCoreApplication::processEvents();
+
+    auto *gv = gridObj->property("gridView").value<QQuickItem *>();
+    QVERIFY(gv != nullptr);
+    auto *currDelegate = gv->property("currentItem").value<QQuickItem *>();
+    QVERIFY(currDelegate != nullptr);
+    QVERIFY(QMetaObject::invokeMethod(currDelegate, "openContextMenuFromKeyboard"));
+    QCoreApplication::processEvents();
+    QCOMPARE(currDelegate->property("isMenuOpen").toBool(), true);
+    currDelegate->setProperty("isMenuOpen", false);
+    QCoreApplication::processEvents();
+    gridObj.reset();
+    QCoreApplication::processEvents();
+
+    QVERIFY2(qmlErrors.isEmpty(),
+             qPrintable(qmlErrors.join(QLatin1Char('\n'))));
+  }
 };
 
 QTEST_MAIN(TestTsuki)

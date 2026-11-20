@@ -31,7 +31,7 @@ Item {
             ? Qt.rgba(1, 1, 1, 0.10)
             : Qt.rgba(1, 1, 1, 0.18)
         border.width: 1
-        layer.enabled: true
+        layer.enabled: root.visible
         layer.effect: MultiEffect {
             shadowEnabled: true
             shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.65 : 0.38)

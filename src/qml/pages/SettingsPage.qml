@@ -870,7 +870,7 @@ Page {
                             radius: 16
                             border.color: appSettings.borderColor
                             border.width: 1
-                            layer.enabled: true
+                            layer.enabled: searchResultsPopup.visible
                             layer.effect: MultiEffect {
                                 shadowEnabled: true
                                 shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.45 : 0.18)
@@ -2473,7 +2473,7 @@ Page {
             radius: 16
             border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
             border.width: 1
-            layer.enabled: true
+            layer.enabled: tagColorsModal.visible
             layer.effect: MultiEffect {
                 shadowEnabled: true
                 shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.6 : 0.25)

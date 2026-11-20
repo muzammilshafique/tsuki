@@ -21,6 +21,26 @@ Item {
     property alias gridView: grid
     function forceFocus() { grid.forceActiveFocus() }
     readonly property int columns: Math.max(1, Math.floor(grid.width / grid.cellWidth))
+    readonly property int coverSourceWidth: Math.max(
+        192,
+        Math.min(512, Math.ceil((Math.max(160, grid.cellWidth - 16) * Math.max(1.0, Screen.devicePixelRatio)) / 64) * 64)
+    )
+    readonly property int coverSourceHeight: Math.round(coverSourceWidth * 1.5)
+
+    property string _pendingRemoveGameId: ""
+    property string _pendingRemoveTitle: ""
+    property string _pendingRemovePrefixId: ""
+
+    function openRemoveGameDialog(gameId, title, prefixId) {
+        _pendingRemoveGameId = gameId || ""
+        _pendingRemoveTitle = title || ""
+        _pendingRemovePrefixId = prefixId || ""
+        if (removeGameDialogLoader.item) {
+            removeGameDialogLoader.item.openDialog(_pendingRemoveGameId, _pendingRemoveTitle, _pendingRemovePrefixId)
+        } else {
+            removeGameDialogLoader.active = true
+        }
+    }
 
     // ── Dynamic Settings & Helpers (Matching Yoru M3 Architecture) ───────────
     readonly property bool isDark: appSettings.isEffectiveDark
@@ -359,7 +379,7 @@ Item {
                         uiController.gameManager.togglePin(cell.gameId)
                         break
                     case 3: // Remove Game
-                        removeGameDialog.openDialog(cell.gameId, cell.title, cell.prefixId)
+                        root.openRemoveGameDialog(cell.gameId, cell.title, cell.prefixId)
                         break
                 }
             }
@@ -412,7 +432,7 @@ Item {
                     antialiasing: true
                 }
 
-                // ── Squircle mask shape ──
+                // ── Squircle mask shape (FBO active only while blurring) ──
                 Rectangle {
                     id: cardMask
                     anchors.fill: parent
@@ -421,16 +441,22 @@ Item {
                     color: "white"
                     antialiasing: true
                     visible: false
-                    layer.enabled: true
+                    layer.enabled: cardContent.needsBlurLayer
                     layer.smooth: true
                 }
 
-                // ── Masked card content (blur layer applies only here) ──
+                // ── Card content (0 FBOs at rest; MultiEffect layer activates only when blurring) ──
                 Item {
                     id: cardContent
                     anchors.fill: parent
                     anchors.margins: 1
-                    layer.enabled: true
+                    property real blurAmount: cell.isCardBlurred ? 1.0 : 0.0
+                    property real blurBrightness: cell.isMenuOpen ? -0.22 : (cell.isCardBlurred ? -0.28 : 0.0)
+                    Behavior on blurAmount { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on blurBrightness { NumberAnimation { duration: 180 } }
+                    readonly property bool needsBlurLayer: cell.isCardBlurred || blurAmount > 0.01
+
+                    layer.enabled: needsBlurLayer
                     layer.smooth: true
                     layer.effect: MultiEffect {
                         autoPaddingEnabled: false
@@ -439,16 +465,19 @@ Item {
                         // MultiEffect defaults (0, 0) hard-clip mask alpha; spread [0, 1] preserves cardMask antialiasing.
                         maskThresholdMin: 0.5
                         maskSpreadAtMin: 1.0
-                        blurEnabled: cell.isCardBlurred
-                        blur: cell.isCardBlurred ? 1.0 : 0.0
-                        blurMax: cell.isCardBlurred ? 32 : 0
+                        blurEnabled: true
+                        blur: cardContent.blurAmount
+                        blurMax: 32
                         saturation: 0.0
-                        brightness: cell.isMenuOpen ? -0.22 : (cell.isCardBlurred ? -0.28 : 0.0)
-                        Behavior on blur { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                        Behavior on brightness { NumberAnimation { duration: 180 } }
+                        brightness: cardContent.blurBrightness
                     }
 
-                    Rectangle { anchors.fill: parent; color: appSettings.surfaceColor }
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Math.max(0, root.cardRadius - 1)
+                        color: appSettings.surfaceColor
+                        antialiasing: true
+                    }
 
                     // ── Metadata (title + runner tag/year below cover) ────────
                     Item {
@@ -541,23 +570,31 @@ Item {
                         }
                     }
 
-                    // ── Cover area (poster image + overlays) ─────────────────
+                    // ── Cover area (0-FBO GPU rounded poster + vignettes + hover shade) ──
                     Item {
                         id: coverArea
                         anchors { left: parent.left; right: parent.right; top: parent.top }
                         anchors.bottom: metadataArea.visible ? metadataArea.top : parent.bottom
-                        clip: true
 
-                        Rectangle { anchors.fill: parent; color: appSettings.surfaceAltColor }
-
-                        Image {
+                        RoundedCover {
                             id: coverImg
                             anchors.fill: parent
                             source: cell.coverPath
-                            sourceSize.width: 320; sourceSize.height: 480
-                            fillMode: Image.PreserveAspectCrop; asynchronous: true
-                            smooth: true; mipmap: true
-                            visible: status === Image.Ready
+                            sourceWidth: root.coverSourceWidth
+                            sourceHeight: root.coverSourceHeight
+                            topRadius: Math.max(0, root.cardRadius - 1)
+                            bottomRadius: root.metaHeight > 0 ? 0 : Math.max(0, root.cardRadius - 1)
+                            placeholderColor: appSettings.surfaceAltColor
+                            topVignetteAlpha: (appSettings.titleVisibility === 1 && !cell.isCardBlurred) ? 0.55 : 0.0
+                            topVignetteHeight: 48
+                            bottomVignetteAlpha: (appSettings.titleVisibility === 1 && !cell.isCardBlurred)
+                                ? 0.55
+                                : (root.metaHeight > 0 ? 0.30 : 0.0)
+                            bottomVignetteHeight: (appSettings.titleVisibility === 1 && !cell.isCardBlurred) ? 48 : 36
+                            darkenAlpha: (appSettings.titleVisibility === 1 && cell.isHoveredOrFocused && !cell.isMenuOpen)
+                                ? 0.46
+                                : ((appSettings.titleVisibility !== 1 && !cell.isMenuOpen && cell.isMouseActive) ? 0.08 : 0.0)
+                            Behavior on darkenAlpha { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                         }
 
                         // Placeholder icon when no cover
@@ -568,55 +605,6 @@ Item {
                             color: appSettings.textTerColor
                             opacity: 0.35
                             visible: cell.coverPath.toString().length === 0 || coverImg.status === Image.Error
-                        }
-
-                        // Top vignette (idle view when titleVisibility === 1)
-                        Rectangle {
-                            anchors { left: parent.left; right: parent.right; top: parent.top }
-                            height: 48
-                            visible: appSettings.titleVisibility === 1 && !cell.isCardBlurred
-                            gradient: Gradient {
-                                GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.55) }
-                                GradientStop { position: 1.0; color: "transparent" }
-                            }
-                        }
-
-                        // Bottom vignette (idle view when titleVisibility === 1)
-                        Rectangle {
-                            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-                            height: 48
-                            visible: appSettings.titleVisibility === 1 && !cell.isCardBlurred
-                            gradient: Gradient {
-                                GradientStop { position: 0.0; color: "transparent" }
-                                GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.55) }
-                            }
-                        }
-
-                        // Bottom vignette (when metadata is below)
-                        Rectangle {
-                            visible: root.metaHeight > 0
-                            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-                            height: 36
-                            gradient: Gradient {
-                                GradientStop { position: 0; color: "transparent" }
-                                GradientStop { position: 1; color: Qt.rgba(0, 0, 0, 0.3) }
-                            }
-                        }
-
-                        // Dark tint overlay when blurred on hover
-                        Rectangle {
-                            anchors.fill: parent
-                            color: Qt.rgba(0, 0, 0, 0.46)
-                            opacity: (appSettings.titleVisibility === 1 && cell.isHoveredOrFocused && !cell.isMenuOpen) ? 1.0 : 0.0
-                            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                        }
-
-                        // Subtle Hover darkening when title is below
-                        Rectangle {
-                            visible: appSettings.titleVisibility !== 1 && !cell.isMenuOpen
-                            anchors.fill: parent; color: "#000000"
-                            opacity: cell.isMouseActive ? 0.08 : 0
-                            Behavior on opacity { NumberAnimation { duration: 160 } }
                         }
                     }
                 } // ── END OF cardContent ──
@@ -892,236 +880,16 @@ Item {
                     }
                 }
 
-                // ── Glassmorphic Action Menu Overlay (Crystal-Sharp on Top of Blur) ──
-                Rectangle {
-                    id: actionOverlay
+                // ── Lazy-Loaded Glassmorphic Action Menu Overlay ──
+                Loader {
+                    id: actionOverlayLoader
                     anchors.fill: cardContent
-                    radius: Math.max(0, root.cardRadius - 1)
-                    color: Qt.rgba(0, 0, 0, 0.45)
-                    opacity: cell.isMenuOpen ? 1.0 : 0.0
-                    visible: opacity > 0
                     z: 20
-                    clip: true
-                    Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                    // Dismiss if clicking dark background outside buttons
-                    MouseArea {
-                        anchors.fill: parent
-                        acceptedButtons: Qt.LeftButton | Qt.RightButton
-                        onClicked: cell.isMenuOpen = false
-                    }
-
-                    ColumnLayout {
-                        anchors.centerIn: parent
-                        width: Math.min(parent.width - 24, 150)
-                        spacing: 8
-                        transform: Translate {
-                            y: cell.isMenuOpen ? 0 : 8
-                            Behavior on y { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                        }
-
-                        // 1. Details / Edit Button
-                        Rectangle {
-                            id: editBtn
-                            readonly property bool isBtnFocused: uiController.isKeyboardNavActive && cell.isMenuOpen && cell.menuFocusedIndex === 0
-                            readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && editMA.containsMouse) || isBtnFocused
-                            Layout.fillWidth: true
-                            height: 38
-                            radius: 19
-                            color: isBtnActive
-                                ? appSettings.accentColor
-                                : Qt.rgba(0.15, 0.15, 0.18, 0.88)
-                            border.color: isBtnFocused ? "#ffffff" : Qt.rgba(1, 1, 1, 0.15)
-                            border.width: isBtnFocused ? 2 : 1
-                            scale: editMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
-                            Behavior on scale { NumberAnimation { duration: 100 } }
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                            RowLayout {
-                                anchors.centerIn: parent
-                                spacing: 8
-                                YIcon {
-                                    size: 18
-                                    source: "qrc:/tsuki_app/icons/actions/edit.svg"
-                                    color: editBtn.isBtnActive
-                                        ? (root.isDark ? "#0f0f11" : "#ffffff")
-                                        : "#ffffff"
-                                }
-                                Label {
-                                    text: "Details"
-                                    color: editBtn.isBtnActive
-                                        ? (root.isDark ? "#0f0f11" : "#ffffff")
-                                        : "#ffffff"
-                                    font.pixelSize: 14
-                                    font.weight: Font.Normal
-                                    renderType: Text.QtRendering
-                                }
-                            }
-                            MouseArea {
-                                id: editMA
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    cell.isMenuOpen = false
-                                    cell.executeAction(0)
-                                }
-                            }
-                        }
-
-                        // 2. Favourite / Unfavourite Button
-                        Rectangle {
-                            id: favBtnCard
-                            readonly property bool isBtnFocused: uiController.isKeyboardNavActive && cell.isMenuOpen && cell.menuFocusedIndex === 1
-                            readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && favMA.containsMouse) || isBtnFocused
-                            Layout.fillWidth: true
-                            height: 38
-                            radius: 19
-                            color: isBtnActive
-                                ? "#fbbf24"
-                                : Qt.rgba(0.15, 0.15, 0.18, 0.88)
-                            border.color: isBtnFocused
-                                ? "#ffffff"
-                                : (cell.isFavorite
-                                    ? "#fbbf24"
-                                    : Qt.rgba(1, 1, 1, 0.15))
-                            border.width: isBtnFocused ? 2 : 1
-                            scale: favMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
-                            Behavior on scale { NumberAnimation { duration: 100 } }
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                            RowLayout {
-                                anchors.centerIn: parent
-                                spacing: 8
-                                YIcon {
-                                    size: 18
-                                    source: cell.isFavorite ? "qrc:/tsuki_app/icons/nav/favourite-filled.svg" : "qrc:/tsuki_app/icons/nav/favourite.svg"
-                                    color: favBtnCard.isBtnActive
-                                        ? "#0f0f11"
-                                        : (cell.isFavorite ? "#fbbf24" : "#ffffff")
-                                }
-                                Label {
-                                    text: cell.isFavorite ? "Unfavourite" : "Favourite"
-                                    color: favBtnCard.isBtnActive ? "#0f0f11" : "#ffffff"
-                                    font.pixelSize: 14
-                                    font.weight: Font.Normal
-                                    renderType: Text.QtRendering
-                                }
-                            }
-                            MouseArea {
-                                id: favMA
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    cell.isMenuOpen = false
-                                    cell.executeAction(1)
-                                }
-                            }
-                        }
-
-                        // 3. Pin to Top / Unpin Button
-                        Rectangle {
-                            id: pinBtn
-                            readonly property bool isBtnFocused: uiController.isKeyboardNavActive && cell.isMenuOpen && cell.menuFocusedIndex === 2
-                            readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && pinMA.containsMouse) || isBtnFocused
-                            Layout.fillWidth: true
-                            height: 38
-                            radius: 19
-                            color: isBtnActive
-                                ? appSettings.accentColor
-                                : Qt.rgba(0.15, 0.15, 0.18, 0.88)
-                            border.color: isBtnFocused
-                                ? "#ffffff"
-                                : (cell.isPinned
-                                    ? appSettings.accentColor
-                                    : Qt.rgba(1, 1, 1, 0.15))
-                            border.width: isBtnFocused ? 2 : 1
-                            scale: pinMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
-                            Behavior on scale { NumberAnimation { duration: 100 } }
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                            RowLayout {
-                                anchors.centerIn: parent
-                                spacing: 8
-                                YIcon {
-                                    size: 18
-                                    source: "qrc:/tsuki_app/icons/actions/pin.svg"
-                                    color: pinBtn.isBtnActive
-                                        ? (root.isDark ? "#0f0f11" : "#ffffff")
-                                        : (cell.isPinned ? appSettings.accentColor : "#ffffff")
-                                }
-                                Label {
-                                    text: cell.isPinned ? "Unpin" : "Pin to Top"
-                                    color: pinBtn.isBtnActive
-                                        ? (root.isDark ? "#0f0f11" : "#ffffff")
-                                        : "#ffffff"
-                                    font.pixelSize: 14
-                                    font.weight: Font.Normal
-                                    renderType: Text.QtRendering
-                                }
-                            }
-                            MouseArea {
-                                id: pinMA
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    cell.isMenuOpen = false
-                                    cell.executeAction(2)
-                                }
-                            }
-                        }
-
-                        // 4. Remove Button
-                        Rectangle {
-                            id: removeBtnCard
-                            readonly property bool isBtnFocused: uiController.isKeyboardNavActive && cell.isMenuOpen && cell.menuFocusedIndex === 3
-                            readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && removeMA.containsMouse) || isBtnFocused
-                            Layout.fillWidth: true
-                            height: 38
-                            radius: 19
-                            color: isBtnActive
-                                ? "#ef4444"
-                                : Qt.rgba(0.15, 0.15, 0.18, 0.88)
-                            border.color: isBtnFocused ? "#ffffff" : Qt.rgba(1, 1, 1, 0.15)
-                            border.width: isBtnFocused ? 2 : 1
-                            scale: removeMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
-                            Behavior on scale { NumberAnimation { duration: 100 } }
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                            RowLayout {
-                                anchors.centerIn: parent
-                                spacing: 8
-                                YIcon {
-                                    size: 18
-                                    source: "qrc:/tsuki_app/icons/actions/trash.svg"
-                                    color: removeBtnCard.isBtnActive ? "#ffffff" : "#ef4444"
-                                }
-                                Label {
-                                    text: "Remove"
-                                    color: "#ffffff"
-                                    font.pixelSize: 14
-                                    font.weight: Font.Normal
-                                    renderType: Text.QtRendering
-                                }
-                            }
-                            MouseArea {
-                                id: removeMA
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    cell.isMenuOpen = false
-                                    cell.executeAction(3)
-                                }
-                            }
-                        }
-                    }
+                    property var cellRef: cell
+                    property real menuOpacity: cell.isMenuOpen ? 1.0 : 0.0
+                    Behavior on menuOpacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    active: cell.isMenuOpen || menuOpacity > 0.01
+                    sourceComponent: actionOverlayComponent
                 }
 
                 // ── Squircle border ──────────────────────────────────────────
@@ -1193,7 +961,242 @@ Item {
         }
     }
 
-    RemoveGameDialog {
-        id: removeGameDialog
+    // Shared Component for lazy-loaded card action menu (instantiated only while open)
+    Component {
+        id: actionOverlayComponent
+        Rectangle {
+            id: actionOverlay
+            readonly property var cell: parent ? parent.cellRef : null
+            readonly property real menuProgress: parent ? parent.menuOpacity : 0.0
+
+            radius: Math.max(0, root.cardRadius - 1)
+            color: Qt.rgba(0, 0, 0, 0.45)
+            opacity: menuProgress
+            clip: true
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onClicked: if (actionOverlay.cell) actionOverlay.cell.isMenuOpen = false
+            }
+
+            ColumnLayout {
+                anchors.centerIn: parent
+                width: Math.min(parent.width - 24, 150)
+                spacing: 8
+                transform: Translate {
+                    y: 8 * (1.0 - actionOverlay.menuProgress)
+                }
+
+                // 1. Details / Edit Button
+                Rectangle {
+                    id: editBtn
+                    readonly property bool isBtnFocused: uiController.isKeyboardNavActive && Boolean(actionOverlay.cell && actionOverlay.cell.isMenuOpen && actionOverlay.cell.menuFocusedIndex === 0)
+                    readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && editMA.containsMouse) || isBtnFocused
+                    Layout.fillWidth: true
+                    height: 38
+                    radius: 19
+                    color: isBtnActive ? appSettings.accentColor : Qt.rgba(0.15, 0.15, 0.18, 0.88)
+                    border.color: isBtnFocused ? "#ffffff" : Qt.rgba(1, 1, 1, 0.15)
+                    border.width: isBtnFocused ? 2 : 1
+                    scale: editMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
+                    Behavior on scale { NumberAnimation { duration: 100 } }
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                    RowLayout {
+                        anchors.centerIn: parent
+                        spacing: 8
+                        YIcon {
+                            size: 18
+                            source: "qrc:/tsuki_app/icons/actions/edit.svg"
+                            color: editBtn.isBtnActive ? (root.isDark ? "#0f0f11" : "#ffffff") : "#ffffff"
+                        }
+                        Label {
+                            text: "Details"
+                            color: editBtn.isBtnActive ? (root.isDark ? "#0f0f11" : "#ffffff") : "#ffffff"
+                            font.pixelSize: 14
+                            font.weight: Font.Normal
+                            renderType: Text.QtRendering
+                        }
+                    }
+                    MouseArea {
+                        id: editMA
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (actionOverlay.cell) {
+                                actionOverlay.cell.isMenuOpen = false
+                                actionOverlay.cell.executeAction(0)
+                            }
+                        }
+                    }
+                }
+
+                // 2. Favourite / Unfavourite Button
+                Rectangle {
+                    id: favBtnCard
+                    readonly property bool isFav: Boolean(actionOverlay.cell && actionOverlay.cell.isFavorite)
+                    readonly property bool isBtnFocused: uiController.isKeyboardNavActive && Boolean(actionOverlay.cell && actionOverlay.cell.isMenuOpen && actionOverlay.cell.menuFocusedIndex === 1)
+                    readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && favMA.containsMouse) || isBtnFocused
+                    Layout.fillWidth: true
+                    height: 38
+                    radius: 19
+                    color: isBtnActive ? "#fbbf24" : Qt.rgba(0.15, 0.15, 0.18, 0.88)
+                    border.color: isBtnFocused ? "#ffffff" : (isFav ? "#fbbf24" : Qt.rgba(1, 1, 1, 0.15))
+                    border.width: isBtnFocused ? 2 : 1
+                    scale: favMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
+                    Behavior on scale { NumberAnimation { duration: 100 } }
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                    RowLayout {
+                        anchors.centerIn: parent
+                        spacing: 8
+                        YIcon {
+                            size: 18
+                            source: favBtnCard.isFav ? "qrc:/tsuki_app/icons/nav/favourite-filled.svg" : "qrc:/tsuki_app/icons/nav/favourite.svg"
+                            color: favBtnCard.isBtnActive ? "#0f0f11" : (favBtnCard.isFav ? "#fbbf24" : "#ffffff")
+                        }
+                        Label {
+                            text: favBtnCard.isFav ? "Unfavourite" : "Favourite"
+                            color: favBtnCard.isBtnActive ? "#0f0f11" : "#ffffff"
+                            font.pixelSize: 14
+                            font.weight: Font.Normal
+                            renderType: Text.QtRendering
+                        }
+                    }
+                    MouseArea {
+                        id: favMA
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (actionOverlay.cell) {
+                                actionOverlay.cell.isMenuOpen = false
+                                actionOverlay.cell.executeAction(1)
+                            }
+                        }
+                    }
+                }
+
+                // 3. Pin to Top / Unpin Button
+                Rectangle {
+                    id: pinBtn
+                    readonly property bool isPin: Boolean(actionOverlay.cell && actionOverlay.cell.isPinned)
+                    readonly property bool isBtnFocused: uiController.isKeyboardNavActive && Boolean(actionOverlay.cell && actionOverlay.cell.isMenuOpen && actionOverlay.cell.menuFocusedIndex === 2)
+                    readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && pinMA.containsMouse) || isBtnFocused
+                    Layout.fillWidth: true
+                    height: 38
+                    radius: 19
+                    color: isBtnActive ? appSettings.accentColor : Qt.rgba(0.15, 0.15, 0.18, 0.88)
+                    border.color: isBtnFocused ? "#ffffff" : (isPin ? appSettings.accentColor : Qt.rgba(1, 1, 1, 0.15))
+                    border.width: isBtnFocused ? 2 : 1
+                    scale: pinMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
+                    Behavior on scale { NumberAnimation { duration: 100 } }
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                    RowLayout {
+                        anchors.centerIn: parent
+                        spacing: 8
+                        YIcon {
+                            size: 18
+                            source: "qrc:/tsuki_app/icons/actions/pin.svg"
+                            color: pinBtn.isBtnActive ? (root.isDark ? "#0f0f11" : "#ffffff") : (pinBtn.isPin ? appSettings.accentColor : "#ffffff")
+                        }
+                        Label {
+                            text: pinBtn.isPin ? "Unpin" : "Pin to Top"
+                            color: pinBtn.isBtnActive ? (root.isDark ? "#0f0f11" : "#ffffff") : "#ffffff"
+                            font.pixelSize: 14
+                            font.weight: Font.Normal
+                            renderType: Text.QtRendering
+                        }
+                    }
+                    MouseArea {
+                        id: pinMA
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (actionOverlay.cell) {
+                                actionOverlay.cell.isMenuOpen = false
+                                actionOverlay.cell.executeAction(2)
+                            }
+                        }
+                    }
+                }
+
+                // 4. Remove Button
+                Rectangle {
+                    id: removeBtnCard
+                    readonly property bool isBtnFocused: uiController.isKeyboardNavActive && Boolean(actionOverlay.cell && actionOverlay.cell.isMenuOpen && actionOverlay.cell.menuFocusedIndex === 3)
+                    readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && removeMA.containsMouse) || isBtnFocused
+                    Layout.fillWidth: true
+                    height: 38
+                    radius: 19
+                    color: isBtnActive ? "#ef4444" : Qt.rgba(0.15, 0.15, 0.18, 0.88)
+                    border.color: isBtnFocused ? "#ffffff" : Qt.rgba(1, 1, 1, 0.15)
+                    border.width: isBtnFocused ? 2 : 1
+                    scale: removeMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
+                    Behavior on scale { NumberAnimation { duration: 100 } }
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                    RowLayout {
+                        anchors.centerIn: parent
+                        spacing: 8
+                        YIcon {
+                            size: 18
+                            source: "qrc:/tsuki_app/icons/actions/trash.svg"
+                            color: removeBtnCard.isBtnActive ? "#ffffff" : "#ef4444"
+                        }
+                        Label {
+                            text: "Remove"
+                            color: "#ffffff"
+                            font.pixelSize: 14
+                            font.weight: Font.Normal
+                            renderType: Text.QtRendering
+                        }
+                    }
+                    MouseArea {
+                        id: removeMA
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (actionOverlay.cell) {
+                                actionOverlay.cell.isMenuOpen = false
+                                actionOverlay.cell.executeAction(3)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Loader {
+        id: removeGameDialogLoader
+        anchors.fill: parent
+        active: false
+        source: active ? Qt.resolvedUrl("../components/RemoveGameDialog.qml") : ""
+        onLoaded: {
+            if (item) {
+                item.openDialog(root._pendingRemoveGameId, root._pendingRemoveTitle, root._pendingRemovePrefixId)
+            }
+        }
+    }
+
+    Connections {
+        target: removeGameDialogLoader.item
+        function onClosed() {
+            Qt.callLater(function() {
+                if (!removeGameDialogLoader.item || !removeGameDialogLoader.item.visible) {
+                    removeGameDialogLoader.active = false
+                }
+            })
+        }
     }
 }
