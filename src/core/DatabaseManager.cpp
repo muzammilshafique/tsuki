@@ -79,7 +79,9 @@ bool DatabaseManager::initialize() {
                 epic_namespace TEXT,
                 epic_catalog_item_id TEXT,
                 epic_build_version TEXT,
-                epic_install_dir TEXT
+                epic_install_dir TEXT,
+                categories_json TEXT,
+                is_hidden INTEGER DEFAULT 0
             )
         )"),
         QStringLiteral(R"(
@@ -99,7 +101,58 @@ bool DatabaseManager::initialize() {
                 download_size INTEGER DEFAULT 0,
                 install_size INTEGER DEFAULT 0,
                 build_version TEXT,
-                last_synced INTEGER DEFAULT 0
+                last_synced INTEGER DEFAULT 0,
+                cloud_save_folder TEXT,
+                cloud_include_json TEXT,
+                cloud_exclude_json TEXT
+            )
+        )"),
+        QStringLiteral(R"(
+            CREATE TABLE IF NOT EXISTS epic_dlcs (
+                app_name TEXT PRIMARY KEY,
+                parent_app_name TEXT NOT NULL,
+                namespace_id TEXT NOT NULL,
+                catalog_item_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                install_size INTEGER DEFAULT 0,
+                is_installed INTEGER DEFAULT 0
+            )
+        )"),
+        QStringLiteral(R"(
+            CREATE TABLE IF NOT EXISTS collections (
+                name TEXT PRIMARY KEY,
+                created_at INTEGER DEFAULT 0
+            )
+        )"),
+        QStringLiteral(R"(
+            CREATE TABLE IF NOT EXISTS umu_id_cache (
+                store TEXT NOT NULL,
+                codename TEXT NOT NULL,
+                umu_id TEXT NOT NULL,
+                title TEXT,
+                updated_at INTEGER DEFAULT 0,
+                PRIMARY KEY (store, codename)
+            )
+        )"),
+        QStringLiteral(R"(
+            CREATE TABLE IF NOT EXISTS cloud_save_state (
+                game_id TEXT PRIMARY KEY,
+                last_sync_epoch INTEGER DEFAULT 0,
+                last_manifest_hash TEXT,
+                files_json TEXT
+            )
+        )"),
+        QStringLiteral(R"(
+            CREATE TABLE IF NOT EXISTS download_queue (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                app_name TEXT,
+                payload_json TEXT,
+                status TEXT DEFAULT 'queued',
+                sort_order INTEGER DEFAULT 0,
+                created_at INTEGER DEFAULT 0
             )
         )"),
         QStringLiteral(R"(
@@ -114,7 +167,8 @@ bool DatabaseManager::initialize() {
                 vkd3d_installed INTEGER DEFAULT 0,
                 dll_overrides_json TEXT,
                 installed_winetricks_json TEXT,
-                created_at INTEGER DEFAULT 0
+                created_at INTEGER DEFAULT 0,
+                installed_prereqs_json TEXT
             )
         )"),
         QStringLiteral(R"(
@@ -159,7 +213,9 @@ bool DatabaseManager::initialize() {
         {"epic_namespace", "ALTER TABLE games ADD COLUMN epic_namespace TEXT"},
         {"epic_catalog_item_id", "ALTER TABLE games ADD COLUMN epic_catalog_item_id TEXT"},
         {"epic_build_version", "ALTER TABLE games ADD COLUMN epic_build_version TEXT"},
-        {"epic_install_dir", "ALTER TABLE games ADD COLUMN epic_install_dir TEXT"}
+        {"epic_install_dir", "ALTER TABLE games ADD COLUMN epic_install_dir TEXT"},
+        {"categories_json", "ALTER TABLE games ADD COLUMN categories_json TEXT"},
+        {"is_hidden", "ALTER TABLE games ADD COLUMN is_hidden INTEGER DEFAULT 0"}
     };
     for (const auto& m : kMigrations) {
         if (!existingCols.contains(QLatin1String(m.name))) {
@@ -168,6 +224,31 @@ bool DatabaseManager::initialize() {
             }
         }
     }
+
+    auto migrateTable = [&q](const QString& table, const QList<ColumnMigration>& migs) {
+        QSet<QString> cols;
+        if (q.exec(QStringLiteral("PRAGMA table_info(%1)").arg(table))) {
+            while (q.next()) {
+                cols.insert(q.value(1).toString().toLower());
+            }
+        }
+        for (const auto& m : migs) {
+            if (!cols.contains(QLatin1String(m.name))) {
+                if (!q.exec(QLatin1String(m.sql))) {
+                    qWarning() << "Failed to migrate" << table << "for column" << m.name << ":" << q.lastError().text();
+                }
+            }
+        }
+    };
+    migrateTable(QStringLiteral("prefixes"), {
+        {"installed_prereqs_json", "ALTER TABLE prefixes ADD COLUMN installed_prereqs_json TEXT"}
+    });
+    migrateTable(QStringLiteral("epic_library"), {
+        {"cloud_save_folder", "ALTER TABLE epic_library ADD COLUMN cloud_save_folder TEXT"},
+        {"cloud_include_json", "ALTER TABLE epic_library ADD COLUMN cloud_include_json TEXT"},
+        {"cloud_exclude_json", "ALTER TABLE epic_library ADD COLUMN cloud_exclude_json TEXT"},
+        {"is_hidden", "ALTER TABLE epic_library ADD COLUMN is_hidden INTEGER DEFAULT 0"}
+    });
 
     return true;
 }
@@ -182,14 +263,14 @@ bool DatabaseManager::saveGame(const GameRecord& game) {
             steamgrid_app_id, is_favorite, is_pinned,
             playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json,
             platform, source, epic_app_name, epic_namespace, epic_catalog_item_id,
-            epic_build_version, epic_install_dir
+            epic_build_version, epic_install_dir, categories_json, is_hidden
         ) VALUES (
             :id, :title, :executable_path, :working_directory, :launch_arguments,
             :runner_id, :prefix_id, :cover_path, :banner_path, :logo_path, :icon_path,
             :steamgrid_app_id, :is_favorite, :is_pinned,
             :playtime_seconds, :last_played_timestamp, :added_timestamp, :launch_config_json,
             :platform, :source, :epic_app_name, :epic_namespace, :epic_catalog_item_id,
-            :epic_build_version, :epic_install_dir
+            :epic_build_version, :epic_install_dir, :categories_json, :is_hidden
         )
     )"));
     q.bindValue(QStringLiteral(":id"), game.id);
@@ -217,6 +298,9 @@ bool DatabaseManager::saveGame(const GameRecord& game) {
     q.bindValue(QStringLiteral(":epic_catalog_item_id"), game.epicCatalogItemId);
     q.bindValue(QStringLiteral(":epic_build_version"), game.epicBuildVersion);
     q.bindValue(QStringLiteral(":epic_install_dir"), game.epicInstallDir);
+    q.bindValue(QStringLiteral(":categories_json"),
+                QString::fromUtf8(QJsonDocument(QJsonArray::fromStringList(game.categories)).toJson(QJsonDocument::Compact)));
+    q.bindValue(QStringLiteral(":is_hidden"), game.isHidden ? 1 : 0);
 
     if (!q.exec()) {
         qWarning() << "saveGame failed:" << q.lastError().text();
@@ -266,6 +350,15 @@ GameRecord DatabaseManager::recordFromQuery(QSqlQuery& q) {
     g.epicCatalogItemId = q.value(22).toString();
     g.epicBuildVersion = q.value(23).toString();
     g.epicInstallDir = q.value(24).toString();
+    const QByteArray catBytes = q.value(25).toString().toUtf8();
+    if (!catBytes.isEmpty()) {
+        const QJsonArray arr = QJsonDocument::fromJson(catBytes).array();
+        for (const QJsonValue& v : arr) {
+            const QString s = v.toString().trimmed();
+            if (!s.isEmpty() && !g.categories.contains(s)) g.categories.append(s);
+        }
+    }
+    g.isHidden = q.value(26).toInt() != 0;
     return g;
 }
 
@@ -278,7 +371,7 @@ std::optional<GameRecord> DatabaseManager::getGame(const QString& gameId) const 
                steamgrid_app_id, is_favorite, is_pinned,
                playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json,
                platform, source, epic_app_name, epic_namespace, epic_catalog_item_id,
-               epic_build_version, epic_install_dir
+               epic_build_version, epic_install_dir, categories_json, is_hidden
         FROM games WHERE id = :id
     )"));
     q.bindValue(QStringLiteral(":id"), gameId);
@@ -298,7 +391,7 @@ std::optional<GameRecord> DatabaseManager::getGameByEpicAppName(const QString& a
                steamgrid_app_id, is_favorite, is_pinned,
                playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json,
                platform, source, epic_app_name, epic_namespace, epic_catalog_item_id,
-               epic_build_version, epic_install_dir
+               epic_build_version, epic_install_dir, categories_json, is_hidden
         FROM games WHERE epic_app_name = :app_name AND source = 'epic'
         LIMIT 1
     )"));
@@ -319,7 +412,7 @@ QList<GameRecord> DatabaseManager::getAllGames() const {
                steamgrid_app_id, is_favorite, is_pinned,
                playtime_seconds, last_played_timestamp, added_timestamp, launch_config_json,
                platform, source, epic_app_name, epic_namespace, epic_catalog_item_id,
-               epic_build_version, epic_install_dir
+               epic_build_version, epic_install_dir, categories_json, is_hidden
         FROM games
         ORDER BY is_pinned DESC, last_played_timestamp DESC, added_timestamp DESC
     )"))) {
@@ -352,11 +445,11 @@ bool DatabaseManager::savePrefix(const PrefixRecord& prefix) {
         INSERT OR REPLACE INTO prefixes (
             id, name, path, arch, windows_version, runner_id,
             dxvk_installed, vkd3d_installed, dll_overrides_json,
-            installed_winetricks_json, created_at
+            installed_winetricks_json, created_at, installed_prereqs_json
         ) VALUES (
             :id, :name, :path, :arch, :windows_version, :runner_id,
             :dxvk_installed, :vkd3d_installed, :dll_overrides_json,
-            :installed_winetricks_json, :created_at
+            :installed_winetricks_json, :created_at, :installed_prereqs_json
         )
     )"));
     q.bindValue(QStringLiteral(":id"), prefix.id);
@@ -372,10 +465,13 @@ bool DatabaseManager::savePrefix(const PrefixRecord& prefix) {
         QJsonDocument(QJsonObject::fromVariantMap(prefix.dllOverrides)).toJson(QJsonDocument::Compact));
     const QString winetricksJson = QString::fromUtf8(
         QJsonDocument(QJsonArray::fromStringList(prefix.installedWinetricks)).toJson(QJsonDocument::Compact));
+    const QString prereqsJson = QString::fromUtf8(
+        QJsonDocument(QJsonArray::fromStringList(prefix.installedPrereqIds)).toJson(QJsonDocument::Compact));
 
     q.bindValue(QStringLiteral(":dll_overrides_json"), overridesJson);
     q.bindValue(QStringLiteral(":installed_winetricks_json"), winetricksJson);
     q.bindValue(QStringLiteral(":created_at"), prefix.createdAt);
+    q.bindValue(QStringLiteral(":installed_prereqs_json"), prereqsJson);
     return q.exec();
 }
 
@@ -410,6 +506,14 @@ PrefixRecord DatabaseManager::prefixFromQuery(QSqlQuery& q) {
         }
     }
     p.createdAt = q.value(10).toLongLong();
+    const QByteArray prBytes = q.value(11).toString().toUtf8();
+    if (!prBytes.isEmpty()) {
+        const QJsonArray arr = QJsonDocument::fromJson(prBytes).array();
+        for (const QJsonValue& v : arr) {
+            const QString s = v.toString().trimmed();
+            if (!s.isEmpty() && !p.installedPrereqIds.contains(s)) p.installedPrereqIds.append(s);
+        }
+    }
     return p;
 }
 
@@ -419,7 +523,7 @@ std::optional<PrefixRecord> DatabaseManager::getPrefix(const QString& prefixId) 
     q.prepare(QStringLiteral(R"(
         SELECT id, name, path, arch, windows_version, runner_id,
                dxvk_installed, vkd3d_installed, dll_overrides_json,
-               installed_winetricks_json, created_at
+               installed_winetricks_json, created_at, installed_prereqs_json
         FROM prefixes WHERE id = :id
     )"));
     q.bindValue(QStringLiteral(":id"), prefixId);
@@ -435,7 +539,7 @@ std::optional<PrefixRecord> DatabaseManager::getPrefixByName(const QString& name
     q.prepare(QStringLiteral(R"(
         SELECT id, name, path, arch, windows_version, runner_id,
                dxvk_installed, vkd3d_installed, dll_overrides_json,
-               installed_winetricks_json, created_at
+               installed_winetricks_json, created_at, installed_prereqs_json
         FROM prefixes WHERE LOWER(name) = LOWER(:name)
     )"));
     q.bindValue(QStringLiteral(":name"), name);
@@ -452,7 +556,7 @@ QList<PrefixRecord> DatabaseManager::getAllPrefixes() const {
     if (q.exec(QStringLiteral(R"(
         SELECT id, name, path, arch, windows_version, runner_id,
                dxvk_installed, vkd3d_installed, dll_overrides_json,
-               installed_winetricks_json, created_at
+               installed_winetricks_json, created_at, installed_prereqs_json
         FROM prefixes ORDER BY created_at DESC, name ASC
     )"))) {
         while (q.next()) {
@@ -606,6 +710,21 @@ EpicLibraryItem DatabaseManager::epicItemFromQuery(QSqlQuery& q) {
     item.installSize = q.value(13).toLongLong();
     item.buildVersion = q.value(14).toString();
     item.lastSynced = q.value(15).toLongLong();
+    item.cloudSaveFolder = q.value(16).toString();
+    auto parseList = [](const QByteArray& bytes) {
+        QStringList out;
+        if (!bytes.isEmpty()) {
+            const QJsonArray arr = QJsonDocument::fromJson(bytes).array();
+            for (const QJsonValue& v : arr) {
+                const QString s = v.toString().trimmed();
+                if (!s.isEmpty()) out.append(s);
+            }
+        }
+        return out;
+    };
+    item.cloudIncludeList = parseList(q.value(17).toString().toUtf8());
+    item.cloudExcludeList = parseList(q.value(18).toString().toUtf8());
+    item.isHidden = q.value(19).toInt() != 0;
     return item;
 }
 
@@ -625,7 +744,8 @@ bool DatabaseManager::saveEpicLibraryItems(const QList<EpicLibraryItem>& items) 
         INSERT OR REPLACE INTO epic_library (
             app_name, namespace_id, catalog_item_id, title, developer, description,
             cover_url, banner_url, logo_url, cover_path, banner_path, logo_path,
-            download_size, install_size, build_version, last_synced
+            download_size, install_size, build_version, last_synced,
+            cloud_save_folder, cloud_include_json, cloud_exclude_json, is_hidden
         ) VALUES (
             :app_name, :namespace_id, :catalog_item_id, :title, :developer, :description,
             :cover_url, :banner_url, :logo_url,
@@ -635,7 +755,11 @@ bool DatabaseManager::saveEpicLibraryItems(const QList<EpicLibraryItem>& items) 
             CASE WHEN :download_size > 0 THEN :download_size ELSE COALESCE((SELECT download_size FROM epic_library WHERE app_name = :app_name), 0) END,
             CASE WHEN :install_size > 0 THEN :install_size ELSE COALESCE((SELECT install_size FROM epic_library WHERE app_name = :app_name), 0) END,
             COALESCE(NULLIF(:build_version, ''), (SELECT build_version FROM epic_library WHERE app_name = :app_name)),
-            :last_synced
+            :last_synced,
+            COALESCE(NULLIF(:cloud_save_folder, ''), (SELECT cloud_save_folder FROM epic_library WHERE app_name = :app_name)),
+            COALESCE(NULLIF(:cloud_include_json, ''), (SELECT cloud_include_json FROM epic_library WHERE app_name = :app_name)),
+            COALESCE(NULLIF(:cloud_exclude_json, ''), (SELECT cloud_exclude_json FROM epic_library WHERE app_name = :app_name)),
+            CASE WHEN :is_hidden != 0 THEN 1 ELSE COALESCE((SELECT is_hidden FROM epic_library WHERE app_name = :app_name), 0) END
         )
     )"));
 
@@ -656,6 +780,16 @@ bool DatabaseManager::saveEpicLibraryItems(const QList<EpicLibraryItem>& items) 
         q.bindValue(QStringLiteral(":install_size"), item.installSize);
         q.bindValue(QStringLiteral(":build_version"), item.buildVersion);
         q.bindValue(QStringLiteral(":last_synced"), item.lastSynced);
+        q.bindValue(QStringLiteral(":cloud_save_folder"), item.cloudSaveFolder);
+        q.bindValue(QStringLiteral(":cloud_include_json"),
+                    item.cloudIncludeList.isEmpty()
+                        ? QString()
+                        : QString::fromUtf8(QJsonDocument(QJsonArray::fromStringList(item.cloudIncludeList)).toJson(QJsonDocument::Compact)));
+        q.bindValue(QStringLiteral(":cloud_exclude_json"),
+                    item.cloudExcludeList.isEmpty()
+                        ? QString()
+                        : QString::fromUtf8(QJsonDocument(QJsonArray::fromStringList(item.cloudExcludeList)).toJson(QJsonDocument::Compact)));
+        q.bindValue(QStringLiteral(":is_hidden"), item.isHidden ? 1 : 0);
         if (!q.exec()) {
             qWarning() << "saveEpicLibraryItems failed:" << q.lastError().text();
             database.rollback();
@@ -672,7 +806,8 @@ std::optional<EpicLibraryItem> DatabaseManager::getEpicLibraryItem(const QString
     q.prepare(QStringLiteral(R"(
         SELECT app_name, namespace_id, catalog_item_id, title, developer, description,
                cover_url, banner_url, logo_url, cover_path, banner_path, logo_path,
-               download_size, install_size, build_version, last_synced
+               download_size, install_size, build_version, last_synced,
+               cloud_save_folder, cloud_include_json, cloud_exclude_json, COALESCE(is_hidden, 0)
         FROM epic_library WHERE app_name = :app_name
     )"));
     q.bindValue(QStringLiteral(":app_name"), appName);
@@ -689,7 +824,8 @@ QList<EpicLibraryItem> DatabaseManager::getAllEpicLibraryItems() const {
     if (q.exec(QStringLiteral(R"(
         SELECT app_name, namespace_id, catalog_item_id, title, developer, description,
                cover_url, banner_url, logo_url, cover_path, banner_path, logo_path,
-               download_size, install_size, build_version, last_synced
+               download_size, install_size, build_version, last_synced,
+               cloud_save_folder, cloud_include_json, cloud_exclude_json, COALESCE(is_hidden, 0)
         FROM epic_library ORDER BY title COLLATE NOCASE ASC
     )"))) {
         while (q.next()) {
@@ -736,10 +872,359 @@ bool DatabaseManager::updateEpicLibrarySizes(const QString& appName, qint64 down
     return q.exec();
 }
 
+bool DatabaseManager::setEpicLibraryItemHidden(const QString& appName, bool hidden) {
+    if (appName.isEmpty()) return false;
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral("UPDATE epic_library SET is_hidden = :hidden WHERE app_name = :app_name"));
+    q.bindValue(QStringLiteral(":hidden"), hidden ? 1 : 0);
+    q.bindValue(QStringLiteral(":app_name"), appName);
+    return q.exec();
+}
+
 bool DatabaseManager::clearEpicLibrary() {
     QMutexLocker locker(&m_mutex);
     QSqlQuery q(db());
+    q.exec(QStringLiteral("DELETE FROM epic_dlcs"));
     return q.exec(QStringLiteral("DELETE FROM epic_library"));
+}
+
+bool DatabaseManager::saveEpicDlcs(const QList<EpicDlcItem>& dlcs) {
+    if (dlcs.isEmpty()) return true;
+    QMutexLocker locker(&m_mutex);
+    auto database = db();
+    if (!database.isOpen()) return false;
+    database.transaction();
+
+    QSqlQuery q(database);
+    q.prepare(QStringLiteral(R"(
+        INSERT OR REPLACE INTO epic_dlcs (
+            app_name, parent_app_name, namespace_id, catalog_item_id,
+            title, description, install_size, is_installed
+        ) VALUES (
+            :app_name, :parent_app_name, :namespace_id, :catalog_item_id,
+            :title, :description,
+            CASE WHEN :install_size > 0 THEN :install_size ELSE COALESCE((SELECT install_size FROM epic_dlcs WHERE app_name = :app_name), 0) END,
+            CASE WHEN :is_installed != 0 THEN 1 ELSE COALESCE((SELECT is_installed FROM epic_dlcs WHERE app_name = :app_name), 0) END
+        )
+    )"));
+    for (const EpicDlcItem& d : dlcs) {
+        q.bindValue(QStringLiteral(":app_name"), d.appName);
+        q.bindValue(QStringLiteral(":parent_app_name"), d.parentAppName);
+        q.bindValue(QStringLiteral(":namespace_id"), d.namespaceId);
+        q.bindValue(QStringLiteral(":catalog_item_id"), d.catalogItemId);
+        q.bindValue(QStringLiteral(":title"), d.title);
+        q.bindValue(QStringLiteral(":description"), d.description);
+        q.bindValue(QStringLiteral(":install_size"), d.installSize);
+        q.bindValue(QStringLiteral(":is_installed"), d.isInstalled ? 1 : 0);
+        if (!q.exec()) {
+            database.rollback();
+            return false;
+        }
+    }
+    return database.commit();
+}
+
+QList<EpicDlcItem> DatabaseManager::getEpicDlcsForGame(const QString& parentAppName) const {
+    QList<EpicDlcItem> out;
+    if (parentAppName.isEmpty()) return out;
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral(R"(
+        SELECT app_name, parent_app_name, namespace_id, catalog_item_id,
+               title, description, install_size, is_installed
+        FROM epic_dlcs WHERE parent_app_name = :parent
+        ORDER BY title COLLATE NOCASE ASC
+    )"));
+    q.bindValue(QStringLiteral(":parent"), parentAppName);
+    if (q.exec()) {
+        while (q.next()) {
+            EpicDlcItem d;
+            d.appName = q.value(0).toString();
+            d.parentAppName = q.value(1).toString();
+            d.namespaceId = q.value(2).toString();
+            d.catalogItemId = q.value(3).toString();
+            d.title = q.value(4).toString();
+            d.description = q.value(5).toString();
+            d.installSize = q.value(6).toLongLong();
+            d.isInstalled = q.value(7).toInt() != 0;
+            out.append(d);
+        }
+    }
+    return out;
+}
+
+bool DatabaseManager::setEpicDlcInstalled(const QString& dlcAppName, bool installed) {
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral("UPDATE epic_dlcs SET is_installed = :inst WHERE app_name = :app"));
+    q.bindValue(QStringLiteral(":inst"), installed ? 1 : 0);
+    q.bindValue(QStringLiteral(":app"), dlcAppName);
+    return q.exec();
+}
+
+bool DatabaseManager::clearEpicDlcs() {
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    return q.exec(QStringLiteral("DELETE FROM epic_dlcs"));
+}
+
+QStringList DatabaseManager::getAllCollections() const {
+    QMutexLocker locker(&m_mutex);
+    QSet<QString> unique;
+    QSqlQuery q(db());
+    if (q.exec(QStringLiteral("SELECT name FROM collections ORDER BY name COLLATE NOCASE ASC"))) {
+        while (q.next()) {
+            const QString n = q.value(0).toString().trimmed();
+            if (!n.isEmpty()) unique.insert(n);
+        }
+    }
+    if (q.exec(QStringLiteral("SELECT categories_json FROM games WHERE categories_json IS NOT NULL AND categories_json != ''"))) {
+        while (q.next()) {
+            const QJsonArray arr = QJsonDocument::fromJson(q.value(0).toString().toUtf8()).array();
+            for (const QJsonValue& v : arr) {
+                const QString n = v.toString().trimmed();
+                if (!n.isEmpty()) unique.insert(n);
+            }
+        }
+    }
+    QStringList out = unique.values();
+    out.sort(Qt::CaseInsensitive);
+    return out;
+}
+
+bool DatabaseManager::createCollection(const QString& name) {
+    const QString clean = name.trimmed();
+    if (clean.isEmpty()) return false;
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral("INSERT OR IGNORE INTO collections (name, created_at) VALUES (:name, :ts)"));
+    q.bindValue(QStringLiteral(":name"), clean);
+    q.bindValue(QStringLiteral(":ts"), QDateTime::currentSecsSinceEpoch());
+    return q.exec();
+}
+
+bool DatabaseManager::renameCollection(const QString& oldName, const QString& newName) {
+    const QString cleanOld = oldName.trimmed();
+    const QString cleanNew = newName.trimmed();
+    if (cleanOld.isEmpty() || cleanNew.isEmpty() || cleanOld == cleanNew) return false;
+    QMutexLocker locker(&m_mutex);
+    auto database = db();
+    if (!database.isOpen()) return false;
+    database.transaction();
+
+    QSqlQuery q(database);
+    q.prepare(QStringLiteral("DELETE FROM collections WHERE name = :old"));
+    q.bindValue(QStringLiteral(":old"), cleanOld);
+    q.exec();
+
+    q.prepare(QStringLiteral("INSERT OR IGNORE INTO collections (name, created_at) VALUES (:new, :ts)"));
+    q.bindValue(QStringLiteral(":new"), cleanNew);
+    q.bindValue(QStringLiteral(":ts"), QDateTime::currentSecsSinceEpoch());
+    q.exec();
+
+    QList<QPair<QString, QString>> gameUpdates;
+    if (q.exec(QStringLiteral("SELECT id, categories_json FROM games WHERE categories_json IS NOT NULL AND categories_json != ''"))) {
+        while (q.next()) {
+            const QString id = q.value(0).toString();
+            const QJsonArray arr = QJsonDocument::fromJson(q.value(1).toString().toUtf8()).array();
+            QStringList cats;
+            bool changed = false;
+            for (const QJsonValue& v : arr) {
+                QString c = v.toString().trimmed();
+                if (c == cleanOld) {
+                    c = cleanNew;
+                    changed = true;
+                }
+                if (!c.isEmpty() && !cats.contains(c)) cats.append(c);
+            }
+            if (changed) {
+                gameUpdates.append({id, QString::fromUtf8(QJsonDocument(QJsonArray::fromStringList(cats)).toJson(QJsonDocument::Compact))});
+            }
+        }
+    }
+    for (const auto& upd : gameUpdates) {
+        QSqlQuery uq(database);
+        uq.prepare(QStringLiteral("UPDATE games SET categories_json = :json WHERE id = :id"));
+        uq.bindValue(QStringLiteral(":json"), upd.second);
+        uq.bindValue(QStringLiteral(":id"), upd.first);
+        uq.exec();
+    }
+    return database.commit();
+}
+
+bool DatabaseManager::deleteCollection(const QString& name) {
+    const QString clean = name.trimmed();
+    if (clean.isEmpty()) return false;
+    QMutexLocker locker(&m_mutex);
+    auto database = db();
+    if (!database.isOpen()) return false;
+    database.transaction();
+
+    QSqlQuery q(database);
+    q.prepare(QStringLiteral("DELETE FROM collections WHERE name = :name"));
+    q.bindValue(QStringLiteral(":name"), clean);
+    q.exec();
+
+    QList<QPair<QString, QString>> gameUpdates;
+    if (q.exec(QStringLiteral("SELECT id, categories_json FROM games WHERE categories_json IS NOT NULL AND categories_json != ''"))) {
+        while (q.next()) {
+            const QString id = q.value(0).toString();
+            const QJsonArray arr = QJsonDocument::fromJson(q.value(1).toString().toUtf8()).array();
+            QStringList cats;
+            bool changed = false;
+            for (const QJsonValue& v : arr) {
+                const QString c = v.toString().trimmed();
+                if (c == clean) {
+                    changed = true;
+                } else if (!c.isEmpty() && !cats.contains(c)) {
+                    cats.append(c);
+                }
+            }
+            if (changed) {
+                gameUpdates.append({id, QString::fromUtf8(QJsonDocument(QJsonArray::fromStringList(cats)).toJson(QJsonDocument::Compact))});
+            }
+        }
+    }
+    for (const auto& upd : gameUpdates) {
+        QSqlQuery uq(database);
+        uq.prepare(QStringLiteral("UPDATE games SET categories_json = :json WHERE id = :id"));
+        uq.bindValue(QStringLiteral(":json"), upd.second);
+        uq.bindValue(QStringLiteral(":id"), upd.first);
+        uq.exec();
+    }
+    return database.commit();
+}
+
+QString DatabaseManager::getCachedUmuId(const QString& store, const QString& codename) const {
+    if (store.isEmpty() || codename.isEmpty()) return QString();
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral("SELECT umu_id FROM umu_id_cache WHERE store = :store AND codename = :codename"));
+    q.bindValue(QStringLiteral(":store"), store);
+    q.bindValue(QStringLiteral(":codename"), codename);
+    if (q.exec() && q.next()) {
+        return q.value(0).toString();
+    }
+    return QString();
+}
+
+bool DatabaseManager::saveCachedUmuId(const QString& store, const QString& codename, const QString& umuId, const QString& title) {
+    if (store.isEmpty() || codename.isEmpty() || umuId.isEmpty()) return false;
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral(R"(
+        INSERT OR REPLACE INTO umu_id_cache (store, codename, umu_id, title, updated_at)
+        VALUES (:store, :codename, :umu_id, :title, :ts)
+    )"));
+    q.bindValue(QStringLiteral(":store"), store);
+    q.bindValue(QStringLiteral(":codename"), codename);
+    q.bindValue(QStringLiteral(":umu_id"), umuId);
+    q.bindValue(QStringLiteral(":title"), title);
+    q.bindValue(QStringLiteral(":ts"), QDateTime::currentSecsSinceEpoch());
+    return q.exec();
+}
+
+std::optional<DatabaseManager::CloudSaveState> DatabaseManager::getCloudSaveState(const QString& gameId) const {
+    if (gameId.isEmpty()) return std::nullopt;
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral("SELECT game_id, last_sync_epoch, last_manifest_hash, files_json FROM cloud_save_state WHERE game_id = :id"));
+    q.bindValue(QStringLiteral(":id"), gameId);
+    if (q.exec() && q.next()) {
+        CloudSaveState st;
+        st.gameId = q.value(0).toString();
+        st.lastSyncEpoch = q.value(1).toLongLong();
+        st.lastManifestHash = q.value(2).toString();
+        const QByteArray bytes = q.value(3).toString().toUtf8();
+        if (!bytes.isEmpty()) {
+            st.trackedFiles = QJsonDocument::fromJson(bytes).object().toVariantMap();
+        }
+        return st;
+    }
+    return std::nullopt;
+}
+
+bool DatabaseManager::saveCloudSaveState(const CloudSaveState& state) {
+    if (state.gameId.isEmpty()) return false;
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral(R"(
+        INSERT OR REPLACE INTO cloud_save_state (game_id, last_sync_epoch, last_manifest_hash, files_json)
+        VALUES (:id, :ts, :hash, :files)
+    )"));
+    q.bindValue(QStringLiteral(":id"), state.gameId);
+    q.bindValue(QStringLiteral(":ts"), state.lastSyncEpoch);
+    q.bindValue(QStringLiteral(":hash"), state.lastManifestHash);
+    q.bindValue(QStringLiteral(":files"),
+                QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(state.trackedFiles)).toJson(QJsonDocument::Compact)));
+    return q.exec();
+}
+
+bool DatabaseManager::clearCloudSaveState(const QString& gameId) {
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral("DELETE FROM cloud_save_state WHERE game_id = :id"));
+    q.bindValue(QStringLiteral(":id"), gameId);
+    return q.exec();
+}
+
+bool DatabaseManager::saveQueuedDownload(const QueuedDownloadRecord& rec) {
+    if (rec.id.isEmpty()) return false;
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral(R"(
+        INSERT OR REPLACE INTO download_queue (id, kind, title, app_name, payload_json, status, sort_order, created_at)
+        VALUES (:id, :kind, :title, :app_name, :payload, :status, :sort_order, :created_at)
+    )"));
+    q.bindValue(QStringLiteral(":id"), rec.id);
+    q.bindValue(QStringLiteral(":kind"), rec.kind);
+    q.bindValue(QStringLiteral(":title"), rec.title);
+    q.bindValue(QStringLiteral(":app_name"), rec.appName);
+    q.bindValue(QStringLiteral(":payload"), rec.payloadJson);
+    q.bindValue(QStringLiteral(":status"), rec.status);
+    q.bindValue(QStringLiteral(":sort_order"), rec.sortOrder);
+    q.bindValue(QStringLiteral(":created_at"), rec.createdAt);
+    return q.exec();
+}
+
+bool DatabaseManager::removeQueuedDownload(const QString& id) {
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    q.prepare(QStringLiteral("DELETE FROM download_queue WHERE id = :id"));
+    q.bindValue(QStringLiteral(":id"), id);
+    return q.exec();
+}
+
+QList<QueuedDownloadRecord> DatabaseManager::getAllQueuedDownloads() const {
+    QList<QueuedDownloadRecord> out;
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    if (q.exec(QStringLiteral(R"(
+        SELECT id, kind, title, app_name, payload_json, status, sort_order, created_at
+        FROM download_queue
+        ORDER BY sort_order ASC, created_at ASC
+    )"))) {
+        while (q.next()) {
+            QueuedDownloadRecord r;
+            r.id = q.value(0).toString();
+            r.kind = q.value(1).toString();
+            r.title = q.value(2).toString();
+            r.appName = q.value(3).toString();
+            r.payloadJson = q.value(4).toString();
+            r.status = q.value(5).toString();
+            r.sortOrder = q.value(6).toInt();
+            r.createdAt = q.value(7).toLongLong();
+            out.append(r);
+        }
+    }
+    return out;
+}
+
+bool DatabaseManager::clearQueuedDownloads() {
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    return q.exec(QStringLiteral("DELETE FROM download_queue"));
 }
 
 } // namespace Tsuki

@@ -37,9 +37,13 @@ Item {
 
     function currentSortName() {
         const m = epicModel ? epicModel.sortMode : 0
-        if (m === 1) return "Installed"
-        if (m === 2) return "Z → A"
-        return "A → Z"
+        let base = "A → Z"
+        if (m === 1) base = "Installed"
+        else if (m === 2) base = "Z → A"
+        if (epicModel && epicModel.showHidden) {
+            return base + " · Hidden"
+        }
+        return base
     }
 
     function forceFocus() {
@@ -246,7 +250,7 @@ Item {
         anchors.fill: parent
         spacing: 0
 
-        // Minimal Top Utility Strip
+        // Minimal Top Utility Strip (Matches TopBar.qml M3 Design)
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 84
@@ -265,16 +269,36 @@ Item {
                     Layout.alignment: Qt.AlignVCenter
                     Layout.preferredWidth: 360
                     Layout.preferredHeight: 40
-                    Layout.minimumWidth: 200
-                    Layout.maximumWidth: 500
+                    Layout.minimumWidth: 180
+                    Layout.maximumWidth: 480
                     radius: 20
                     readonly property bool isEditing: epicSearchField.activeFocus
                     readonly property bool isTileFocused: searchTile.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
-                    color: (epicSearchField.activeFocus || isTileFocused)
-                        ? appSettings.surfaceContainerHigh
-                        : appSettings.inputColor
-                    border.color: (epicSearchField.activeFocus || isTileFocused) ? appSettings.accentColor : appSettings.borderColor
+                    readonly property bool isSearchHovered: epicSearchTileHover.hovered || epicSearchField.hovered
+                    color: {
+                        let base = appSettings.inputColor
+                        if (epicSearchField.activeFocus || searchTile.isTileFocused) {
+                            return appSettings.isEffectiveDark
+                                ? Qt.rgba(Math.min(1.0, base.r + 0.08), Math.min(1.0, base.g + 0.08), Math.min(1.0, base.b + 0.08), 1.0)
+                                : Qt.rgba(Math.max(0.0, base.r - 0.04), Math.max(0.0, base.g - 0.04), Math.max(0.0, base.b - 0.04), 1.0)
+                        }
+                        if (isSearchHovered) {
+                            return appSettings.isEffectiveDark
+                                ? Qt.rgba(Math.min(1.0, base.r + 0.04), Math.min(1.0, base.g + 0.04), Math.min(1.0, base.b + 0.04), 1.0)
+                                : Qt.rgba(Math.max(0.0, base.r - 0.02), Math.max(0.0, base.g - 0.02), Math.max(0.0, base.b - 0.02), 1.0)
+                        }
+                        return base
+                    }
+                    border.color: (epicSearchField.activeFocus || isTileFocused)
+                        ? appSettings.accentColor
+                        : (isSearchHovered
+                            ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.14))
+                            : appSettings.borderColor)
                     border.width: (epicSearchField.activeFocus || isTileFocused) ? 2 : 1
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                    HoverHandler { id: epicSearchTileHover; cursorShape: Qt.IBeamCursor }
 
                     Keys.onLeftPressed: (event) => {
                         if (!searchTile.isEditing) {
@@ -308,6 +332,7 @@ Item {
                         size: 18
                         source: "qrc:/tsuki_app/icons/actions/search.svg"
                         color: (epicSearchField.activeFocus || searchTile.isTileFocused) ? appSettings.accentColor : appSettings.textSecColor
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
 
                     TextField {
@@ -346,7 +371,12 @@ Item {
                         implicitHeight: 28
                         visible: epicSearchField.text.length > 0
                         focusPolicy: Qt.NoFocus
-                        background: Rectangle { radius: 14; color: appSettings.surfaceAltColor; opacity: parent.hovered ? 1.0 : 0.0 }
+                        background: Rectangle {
+                            radius: 14
+                            color: appSettings.surfaceAltColor
+                            opacity: parent.hovered ? 1.0 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                        }
                         contentItem: YIcon {
                             anchors.centerIn: parent
                             size: 14
@@ -362,22 +392,61 @@ Item {
 
                 Item { Layout.fillWidth: true }
 
-                // Sort Button
+                // M3 Pill Sort & Hidden Toggle Dropdown (Identical to TopBar.qml sortBtn)
                 Button {
                     id: sortBtn
+                    objectName: "epicSortBtn"
                     padding: 0
                     activeFocusOnTab: false
                     Layout.alignment: Qt.AlignVCenter
                     implicitHeight: 40
-                    implicitWidth: Math.max(106, sortInner.implicitWidth + 28)
+                    implicitWidth: Math.max(112, sortInner.implicitWidth + 32)
 
+                    property int focusedPopupIndex: 0
+                    readonly property int popupItemCount: root.sortOptions.length + 1
+                    readonly property bool showingHidden: Boolean(root.epicModel && root.epicModel.showHidden)
+                    function handlePopupDown() {
+                        focusedPopupIndex = (focusedPopupIndex + 1) % popupItemCount
+                    }
+                    function handlePopupUp() {
+                        focusedPopupIndex = (focusedPopupIndex - 1 + popupItemCount) % popupItemCount
+                    }
+                    function handlePopupSelect() {
+                        if (focusedPopupIndex === root.sortOptions.length) {
+                            if (root.epicModel) root.epicModel.showHidden = !root.epicModel.showHidden
+                            return
+                        }
+                        if (focusedPopupIndex >= 0 && focusedPopupIndex < root.sortOptions.length && root.epicModel) {
+                            root.epicModel.sortMode = root.sortOptions[focusedPopupIndex].mode
+                        }
+                        sortPopup.close()
+                    }
+                    function syncActiveIndex() {
+                        const cur = root.epicModel ? root.epicModel.sortMode : 0
+                        for (let i = 0; i < root.sortOptions.length; ++i) {
+                            if (root.sortOptions[i].mode === cur) {
+                                focusedPopupIndex = i
+                                break
+                            }
+                        }
+                    }
+
+                    readonly property bool isBtnHovered: sortHover.hovered
                     readonly property bool isKeyboardFocused: sortBtn.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+                    readonly property bool isHighlighted: sortPopup.visible || isBtnHovered || isKeyboardFocused || showingHidden
 
                     background: Rectangle {
                         radius: height / 2
-                        color: (sortHover.hovered || sortPopup.visible) ? appSettings.surfaceContainerHighest : appSettings.surfaceContainerHigh
+                        color: sortBtn.showingHidden
+                            ? appSettings.secondaryContainer
+                            : ((sortBtn.isBtnHovered || sortPopup.visible)
+                                ? appSettings.surfaceContainerHighest
+                                : appSettings.surfaceContainerHigh)
                         border.color: appSettings.accentColor
                         border.width: (sortPopup.visible || sortBtn.isKeyboardFocused) ? 2 : 0
+                        scale: sortBtn.pressed ? 0.96 : (sortBtn.isKeyboardFocused ? 1.02 : 1.0)
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on scale { NumberAnimation { duration: 100 } }
                     }
 
                     contentItem: Item {
@@ -386,81 +455,313 @@ Item {
                         Row {
                             id: sortInner
                             anchors.centerIn: parent
-                            spacing: 6
+                            spacing: 8
                             YIcon {
                                 anchors.verticalCenter: parent.verticalCenter
                                 size: 17
                                 symbol: "sort"
-                                color: (sortHover.hovered || sortPopup.visible) ? appSettings.accentColor : appSettings.textSecColor
+                                color: sortBtn.showingHidden
+                                    ? appSettings.onSecondaryContainer
+                                    : (sortBtn.isHighlighted ? appSettings.accentColor : appSettings.textSecColor)
+                                Behavior on color { ColorAnimation { duration: 120 } }
                             }
                             Label {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.currentSortName()
-                                color: appSettings.textColor
+                                color: sortBtn.showingHidden ? appSettings.onSecondaryContainer : appSettings.textColor
                                 font.family: "Rubik"
                                 font.pixelSize: 13
                                 font.weight: Font.Medium
+                                renderType: Text.QtRendering
                             }
                             YIcon {
                                 anchors.verticalCenter: parent.verticalCenter
                                 size: 18
                                 symbol: "keyboard_arrow_down"
-                                color: appSettings.textSecColor
+                                color: sortBtn.showingHidden
+                                    ? appSettings.onSecondaryContainer
+                                    : (sortBtn.isHighlighted ? appSettings.accentColor : appSettings.textSecColor)
                                 rotation: sortPopup.visible ? 180 : 0
+                                Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                                Behavior on color { ColorAnimation { duration: 120 } }
                             }
                         }
                     }
 
                     HoverHandler { id: sortHover; cursorShape: Qt.PointingHandCursor }
-                    onClicked: sortPopup.visible ? sortPopup.close() : sortPopup.open()
-                    Keys.onLeftPressed: (event) => { event.accepted = true; searchTile.forceActiveFocus() }
-                    Keys.onRightPressed: (event) => { event.accepted = true; syncBtn.forceActiveFocus() }
-                    Keys.onDownPressed: (event) => { event.accepted = true; epicGrid.forceActiveFocus() }
+                    onClicked: {
+                        if (sortPopup.visible) {
+                            sortPopup.close()
+                        } else {
+                            sortBtn.syncActiveIndex()
+                            sortPopup.open()
+                        }
+                    }
+
+                    Keys.onLeftPressed: (event) => {
+                        if (!sortPopup.visible) {
+                            event.accepted = true
+                            searchTile.forceActiveFocus()
+                        }
+                    }
+                    Keys.onRightPressed: (event) => {
+                        if (!sortPopup.visible) {
+                            event.accepted = true
+                            syncBtn.forceActiveFocus()
+                        }
+                    }
+                    Keys.onUpPressed: (event) => {
+                        if (sortPopup.visible) {
+                            event.accepted = true
+                            sortBtn.handlePopupUp()
+                        }
+                    }
+                    Keys.onDownPressed: (event) => {
+                        event.accepted = true
+                        if (sortPopup.visible) sortBtn.handlePopupDown()
+                        else epicGrid.forceActiveFocus()
+                    }
+                    Keys.onReturnPressed: (event) => {
+                        event.accepted = true
+                        if (sortPopup.visible) sortBtn.handlePopupSelect()
+                        else { sortBtn.syncActiveIndex(); sortPopup.open() }
+                    }
+                    Keys.onEnterPressed: (event) => {
+                        event.accepted = true
+                        if (sortPopup.visible) sortBtn.handlePopupSelect()
+                        else { sortBtn.syncActiveIndex(); sortPopup.open() }
+                    }
+                    Keys.onSpacePressed: (event) => {
+                        event.accepted = true
+                        if (sortPopup.visible) sortBtn.handlePopupSelect()
+                        else { sortBtn.syncActiveIndex(); sortPopup.open() }
+                    }
+                    Keys.onEscapePressed: (event) => {
+                        event.accepted = true
+                        if (sortPopup.visible) sortPopup.close()
+                        else epicGrid.forceActiveFocus()
+                    }
 
                     Popup {
                         id: sortPopup
                         y: sortBtn.height + 4
                         x: sortBtn.width - width
-                        width: 190
+                        width: Math.max(sortBtn.width, 232)
                         padding: 6
+                        dim: false
                         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnPressOutsideParent
+
+                        onClosed: {
+                            if (uiController && uiController.isKeyboardNavActive) {
+                                sortBtn.forceActiveFocus()
+                            } else {
+                                sortBtn.focus = false
+                            }
+                        }
+
+                        property real unfoldProgress: 0.0
+
+                        enter: Transition {
+                            ParallelAnimation {
+                                NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 180; easing.type: Easing.OutCubic }
+                                NumberAnimation { property: "unfoldProgress"; from: 0.0; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                            }
+                        }
+                        exit: Transition {
+                            ParallelAnimation {
+                                NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 140; easing.type: Easing.InCubic }
+                                NumberAnimation { property: "unfoldProgress"; from: 1.0; to: 0.0; duration: 160; easing.type: Easing.InCubic }
+                            }
+                        }
+
+                        readonly property real fullContentHeight: Math.min(300, epicSortCol.implicitHeight + 12)
+                        implicitHeight: fullContentHeight * unfoldProgress
+                        height: implicitHeight
+
                         background: Rectangle {
                             color: appSettings.surfaceContainer
-                            radius: 14
-                            border.color: appSettings.borderColor
-                            border.width: 1
+                            border.width: 0
+                            radius: 16
+                            layer.enabled: sortPopup.visible
+                            layer.effect: MultiEffect {
+                                shadowEnabled: true
+                                shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.45 : 0.18)
+                                shadowBlur: 0.6
+                                shadowVerticalOffset: 4
+                            }
                         }
-                        contentItem: Column {
-                            spacing: 2
-                            Repeater {
-                                model: root.sortOptions
-                                delegate: Item {
-                                    required property var modelData
-                                    width: 178
-                                    height: 34
-                                    readonly property bool isSel: root.epicModel && root.epicModel.sortMode === modelData.mode
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: 17
-                                        color: isSel ? appSettings.secondaryContainer : (sRowMA.containsMouse ? appSettings.surfaceContainerHighest : "transparent")
+
+                        contentItem: Item {
+                            clip: true
+
+                            Flickable {
+                                id: epicSortFlick
+                                anchors.fill: parent
+                                contentHeight: epicSortCol.implicitHeight
+                                clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+
+                                Column {
+                                    id: epicSortCol
+                                    width: epicSortFlick.width
+                                    spacing: 2
+
+                                    Repeater {
+                                        model: root.sortOptions
+                                        delegate: Item {
+                                            id: epicSortRow
+                                            required property int index
+                                            required property var modelData
+                                            width: epicSortCol.width
+                                            height: 36
+                                            readonly property bool isSelected: Boolean(root.epicModel && root.epicModel.sortMode === modelData.mode)
+                                            readonly property bool isHovered: sRowMA.containsMouse || (Boolean(uiController && uiController.isKeyboardNavActive) && sortBtn.focusedPopupIndex === index)
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 18
+                                                color: appSettings.surfaceContainerHighest
+                                                opacity: (!epicSortRow.isSelected && epicSortRow.isHovered) ? 1.0 : 0.0
+                                                Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                            }
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 18
+                                                color: appSettings.secondaryContainer
+                                                opacity: epicSortRow.isSelected ? 1.0 : 0.0
+                                                Behavior on opacity { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+                                            }
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 18
+                                                color: Qt.rgba(0, 0, 0, 0)
+                                                border.color: appSettings.accentColor
+                                                border.width: 1.5
+                                                opacity: (sortBtn.focusedPopupIndex === index && !epicSortRow.isSelected && Boolean(uiController && uiController.isKeyboardNavActive)) ? 1.0 : 0.0
+                                                Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                            }
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 14
+                                                anchors.rightMargin: 14
+                                                spacing: 8
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: String(epicSortRow.modelData.label)
+                                                    color: epicSortRow.isSelected ? appSettings.onSecondaryContainer : appSettings.textColor
+                                                    font.family: "Rubik"
+                                                    font.pixelSize: 13
+                                                    font.weight: epicSortRow.isSelected ? Font.DemiBold : Font.Normal
+                                                    renderType: Text.QtRendering
+                                                    verticalAlignment: Text.AlignVCenter
+                                                    elide: Text.ElideRight
+                                                }
+                                                YIcon {
+                                                    size: 16
+                                                    symbol: "check"
+                                                    color: appSettings.onSecondaryContainer
+                                                    visible: epicSortRow.isSelected
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: sRowMA
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (root.epicModel) root.epicModel.sortMode = modelData.mode
+                                                    sortPopup.close()
+                                                }
+                                            }
+                                        }
                                     }
-                                    Label {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 12
-                                        text: modelData.label
-                                        color: isSel ? appSettings.onSecondaryContainer : appSettings.textColor
-                                        font.pixelSize: 13
-                                        font.weight: isSel ? Font.DemiBold : Font.Normal
+
+                                    // Divider before Show Hidden toggle
+                                    Item {
+                                        width: epicSortCol.width
+                                        height: 9
+                                        Rectangle {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.leftMargin: 10
+                                            anchors.rightMargin: 10
+                                            height: 1
+                                            color: appSettings.borderColor
+                                        }
                                     }
-                                    MouseArea {
-                                        id: sRowMA
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            if (root.epicModel) root.epicModel.sortMode = modelData.mode
-                                            sortPopup.close()
+
+                                    // Show Hidden Option (Matches TopBar.qml Filter Row Style)
+                                    Item {
+                                        id: showHiddenRow
+                                        objectName: "epicShowHiddenToggleRow"
+                                        width: epicSortCol.width
+                                        height: 36
+                                        readonly property bool isSelected: Boolean(root.epicModel && root.epicModel.showHidden)
+                                        readonly property bool isHovered: showHiddenMA.containsMouse || (Boolean(uiController && uiController.isKeyboardNavActive) && sortBtn.focusedPopupIndex === root.sortOptions.length)
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 18
+                                            color: appSettings.surfaceContainerHighest
+                                            opacity: (!showHiddenRow.isSelected && showHiddenRow.isHovered) ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 18
+                                            color: appSettings.secondaryContainer
+                                            opacity: showHiddenRow.isSelected ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 18
+                                            color: Qt.rgba(0, 0, 0, 0)
+                                            border.color: appSettings.accentColor
+                                            border.width: 1.5
+                                            opacity: (sortBtn.focusedPopupIndex === root.sortOptions.length && !showHiddenRow.isSelected && Boolean(uiController && uiController.isKeyboardNavActive)) ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                        }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 14
+                                            anchors.rightMargin: 14
+                                            spacing: 8
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: (root.epicModel && root.epicModel.hiddenCount > 0)
+                                                    ? ("Show Hidden (" + root.epicModel.hiddenCount + ")")
+                                                    : "Show Hidden"
+                                                color: showHiddenRow.isSelected ? appSettings.onSecondaryContainer : appSettings.textColor
+                                                font.family: "Rubik"
+                                                font.pixelSize: 13
+                                                font.weight: showHiddenRow.isSelected ? Font.DemiBold : Font.Normal
+                                                renderType: Text.QtRendering
+                                                verticalAlignment: Text.AlignVCenter
+                                                elide: Text.ElideRight
+                                            }
+
+                                            YIcon {
+                                                size: 16
+                                                symbol: "check"
+                                                color: appSettings.onSecondaryContainer
+                                                visible: showHiddenRow.isSelected
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: showHiddenMA
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (root.epicModel) root.epicModel.showHidden = !root.epicModel.showHidden
+                                            }
                                         }
                                     }
                                 }
@@ -469,7 +770,7 @@ Item {
                     }
                 }
 
-                // Refresh Library button
+                // M3 Circular Refresh Library Button
                 Rectangle {
                     id: syncBtn
                     focus: true
@@ -477,11 +778,14 @@ Item {
                     implicitWidth: 40
                     implicitHeight: 40
                     radius: 20
-                    color: (syncHover.hovered || (syncBtn.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)))
+                    readonly property bool kbFocused: syncBtn.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+                    color: (syncHover.hovered || kbFocused)
                         ? appSettings.surfaceContainerHighest : appSettings.surfaceContainerHigh
-                    border.color: (syncBtn.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive))
-                        ? appSettings.accentColor : appSettings.borderColor
-                    border.width: (syncBtn.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)) ? 2 : 1
+                    border.color: appSettings.accentColor
+                    border.width: kbFocused ? 2 : 0
+                    scale: syncMA.pressed ? 0.94 : (kbFocused ? 1.02 : 1.0)
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on scale { NumberAnimation { duration: 100 } }
 
                     HoverHandler { id: syncHover; cursorShape: Qt.PointingHandCursor }
                     YIcon {
@@ -489,7 +793,8 @@ Item {
                         anchors.centerIn: parent
                         symbol: "refresh"
                         size: 18
-                        color: root.isSyncing ? appSettings.accentColor : appSettings.textColor
+                        color: (root.isSyncing || syncHover.hovered) ? appSettings.accentColor : appSettings.textColor
+                        Behavior on color { ColorAnimation { duration: 120 } }
                         RotationAnimation on rotation {
                             from: 0; to: 360; duration: 900; loops: Animation.Infinite
                             running: root.isSyncing
@@ -497,51 +802,60 @@ Item {
                     }
                     M3ToolTip { visible: syncHover.hovered; text: root.isSyncing ? "Syncing library…" : "Refresh Epic Games library" }
                     MouseArea {
+                        id: syncMA
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: if (root.epicSvc) root.epicSvc.syncLibrary()
+                        onClicked: if (root.epicSvc) { root.epicSvc.syncLibrary(); root.epicSvc.checkForUpdates() }
                     }
                     Keys.onLeftPressed: (event) => { event.accepted = true; sortBtn.forceActiveFocus() }
                     Keys.onRightPressed: (event) => { event.accepted = true; signOutBtn.forceActiveFocus() }
                     Keys.onDownPressed: (event) => { event.accepted = true; epicGrid.forceActiveFocus() }
-                    Keys.onReturnPressed: (event) => { event.accepted = true; if (root.epicSvc) root.epicSvc.syncLibrary() }
-                    Keys.onSpacePressed: (event) => { event.accepted = true; if (root.epicSvc) root.epicSvc.syncLibrary() }
+                    Keys.onReturnPressed: (event) => { event.accepted = true; if (root.epicSvc) { root.epicSvc.syncLibrary(); root.epicSvc.checkForUpdates() } }
+                    Keys.onSpacePressed: (event) => { event.accepted = true; if (root.epicSvc) { root.epicSvc.syncLibrary(); root.epicSvc.checkForUpdates() } }
                 }
 
-                // Account pill + Sign out
+                // M3 Account Pill + Sign Out (Properly padded — zero right-border overlap)
                 Rectangle {
+                    id: accountPill
+                    objectName: "epicAccountPill"
                     Layout.alignment: Qt.AlignVCenter
                     implicitHeight: 40
-                    implicitWidth: accRow.implicitWidth + 12
+                    implicitWidth: accRow.implicitWidth + 24
                     radius: 20
                     color: appSettings.surfaceContainerHigh
-                    border.color: appSettings.borderColor
-                    border.width: 1
+                    border.width: 0
 
                     RowLayout {
                         id: accRow
                         anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 6
-                        spacing: 8
+                        anchors.leftMargin: 14
+                        anchors.rightMargin: 10
+                        spacing: 10
 
                         YIcon {
+                            Layout.alignment: Qt.AlignVCenter
                             symbol: "person"
                             size: 16
                             color: appSettings.accentColor
                         }
 
                         Label {
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.maximumWidth: 160
                             text: (root.epicSvc && root.epicSvc.accountDisplayName.length > 0)
                                 ? root.epicSvc.accountDisplayName : "Epic Account"
                             color: appSettings.textColor
+                            font.family: "Rubik"
                             font.pixelSize: 13
                             font.weight: Font.Medium
+                            elide: Text.ElideRight
+                            renderType: Text.QtRendering
                         }
 
                         M3Button {
                             id: signOutBtn
                             objectName: "epicSignOutBtn"
+                            Layout.alignment: Qt.AlignVCenter
                             text: "Sign Out"
                             buttonType: "tonal"
                             implicitHeight: 28
@@ -595,6 +909,8 @@ Item {
 
                 Keys.onLeftPressed: (event) => {
                     event.accepted = true
+                    let ci = epicGrid.currentItem
+                    if (ci && ci.isMenuOpen) { ci.isMenuOpen = false; return }
                     if (epicGrid.count === 0 || (epicGrid.currentIndex % root.columns === 0)) {
                         root.focusSidebarRequested()
                     } else if (epicGrid.currentIndex > 0) {
@@ -603,10 +919,14 @@ Item {
                 }
                 Keys.onRightPressed: (event) => {
                     event.accepted = true
+                    let ci = epicGrid.currentItem
+                    if (ci && ci.isMenuOpen) { ci.isMenuOpen = false; return }
                     if (epicGrid.currentIndex < epicGrid.count - 1) epicGrid.currentIndex++
                 }
                 Keys.onUpPressed: (event) => {
                     event.accepted = true
+                    let ci = epicGrid.currentItem
+                    if (ci && ci.isMenuOpen) { ci.navigateMenuUp(); return }
                     if (epicGrid.count === 0 || epicGrid.currentIndex < root.columns) {
                         searchTile.forceActiveFocus()
                     } else {
@@ -615,21 +935,59 @@ Item {
                 }
                 Keys.onDownPressed: (event) => {
                     event.accepted = true
+                    let ci = epicGrid.currentItem
+                    if (ci && ci.isMenuOpen) { ci.navigateMenuDown(); return }
                     if (epicGrid.currentIndex + root.columns < epicGrid.count) {
                         epicGrid.currentIndex += root.columns
                     } else if (epicGrid.currentIndex < epicGrid.count - 1) {
                         epicGrid.currentIndex = epicGrid.count - 1
                     }
                 }
-                Keys.onEscapePressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
-                Keys.onBackPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
-                Keys.onReturnPressed: (event) => { event.accepted = true; epicGrid.openCurrent() }
-                Keys.onEnterPressed: (event) => { event.accepted = true; epicGrid.openCurrent() }
-                Keys.onSpacePressed: (event) => { event.accepted = true; epicGrid.openCurrent() }
+                Keys.onEscapePressed: (event) => {
+                    event.accepted = true
+                    let ci = epicGrid.currentItem
+                    if (ci && ci.isMenuOpen) ci.isMenuOpen = false
+                    else root.focusSidebarRequested()
+                }
+                Keys.onBackPressed: (event) => {
+                    event.accepted = true
+                    let ci = epicGrid.currentItem
+                    if (ci && ci.isMenuOpen) ci.isMenuOpen = false
+                    else root.focusSidebarRequested()
+                }
+                Keys.onReturnPressed: (event) => {
+                    event.accepted = true
+                    let ci = epicGrid.currentItem
+                    if (ci && ci.isMenuOpen) ci.triggerMenuAction()
+                    else epicGrid.openCurrent()
+                }
+                Keys.onEnterPressed: (event) => {
+                    event.accepted = true
+                    let ci = epicGrid.currentItem
+                    if (ci && ci.isMenuOpen) ci.triggerMenuAction()
+                    else epicGrid.openCurrent()
+                }
+                Keys.onSpacePressed: (event) => {
+                    event.accepted = true
+                    let ci = epicGrid.currentItem
+                    if (ci && ci.isMenuOpen) ci.triggerMenuAction()
+                    else epicGrid.openCurrent()
+                }
+                Keys.onMenuPressed: (event) => {
+                    event.accepted = true
+                    let ci = epicGrid.currentItem
+                    if (ci) ci.toggleMenu()
+                }
                 Keys.onPressed: (event) => {
                     if (event.key === Qt.Key_Backspace) {
                         event.accepted = true
-                        root.focusSidebarRequested()
+                        let ci = epicGrid.currentItem
+                        if (ci && ci.isMenuOpen) ci.isMenuOpen = false
+                        else root.focusSidebarRequested()
+                    } else if (event.key === Qt.Key_M && !event.isAutoRepeat) {
+                        event.accepted = true
+                        let ci = epicGrid.currentItem
+                        if (ci) ci.toggleMenu()
                     }
                 }
 
@@ -643,9 +1001,59 @@ Item {
                     required property string downloadSizeFormatted
                     required property bool isInstalled
                     required property string installedGameId
+                    required property bool hasUpdate
                     required property bool isDownloading
                     required property bool isPaused
+                    required property bool isQueued
                     required property double downloadProgress
+                    required property bool isHidden
+
+                    property bool isMenuOpen: false
+                    property int menuFocusedIndex: 0
+                    readonly property var menuActions: {
+                        let acts = [
+                            { id: "details", label: "Details", symbol: "edit" }
+                        ]
+                        if (eCell.isDownloading) {
+                            acts.push({
+                                id: "toggle_dl",
+                                label: eCell.isPaused ? "Resume" : "Pause",
+                                symbol: eCell.isPaused ? "play_arrow" : "pause"
+                            })
+                        }
+                        acts.push({
+                            id: "hide",
+                            label: eCell.isHidden ? "Unhide" : "Hide",
+                            symbol: eCell.isHidden ? "visibility" : "visibility_off"
+                        })
+                        return acts
+                    }
+
+                    onIsMenuOpenChanged: if (!isMenuOpen) menuFocusedIndex = 0
+                    function toggleMenu() {
+                        if (isMenuOpen) isMenuOpen = false
+                        else { menuFocusedIndex = 0; isMenuOpen = true }
+                    }
+                    function navigateMenuUp() {
+                        menuFocusedIndex = (menuFocusedIndex - 1 + menuActions.length) % menuActions.length
+                    }
+                    function navigateMenuDown() {
+                        menuFocusedIndex = (menuFocusedIndex + 1) % menuActions.length
+                    }
+                    function executeMenuAction(idx) {
+                        isMenuOpen = false
+                        if (idx < 0 || idx >= menuActions.length) return
+                        const aid = menuActions[idx].id
+                        if (aid === "details") {
+                            root.gameDetailsRequested(eCell.installedGameId || "", eCell.appName)
+                        } else if (aid === "toggle_dl" && root.epicSvc) {
+                            if (eCell.isPaused) root.epicSvc.resumeDownload(eCell.appName)
+                            else root.epicSvc.pauseDownload(eCell.appName)
+                        } else if (aid === "hide" && root.epicSvc) {
+                            root.epicSvc.toggleHideEpicGame(eCell.appName)
+                        }
+                    }
+                    function triggerMenuAction() { executeMenuAction(menuFocusedIndex) }
 
                     width: epicGrid.cellWidth
                     height: epicGrid.cellHeight
@@ -653,14 +1061,24 @@ Item {
                     readonly property bool isMouseActive: (!uiController || !uiController.isKeyboardNavActive) && eHoverMouse.containsMouse
                     readonly property bool isTvFocused: Boolean(uiController && uiController.isKeyboardNavActive) && eCell.GridView.isCurrentItem && epicGrid.activeFocus
                     readonly property bool isHoveredOrFocused: isTvFocused || isMouseActive
-                    readonly property bool isCardBlurred: appSettings.titleVisibility === 1 && isHoveredOrFocused
-                    z: isTvFocused ? 50 : (isMouseActive ? 20 : 1)
+                    readonly property bool isCardBlurred: eCell.isMenuOpen || (appSettings.titleVisibility === 1 && isHoveredOrFocused)
+                    z: isTvFocused ? 50 : ((isMouseActive || isMenuOpen) ? 20 : 1)
 
                     Item {
                         anchors.fill: parent
                         anchors.margins: 8
-                        scale: isTvFocused ? 1.06 : (isMouseActive ? 1.03 : 1.0)
+                        opacity: eCell.isHidden && !eCell.isMenuOpen ? 0.62 : 1.0
+                        scale: isTvFocused ? 1.06 : ((isMouseActive || eCell.isMenuOpen) ? 1.03 : 1.0)
                         Behavior on scale { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+
+                        HoverHandler {
+                            enabled: !uiController || !uiController.isKeyboardNavActive
+                            onHoveredChanged: {
+                                if (!hovered && (!uiController || !uiController.isKeyboardNavActive)) {
+                                    eCell.isMenuOpen = false
+                                }
+                            }
+                        }
 
                         Rectangle {
                             anchors.fill: parent
@@ -827,9 +1245,9 @@ Item {
                             }
                         }
 
-                        // Floating status pill on poster (when tagPosition === 2)
+                        // Floating status pill on poster (when tagPosition === 2 or downloading/update/queued/hidden)
                         Rectangle {
-                            visible: appSettings.tagPosition === 2 || eCell.isDownloading
+                            visible: !eCell.isMenuOpen && (appSettings.tagPosition === 2 || eCell.isDownloading || eCell.isQueued || eCell.hasUpdate || eCell.isHidden)
                             anchors.left: parent.left
                             anchors.top: parent.top
                             anchors.margins: 8
@@ -837,9 +1255,13 @@ Item {
                             height: 22
                             radius: 4
                             width: ePosterLbl.implicitWidth + 10
-                            property color tagC: eCell.isDownloading
-                                ? (eCell.isPaused ? "#f59e0b" : appSettings.accentColor)
-                                : (eCell.isInstalled ? "#22c55e" : "#cbd5e1")
+                            property color tagC: eCell.isHidden
+                                ? "#94a3b8"
+                                : (eCell.isQueued
+                                    ? "#94a3b8"
+                                    : (eCell.isDownloading
+                                        ? (eCell.isPaused ? "#f59e0b" : appSettings.accentColor)
+                                        : (eCell.hasUpdate ? "#f59e0b" : (eCell.isInstalled ? "#22c55e" : "#cbd5e1"))))
                             color: Qt.rgba(0, 0, 0, 0.78)
                             border.color: Qt.rgba(tagC.r, tagC.g, tagC.b, 0.55)
                             border.width: 1
@@ -847,36 +1269,40 @@ Item {
                             Label {
                                 id: ePosterLbl
                                 anchors.centerIn: parent
-                                text: eCell.isDownloading
-                                    ? (eCell.isPaused ? "PAUSED" : ("DL " + Math.round(eCell.downloadProgress) + "%"))
-                                    : (eCell.isInstalled ? "INSTALLED" : "EPIC")
+                                text: eCell.isHidden
+                                    ? "HIDDEN"
+                                    : (eCell.isQueued
+                                        ? "QUEUED"
+                                        : (eCell.isDownloading
+                                            ? (eCell.isPaused ? "PAUSED" : ("DL " + Math.round(eCell.downloadProgress) + "%"))
+                                            : (eCell.hasUpdate ? "UPDATE" : (eCell.isInstalled ? "INSTALLED" : "EPIC"))))
                                 color: parent.tagC
                                 font { pixelSize: 10; weight: Font.Bold; letterSpacing: 0.5 }
                             }
                         }
 
-                        // Hover center download/view icon
+                        // Hover center download/resume/view icon
                         Rectangle {
-                            visible: appSettings.titleVisibility !== 1 && eCell.isHoveredOrFocused
+                            visible: appSettings.titleVisibility !== 1 && eCell.isHoveredOrFocused && !eCell.isMenuOpen
                             anchors.centerIn: parent
                             anchors.verticalCenterOffset: -root.metaHeight / 2
                             width: 48
                             height: 48
                             radius: 24
-                            color: eCell.isInstalled ? "#22c55e" : appSettings.accentColor
+                            color: eCell.isInstalled ? "#22c55e" : (eCell.isDownloading && eCell.isPaused ? "#f59e0b" : appSettings.accentColor)
                             z: 13
                             YIcon {
                                 anchors.centerIn: parent
                                 size: 20
-                                symbol: eCell.isInstalled ? "play_arrow" : "download"
-                                filled: eCell.isInstalled
+                                symbol: (eCell.isInstalled || (eCell.isDownloading && eCell.isPaused)) ? "play_arrow" : "download"
+                                filled: eCell.isInstalled || (eCell.isDownloading && eCell.isPaused)
                                 color: "#ffffff"
                             }
                         }
 
                         // Hover Title Overlay (when titleVisibility === 1)
                         Label {
-                            visible: appSettings.titleVisibility === 1 && eCell.isHoveredOrFocused
+                            visible: appSettings.titleVisibility === 1 && eCell.isHoveredOrFocused && !eCell.isMenuOpen
                             anchors.centerIn: parent
                             width: parent.width - 24
                             text: eCell.title
@@ -893,13 +1319,93 @@ Item {
                             id: eHoverMouse
                             anchors.fill: parent
                             hoverEnabled: !uiController || !uiController.isKeyboardNavActive
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
                             cursorShape: Qt.PointingHandCursor
+                            enabled: !eCell.isMenuOpen
                             onPressed: if (uiController) uiController.setKeyboardNavActive(false)
-                            onClicked: {
+                            onClicked: (mouse) => {
                                 if (uiController) uiController.setKeyboardNavActive(false)
                                 epicGrid.currentIndex = eCell.index
                                 epicGrid.forceActiveFocus()
-                                root.gameDetailsRequested(eCell.installedGameId || "", eCell.appName)
+                                if (mouse.button === Qt.RightButton) {
+                                    eCell.isMenuOpen = true
+                                } else {
+                                    root.gameDetailsRequested(eCell.installedGameId || "", eCell.appName)
+                                }
+                            }
+                        }
+
+                        // Right-click / M-key Action Overlay (Matches MediaGrid.qml Pill Style)
+                        Rectangle {
+                            id: epicActionOverlay
+                            anchors.fill: eCardContent
+                            z: 20
+                            radius: Math.max(0, root.cardRadius - 1)
+                            color: Qt.rgba(0, 0, 0, 0.45)
+                            opacity: eCell.isMenuOpen ? 1.0 : 0.0
+                            visible: opacity > 0.01
+                            clip: true
+                            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                onClicked: eCell.isMenuOpen = false
+                            }
+
+                            ColumnLayout {
+                                anchors.centerIn: parent
+                                width: Math.min(parent.width - 24, 150)
+                                spacing: 8
+                                transform: Translate {
+                                    y: 8 * (1.0 - epicActionOverlay.opacity)
+                                }
+
+                                Repeater {
+                                    model: eCell.menuActions
+                                    delegate: Rectangle {
+                                        id: eCtxBtn
+                                        required property int index
+                                        required property var modelData
+                                        readonly property bool isBtnFocused: Boolean(uiController && uiController.isKeyboardNavActive) && eCell.isMenuOpen && eCell.menuFocusedIndex === index
+                                        readonly property bool isBtnActive: ((!uiController || !uiController.isKeyboardNavActive) && eCtxMA.containsMouse) || isBtnFocused
+                                        Layout.fillWidth: true
+                                        height: 38
+                                        radius: 19
+                                        color: isBtnActive ? appSettings.accentColor : Qt.rgba(0.15, 0.15, 0.18, 0.88)
+                                        border.color: isBtnFocused ? "#ffffff" : Qt.rgba(1, 1, 1, 0.15)
+                                        border.width: isBtnFocused ? 2 : 1
+                                        scale: eCtxMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
+                                        Behavior on scale { NumberAnimation { duration: 100 } }
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                                        RowLayout {
+                                            anchors.centerIn: parent
+                                            spacing: 8
+                                            YIcon {
+                                                size: 18
+                                                symbol: eCtxBtn.modelData.symbol || "edit"
+                                                color: eCtxBtn.isBtnActive ? (root.isDark ? "#0f0f11" : "#ffffff") : "#ffffff"
+                                            }
+                                            Label {
+                                                text: eCtxBtn.modelData.label
+                                                color: eCtxBtn.isBtnActive ? (root.isDark ? "#0f0f11" : "#ffffff") : "#ffffff"
+                                                font.pixelSize: 14
+                                                font.weight: Font.Normal
+                                                renderType: Text.QtRendering
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: eCtxMA
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: eCell.executeMenuAction(eCtxBtn.index)
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -912,9 +1418,9 @@ Item {
                             border.color: eCell.isDownloading
                                 ? appSettings.accentColor
                                 : (eCell.isInstalled
-                                    ? (eCell.isHoveredOrFocused ? appSettings.accentColor : Qt.rgba(34/255, 197/255, 94/255, 0.55))
-                                    : (eCell.isHoveredOrFocused ? appSettings.accentColor : appSettings.borderColor))
-                            border.width: eCell.isTvFocused ? 3.0 : (eCell.isMouseActive ? 2.5 : 1.5)
+                                    ? (eCell.isHoveredOrFocused || eCell.isMenuOpen ? appSettings.accentColor : Qt.rgba(34/255, 197/255, 94/255, 0.55))
+                                    : (eCell.isHoveredOrFocused || eCell.isMenuOpen ? appSettings.accentColor : appSettings.borderColor))
+                            border.width: eCell.isTvFocused ? 3.0 : ((eCell.isMouseActive || eCell.isMenuOpen) ? 2.5 : 1.5)
                             z: 15
                         }
                     }

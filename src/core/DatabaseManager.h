@@ -36,7 +36,41 @@ public:
                                   const QString& bannerPath,
                                   const QString& logoPath);
     bool updateEpicLibrarySizes(const QString& appName, qint64 downloadSize, qint64 installSize, const QString& buildVersion);
+    bool setEpicLibraryItemHidden(const QString& appName, bool hidden);
     bool clearEpicLibrary();
+
+    // Epic DLCs CRUD
+    bool saveEpicDlcs(const QList<EpicDlcItem>& dlcs);
+    QList<EpicDlcItem> getEpicDlcsForGame(const QString& parentAppName) const;
+    bool setEpicDlcInstalled(const QString& dlcAppName, bool installed);
+    bool clearEpicDlcs();
+
+    // Collections CRUD
+    QStringList getAllCollections() const;
+    bool createCollection(const QString& name);
+    bool renameCollection(const QString& oldName, const QString& newName);
+    bool deleteCollection(const QString& name);
+
+    // UMU Game ID Cache CRUD
+    QString getCachedUmuId(const QString& store, const QString& codename) const;
+    bool saveCachedUmuId(const QString& store, const QString& codename, const QString& umuId, const QString& title = QString());
+
+    // Cloud Save Sync State CRUD
+    struct CloudSaveState {
+        QString gameId;
+        qint64 lastSyncEpoch = 0;
+        QString lastManifestHash;
+        QVariantMap trackedFiles; // relativePath -> {hash, mtime, size}
+    };
+    std::optional<CloudSaveState> getCloudSaveState(const QString& gameId) const;
+    bool saveCloudSaveState(const CloudSaveState& state);
+    bool clearCloudSaveState(const QString& gameId);
+
+    // Persistent Download Queue CRUD
+    bool saveQueuedDownload(const QueuedDownloadRecord& rec);
+    bool removeQueuedDownload(const QString& id);
+    QList<QueuedDownloadRecord> getAllQueuedDownloads() const;
+    bool clearQueuedDownloads();
 
     // Prefixes CRUD
     bool savePrefix(const PrefixRecord& prefix);

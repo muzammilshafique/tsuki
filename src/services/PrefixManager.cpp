@@ -1,9 +1,14 @@
 #include "PrefixManager.h"
+#include "DownloadManager.h"
+#include <QCoreApplication>
+#include <QDirIterator>
+#include <QPointer>
 #include <QProcess>
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
 #include <QDesktopServices>
+#include <QThreadPool>
 #include <QUrl>
 #include <QUuid>
 #include <QDateTime>
@@ -735,6 +740,141 @@ void PrefixManager::openPrefixInTerminal(const QString& prefixId) {
             return;
         }
     }
+}
+
+QString PrefixManager::cachedPrefixSizeFormatted(const QString& prefixId) const {
+    if (!m_cachedSizes.contains(prefixId)) return QString();
+    return DownloadManager::formatBytes(m_cachedSizes.value(prefixId));
+}
+
+void PrefixManager::calculatePrefixSizeAsync(const QString& prefixId) {
+    auto pfx = m_db->getPrefix(prefixId);
+    if (!pfx.has_value() || pfx->path.isEmpty() || !QDir(pfx->path).exists()) {
+        emit prefixDiskUsageReady(prefixId, 0, QStringLiteral("0 B"));
+        return;
+    }
+    const QString path = pfx->path;
+    QPointer<PrefixManager> self(this);
+    QThreadPool::globalInstance()->start([self, prefixId, path]() {
+        qint64 total = 0;
+        QDirIterator it(path, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            it.next();
+            total += it.fileInfo().size();
+        }
+        const QString formatted = DownloadManager::formatBytes(total);
+        if (self) {
+            QMetaObject::invokeMethod(self, [self, prefixId, total, formatted]() {
+                if (!self) return;
+                self->m_cachedSizes.insert(prefixId, total);
+                emit self->prefixDiskUsageReady(prefixId, total, formatted);
+            }, Qt::QueuedConnection);
+        }
+    });
+}
+
+qint64 PrefixManager::cleanPrefixCaches(const QString& prefixId) {
+    auto pfx = m_db->getPrefix(prefixId);
+    if (!pfx.has_value() || pfx->path.isEmpty() || !QDir(pfx->path).exists()) {
+        return 0;
+    }
+    const QString root = pfx->path;
+    qint64 reclaimed = 0;
+
+    auto removeFileTracked = [&reclaimed](const QString& filePath) {
+        QFileInfo fi(filePath);
+        if (fi.exists() && fi.isFile() && !fi.isSymLink()) {
+            const qint64 sz = fi.size();
+            if (QFile::remove(filePath)) {
+                reclaimed += sz;
+            }
+        }
+    };
+    auto removeDirContentsTracked = [&reclaimed](const QString& dirPath) {
+        QDir d(dirPath);
+        if (!d.exists()) return;
+        QDirIterator it(dirPath, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            it.next();
+            const qint64 sz = it.fileInfo().size();
+            if (QFile::remove(it.filePath())) {
+                reclaimed += sz;
+            }
+        }
+        // Prune empty subdirectories inside cache folder
+        const QFileInfoList subDirs = d.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QFileInfo& sd : subDirs) {
+            QDir(sd.absoluteFilePath()).removeRecursively();
+        }
+    };
+
+    // 1. DXVK & VKD3D shader cache files anywhere at top level or prefix root
+    QDir rootDir(root);
+    const QStringList cacheGlobs = {
+        QStringLiteral("*.dxvk-cache"),
+        QStringLiteral("*.dxvk-cache.lock"),
+        QStringLiteral("vkd3d-proton.cache*"),
+        QStringLiteral("d3d12.cache*")
+    };
+    for (const QFileInfo& fi : rootDir.entryInfoList(cacheGlobs, QDir::Files | QDir::NoSymLinks)) {
+        removeFileTracked(fi.absoluteFilePath());
+    }
+
+    // 2. shadercache directory
+    removeDirContentsTracked(root + QStringLiteral("/shadercache"));
+
+    // 3. Windows user Temp directories (never touch Documents / AppData saves)
+    QDir usersDir(root + QStringLiteral("/drive_c/users"));
+    if (usersDir.exists()) {
+        for (const QFileInfo& userFi : usersDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+            const QString uRoot = userFi.absoluteFilePath();
+            removeDirContentsTracked(uRoot + QStringLiteral("/AppData/Local/Temp"));
+            removeDirContentsTracked(uRoot + QStringLiteral("/Temp"));
+            removeDirContentsTracked(uRoot + QStringLiteral("/Local Settings/Temp"));
+        }
+    }
+
+    // 4. drive_c/windows/temp
+    removeDirContentsTracked(root + QStringLiteral("/drive_c/windows/temp"));
+
+    calculatePrefixSizeAsync(prefixId);
+    emit prefixOperationFinished(
+        prefixId,
+        true,
+        reclaimed > 0
+            ? QStringLiteral("Cleaned %1 of temporary & shader caches from '%2'.")
+                  .arg(DownloadManager::formatBytes(reclaimed), pfx->name)
+            : QStringLiteral("No temporary or shader caches to clean in '%1'.").arg(pfx->name));
+    return reclaimed;
+}
+
+bool PrefixManager::arePrereqsInstalled(const QString& prefixId, const QStringList& prereqIds) const {
+    if (prereqIds.isEmpty()) return false;
+    auto pfx = m_db->getPrefix(prefixId);
+    if (!pfx.has_value()) return false;
+    for (const QString& pid : prereqIds) {
+        if (!pid.trimmed().isEmpty() && !pfx->installedPrereqIds.contains(pid.trimmed())) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool PrefixManager::markPrereqsInstalled(const QString& prefixId, const QStringList& prereqIds) {
+    auto pfx = m_db->getPrefix(prefixId);
+    if (!pfx.has_value()) return false;
+    bool changed = false;
+    for (const QString& pid : prereqIds) {
+        const QString clean = pid.trimmed();
+        if (!clean.isEmpty() && !pfx->installedPrereqIds.contains(clean)) {
+            pfx->installedPrereqIds.append(clean);
+            changed = true;
+        }
+    }
+    if (!changed) return true;
+    const bool ok = m_db->savePrefix(*pfx);
+    if (ok) emit prefixesChanged();
+    return ok;
 }
 
 } // namespace Tsuki

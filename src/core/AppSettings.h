@@ -124,8 +124,36 @@ class AppSettings : public QObject {
                  performanceDefaultsChanged)
   Q_PROPERTY(bool fsyncDefault READ fsyncDefault WRITE setFsyncDefault NOTIFY
                  performanceDefaultsChanged)
+  Q_PROPERTY(bool ntsyncDefault READ ntsyncDefault WRITE setNtsyncDefault NOTIFY
+                 performanceDefaultsChanged)
+  Q_PROPERTY(bool umuDefault READ umuDefault WRITE setUmuDefault NOTIFY
+                 performanceDefaultsChanged)
+  Q_PROPERTY(bool waylandDriverDefault READ waylandDriverDefault WRITE
+                 setWaylandDriverDefault NOTIFY performanceDefaultsChanged)
+  Q_PROPERTY(bool hdrDefault READ hdrDefault WRITE setHdrDefault NOTIFY
+                 performanceDefaultsChanged)
+  Q_PROPERTY(bool nvapiDefault READ nvapiDefault WRITE setNvapiDefault NOTIFY
+                 performanceDefaultsChanged)
+  Q_PROPERTY(bool fsrDefault READ fsrDefault WRITE setFsrDefault NOTIFY
+                 performanceDefaultsChanged)
+  Q_PROPERTY(int defaultFsrStrength READ defaultFsrStrength WRITE
+                 setDefaultFsrStrength NOTIFY performanceDefaultsChanged)
+  Q_PROPERTY(QString defaultGpuSelection READ defaultGpuSelection WRITE
+                 setDefaultGpuSelection NOTIFY performanceDefaultsChanged)
+  Q_PROPERTY(bool preferX86_64V3Runners READ preferX86_64V3Runners WRITE
+                 setPreferX86_64V3Runners NOTIFY runnerDefaultsChanged)
   Q_PROPERTY(QString defaultDxvkHud READ defaultDxvkHud WRITE setDefaultDxvkHud
                  NOTIFY performanceDefaultsChanged)
+  Q_PROPERTY(int downloadSpeedLimitKBps READ downloadSpeedLimitKBps WRITE
+                 setDownloadSpeedLimitKBps NOTIFY downloadSettingsChanged)
+  Q_PROPERTY(int maxConcurrentChunkWorkers READ maxConcurrentChunkWorkers WRITE
+                 setMaxConcurrentChunkWorkers NOTIFY downloadSettingsChanged)
+  Q_PROPERTY(int maxConcurrentGameDownloads READ maxConcurrentGameDownloads
+                 WRITE setMaxConcurrentGameDownloads NOTIFY
+                     downloadSettingsChanged)
+  Q_PROPERTY(bool pauseDownloadsOnGameLaunch READ pauseDownloadsOnGameLaunch
+                 WRITE setPauseDownloadsOnGameLaunch NOTIFY
+                     downloadSettingsChanged)
   Q_PROPERTY(bool xboxEmulationDefault READ xboxEmulationDefault WRITE
                  setXboxEmulationDefault NOTIFY controllerDefaultsChanged)
   Q_PROPERTY(QString steamGridDbApiKey READ steamGridDbApiKey WRITE
@@ -276,8 +304,36 @@ public:
   void setEsyncDefault(bool v);
   bool fsyncDefault() const { return m_fsyncDefault; }
   void setFsyncDefault(bool v);
+  bool ntsyncDefault() const { return m_ntsyncDefault; }
+  void setNtsyncDefault(bool v);
+  bool umuDefault() const { return m_umuDefault; }
+  void setUmuDefault(bool v);
+  bool waylandDriverDefault() const { return m_waylandDriverDefault; }
+  void setWaylandDriverDefault(bool v);
+  bool hdrDefault() const { return m_hdrDefault; }
+  void setHdrDefault(bool v);
+  bool nvapiDefault() const { return m_nvapiDefault; }
+  void setNvapiDefault(bool v);
+  bool fsrDefault() const { return m_fsrDefault; }
+  void setFsrDefault(bool v);
+  int defaultFsrStrength() const { return m_defaultFsrStrength; }
+  void setDefaultFsrStrength(int s);
+  QString defaultGpuSelection() const { return m_defaultGpuSelection; }
+  void setDefaultGpuSelection(const QString &gpu);
+  bool preferX86_64V3Runners() const { return m_preferX86_64V3Runners; }
+  void setPreferX86_64V3Runners(bool v);
   QString defaultDxvkHud() const { return m_defaultDxvkHud; }
   void setDefaultDxvkHud(const QString &hud);
+
+  // Download Queue & Bandwidth Settings
+  int downloadSpeedLimitKBps() const { return m_downloadSpeedLimitKBps; }
+  void setDownloadSpeedLimitKBps(int kbps);
+  int maxConcurrentChunkWorkers() const { return m_maxConcurrentChunkWorkers; }
+  void setMaxConcurrentChunkWorkers(int workers);
+  int maxConcurrentGameDownloads() const { return m_maxConcurrentGameDownloads; }
+  void setMaxConcurrentGameDownloads(int maxGames);
+  bool pauseDownloadsOnGameLaunch() const { return m_pauseDownloadsOnGameLaunch; }
+  void setPauseDownloadsOnGameLaunch(bool pause);
 
   bool xboxEmulationDefault() const { return m_xboxEmulationDefault; }
   void setXboxEmulationDefault(bool v);
@@ -300,6 +356,7 @@ signals:
   void runnerDefaultsChanged();
   void pathDefaultsChanged();
   void performanceDefaultsChanged();
+  void downloadSettingsChanged();
   void controllerDefaultsChanged();
   void apiSettingsChanged();
   void loggingSettingsChanged();
@@ -342,7 +399,21 @@ private:
   bool m_vkd3dDefault = true;
   bool m_esyncDefault = true;
   bool m_fsyncDefault = true;
+  bool m_ntsyncDefault = false;
+  bool m_umuDefault = true;
+  bool m_waylandDriverDefault = false;
+  bool m_hdrDefault = false;
+  bool m_nvapiDefault = false;
+  bool m_fsrDefault = false;
+  int m_defaultFsrStrength = 2;
+  QString m_defaultGpuSelection;
+  bool m_preferX86_64V3Runners = false;
   QString m_defaultDxvkHud = QStringLiteral("none");
+
+  int m_downloadSpeedLimitKBps = 0;
+  int m_maxConcurrentChunkWorkers = 6;
+  int m_maxConcurrentGameDownloads = 1;
+  bool m_pauseDownloadsOnGameLaunch = true;
 
   bool m_xboxEmulationDefault = false;
 

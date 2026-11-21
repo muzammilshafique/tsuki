@@ -17,6 +17,8 @@
 namespace Tsuki {
 
 class EpicService;
+class EpicCloudSaveService;
+class UmuIdResolver;
 
 struct LaunchPlan {
     QString program;
@@ -27,6 +29,8 @@ struct LaunchPlan {
     QString runnerName;
     bool useXboxEmulation = false;
     bool usesGamescope = false;
+    bool usesUmu = false;
+    QString umuGameId;
 };
 
 class LaunchPipeline : public QObject {
@@ -48,9 +52,13 @@ public:
     int runningCount() const { return m_running.size(); }
     Q_INVOKABLE bool isGameRunning(const QString& gameId) const { return m_running.contains(gameId); }
     void setEpicService(EpicService* epicSvc) { m_epicService = epicSvc; }
+    void setCloudSaveService(EpicCloudSaveService* cloudSvc) { m_cloudSaveService = cloudSvc; }
+    void setUmuIdResolver(UmuIdResolver* resolver) { m_umuResolver = resolver; }
+    void setUmuBinaryOverrideForTesting(const QString& path) { m_umuBinOverride = path; }
 
     // Build launch plan (testable without spawning processes)
     bool isGamescopeEnabled(const GameRecord& game) const;
+    bool isUmuEnabled(const GameRecord& game) const;
     GamescopeConfig resolveEffectiveGamescopeConfig(const GameRecord& game) const;
     static QStringList buildGamescopeArguments(const GamescopeConfig& cfg, bool useMangohud);
     static QStringList buildEpicLaunchArgs(const GameRecord& game,
@@ -66,7 +74,8 @@ public:
                                const QStringList& extraEpicArgs = QStringList()) const;
     LaunchPlan buildNativeLaunchPlan(const GameRecord& game) const;
 
-    Q_INVOKABLE bool launchGame(const QString& gameId);
+    Q_INVOKABLE bool launchGame(const QString& gameId, bool skipCloudSync = false);
+    Q_INVOKABLE void resolveCloudConflictAndLaunch(const QString& gameId, const QString& resolution);
     Q_INVOKABLE void stopGame(const QString& gameId);
     Q_INVOKABLE void stopAllGames();
 
@@ -75,6 +84,8 @@ signals:
     void gameStarted(const QString& gameId, const QString& title);
     void gameStopped(const QString& gameId, int exitCode, qint64 sessionSeconds);
     void gameLaunchFailed(const QString& gameId, const QString& reason);
+    void launchStatusMessage(const QString& message, bool isError);
+    void cloudSaveConflict(const QString& gameId, const QVariantMap& conflictDetails);
 
 private:
     struct RunningSession {
@@ -88,6 +99,8 @@ private:
         qint64 rootPid = 0;
         QProcess* process = nullptr;
         bool isNative = false;
+        bool isEpic = false;
+        bool autoSyncCloudSaves = false;
         bool usesXboxEmulation = false;
         bool usesGamescope = false;
         bool stopRequested = false;
@@ -102,9 +115,15 @@ private:
     ControllerManager* m_controllerMgr;
     DiagnosticsManager* m_diagMgr;
     EpicService* m_epicService = nullptr;
+    EpicCloudSaveService* m_cloudSaveService = nullptr;
+    UmuIdResolver* m_umuResolver = nullptr;
+    QString m_umuBinOverride;
 
     QMap<QString, RunningSession*> m_running;
     QSet<QString> m_pendingEpicLaunches;
+
+    void applyGpuEnvironment(QProcessEnvironment& env, const GameRecord& game, bool isNative) const;
+    bool continueLaunchAfterCloudSync(const GameRecord& game);
 
     bool startLaunchProcess(const GameRecord& game,
                             const std::optional<RunnerRecord>& runnerOpt,

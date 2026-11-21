@@ -12,6 +12,8 @@
 #include "../services/DiagnosticsManager.h"
 #include "../services/GameManager.h"
 #include "../services/EpicService.h"
+#include "../services/EpicCloudSaveService.h"
+#include "../services/UmuIdResolver.h"
 #include <QObject>
 #include <QPoint>
 #include <QVariant>
@@ -39,6 +41,8 @@ class UiController : public QObject {
     Q_PROPERTY(Tsuki::DiagnosticsManager* diagnosticsManager READ diagnosticsManager CONSTANT)
     Q_PROPERTY(Tsuki::SteamGridDbService* steamGridDb READ steamGridDb CONSTANT)
     Q_PROPERTY(Tsuki::EpicService* epicService READ epicService CONSTANT)
+    Q_PROPERTY(Tsuki::EpicCloudSaveService* cloudSaveService READ cloudSaveService CONSTANT)
+    Q_PROPERTY(Tsuki::UmuIdResolver* umuIdResolver READ umuIdResolver CONSTANT)
 
 public:
     explicit UiController(DatabaseManager* db,
@@ -53,6 +57,8 @@ public:
                           DiagnosticsManager* diagMgr,
                           GameManager* gameMgr,
                           EpicService* epicService = nullptr,
+                          EpicCloudSaveService* cloudSaveService = nullptr,
+                          UmuIdResolver* umuIdResolver = nullptr,
                           QObject* parent = nullptr);
     ~UiController() override;
 
@@ -76,6 +82,8 @@ public:
     DiagnosticsManager* diagnosticsManager() const { return m_diagMgr; }
     SteamGridDbService* steamGridDb() const { return m_sgdb; }
     EpicService* epicService() const { return m_epicSvc; }
+    EpicCloudSaveService* cloudSaveService() const { return m_cloudSaveSvc; }
+    UmuIdResolver* umuIdResolver() const { return m_umuResolver; }
 
     // Native System File & Folder Selectors
     Q_INVOKABLE QString selectFile(const QString& title = QString(), const QString& filter = QString(), const QString& initialPath = QString());
@@ -113,6 +121,8 @@ private:
     DiagnosticsManager* m_diagMgr;
     GameManager* m_gameMgr;
     EpicService* m_epicSvc = nullptr;
+    EpicCloudSaveService* m_cloudSaveSvc = nullptr;
+    UmuIdResolver* m_umuResolver = nullptr;
 
     bool m_isKeyboardNavActive = false;
     bool m_cursorHidden = false;

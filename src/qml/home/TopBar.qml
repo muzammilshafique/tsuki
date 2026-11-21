@@ -23,6 +23,70 @@ Rectangle {
     function openAddMenu() { addFabMenu.openMenu() }
     function closeAddMenu() { addFabMenu.closeMenu() }
 
+    readonly property var filterOptions: [
+        { key: "linux",     label: "Linux Only" },
+        { key: "windows",   label: "Windows Only" },
+        { key: "epic",      label: "Epic Only" },
+        { key: "favourite", label: "Favourite" },
+        { key: "local",     label: "Local" }
+    ]
+
+    function isFilterKeySelected(key) {
+        if (!uiController || !uiController.searchModel) return false
+        const sm = uiController.searchModel
+        const af = sm.activeFilters || []
+        if (af.indexOf(key) !== -1) return true
+        if (af.length === 0 && sm.filterType === 3 && key === "favourite") return true
+        return false
+    }
+
+    function isCategorySelected(cat) {
+        if (!uiController || !uiController.searchModel) return false
+        const sm = uiController.searchModel
+        const ac = sm.activeCategories || []
+        if (ac.indexOf(cat) !== -1) return true
+        if (ac.length === 0 && sm.categoryFilter === cat) return true
+        return false
+    }
+
+    function isAllGamesSelected() {
+        if (!uiController || !uiController.searchModel) return true
+        return !uiController.searchModel.hasActiveFilters
+    }
+
+    function toggleFilterKey(key) {
+        if (!uiController || !uiController.searchModel) return
+        const sm = uiController.searchModel
+        const af = sm.activeFilters ? Array.from(sm.activeFilters) : []
+        if (af.length === 0 && sm.filterType === 3) {
+            sm.filterType = -1
+            if (key === "favourite") return
+            sm.toggleFilter("favourite")
+        }
+        sm.toggleFilter(key)
+    }
+
+    function currentFilterName() {
+        if (!uiController || !uiController.searchModel) return "All Games"
+        const sm = uiController.searchModel
+        let labels = []
+        for (let i = 0; i < filterOptions.length; ++i) {
+            if (isFilterKeySelected(filterOptions[i].key)) {
+                labels.push(filterOptions[i].label)
+            }
+        }
+        const cats = sm.activeCategories || []
+        for (let j = 0; j < cats.length; ++j) {
+            labels.push(cats[j])
+        }
+        if (cats.length === 0 && sm.categoryFilter && sm.categoryFilter.length > 0) {
+            labels.push(sm.categoryFilter)
+        }
+        if (labels.length === 0) return "All Games"
+        if (labels.length === 1) return labels[0]
+        return labels.length + " Filters"
+    }
+
     readonly property var sortOptions: [
         { label: "Recently Played / Default", mode: 0 },
         { label: "Title (A → Z)",             mode: 1 },
@@ -94,7 +158,7 @@ Rectangle {
             Keys.onRightPressed: (event) => {
                 if (!searchTile.isEditing) {
                     event.accepted = true
-                    sortBtn.forceActiveFocus()
+                    filterBtn.forceActiveFocus()
                 }
             }
             Keys.onDownPressed: (event) => {
@@ -225,7 +289,553 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
 
-        // Top-Right M3 Pill Sort Dropdown (First)
+        // Top-Right M3 Pill Multi-Select Filter & Collections Dropdown (Matches Sort Dropdown)
+        Button {
+            id: filterBtn
+            objectName: "libraryFilterBtn"
+            padding: 0
+            activeFocusOnTab: false
+            Layout.alignment: Qt.AlignVCenter
+            implicitHeight: 40
+            implicitWidth: Math.max(114, filterInner.implicitWidth + 32)
+
+            property int focusedPopupIndex: 0
+            readonly property var userCategories: (uiController && uiController.gameManager && uiController.gameManager.categories)
+                ? uiController.gameManager.categories : []
+            readonly property int popupItemCount: 1 + topBar.filterOptions.length + userCategories.length
+
+            function handlePopupDown() {
+                if (popupItemCount > 0) focusedPopupIndex = (focusedPopupIndex + 1) % popupItemCount
+            }
+            function handlePopupUp() {
+                if (popupItemCount > 0) focusedPopupIndex = (focusedPopupIndex - 1 + popupItemCount) % popupItemCount
+            }
+            function handlePopupSelect() {
+                if (focusedPopupIndex === 0) {
+                    if (uiController && uiController.searchModel) uiController.searchModel.clearFilters()
+                    filterPopup.close()
+                    return
+                }
+                const fIdx = focusedPopupIndex - 1
+                if (fIdx >= 0 && fIdx < topBar.filterOptions.length) {
+                    topBar.toggleFilterKey(topBar.filterOptions[fIdx].key)
+                    return
+                }
+                const cIdx = fIdx - topBar.filterOptions.length
+                if (cIdx >= 0 && cIdx < userCategories.length) {
+                    if (uiController && uiController.searchModel) {
+                        uiController.searchModel.toggleCategory(userCategories[cIdx])
+                    }
+                }
+            }
+
+            readonly property bool isBtnHovered: filterHover.hovered
+            readonly property bool isKeyboardFocused: filterBtn.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+            readonly property bool isFilterActive: Boolean(uiController && uiController.searchModel && uiController.searchModel.hasActiveFilters)
+            readonly property bool isHighlighted: filterPopup.visible || isBtnHovered || isKeyboardFocused || isFilterActive
+
+            Keys.onLeftPressed: (event) => {
+                if (!filterPopup.visible) {
+                    event.accepted = true
+                    searchTile.forceActiveFocus()
+                }
+            }
+            Keys.onRightPressed: (event) => {
+                if (!filterPopup.visible) {
+                    event.accepted = true
+                    sortBtn.forceActiveFocus()
+                }
+            }
+            Keys.onUpPressed: (event) => {
+                if (filterPopup.visible) {
+                    event.accepted = true
+                    filterBtn.handlePopupUp()
+                }
+            }
+            Keys.onDownPressed: (event) => {
+                event.accepted = true
+                if (filterPopup.visible) filterBtn.handlePopupDown()
+                else topBar.focusGridRequested()
+            }
+            Keys.onReturnPressed: (event) => {
+                event.accepted = true
+                if (filterPopup.visible) filterBtn.handlePopupSelect()
+                else { filterBtn.focusedPopupIndex = 0; filterPopup.open() }
+            }
+            Keys.onEnterPressed: (event) => {
+                event.accepted = true
+                if (filterPopup.visible) filterBtn.handlePopupSelect()
+                else { filterBtn.focusedPopupIndex = 0; filterPopup.open() }
+            }
+            Keys.onSpacePressed: (event) => {
+                event.accepted = true
+                if (filterPopup.visible) filterBtn.handlePopupSelect()
+                else { filterBtn.focusedPopupIndex = 0; filterPopup.open() }
+            }
+            Keys.onEscapePressed: (event) => {
+                event.accepted = true
+                if (filterPopup.visible) filterPopup.close()
+                else topBar.focusGridRequested()
+            }
+            Keys.onPressed: (event) => {
+                if (event.key === Qt.Key_Backspace) {
+                    event.accepted = true
+                    if (filterPopup.visible) filterPopup.close()
+                    else topBar.focusGridRequested()
+                }
+            }
+
+            background: Rectangle {
+                radius: height / 2
+                color: filterBtn.isFilterActive
+                    ? appSettings.secondaryContainer
+                    : ((filterBtn.isBtnHovered || filterPopup.visible)
+                        ? appSettings.surfaceContainerHighest
+                        : appSettings.surfaceContainerHigh)
+                border.color: appSettings.accentColor
+                border.width: (filterPopup.visible || filterBtn.isKeyboardFocused) ? 2 : 0
+                scale: filterBtn.pressed ? 0.96 : (filterBtn.isKeyboardFocused ? 1.02 : 1.0)
+                Behavior on color { ColorAnimation { duration: 120 } }
+                Behavior on scale { NumberAnimation { duration: 100 } }
+            }
+
+            contentItem: Item {
+                implicitWidth: filterInner.implicitWidth
+                implicitHeight: 40
+                Row {
+                    id: filterInner
+                    anchors.centerIn: parent
+                    spacing: 8
+                    YIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        size: 16
+                        source: "qrc:/tsuki_app/icons/actions/tune.svg"
+                        color: filterBtn.isFilterActive
+                            ? appSettings.onSecondaryContainer
+                            : (filterBtn.isHighlighted ? appSettings.accentColor : appSettings.textSecColor)
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: topBar.currentFilterName()
+                        color: filterBtn.isFilterActive ? appSettings.onSecondaryContainer : appSettings.textColor
+                        font.family: "Rubik"
+                        font.pixelSize: 13
+                        font.weight: Font.Medium
+                        renderType: Text.QtRendering
+                    }
+                    YIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        size: 18
+                        symbol: "keyboard_arrow_down"
+                        color: filterBtn.isFilterActive
+                            ? appSettings.onSecondaryContainer
+                            : (filterBtn.isHighlighted ? appSettings.accentColor : appSettings.textSecColor)
+                        rotation: filterPopup.visible ? 180 : 0
+                        Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
+                }
+            }
+
+            HoverHandler { id: filterHover; cursorShape: Qt.PointingHandCursor }
+            onClicked: {
+                if (filterPopup.visible) {
+                    filterPopup.close()
+                } else {
+                    filterBtn.focusedPopupIndex = 0
+                    filterPopup.open()
+                }
+            }
+
+            Popup {
+                id: filterPopup
+                y: filterBtn.height + 4
+                x: filterBtn.width - width
+                width: Math.max(filterBtn.width, 252)
+                padding: 6
+                dim: false
+                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnPressOutsideParent
+
+                onClosed: {
+                    if (uiController && uiController.isKeyboardNavActive) {
+                        filterBtn.forceActiveFocus()
+                    } else {
+                        filterBtn.focus = false
+                    }
+                }
+
+                property real unfoldProgress: 0.0
+
+                enter: Transition {
+                    ParallelAnimation {
+                        NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 180; easing.type: Easing.OutCubic }
+                        NumberAnimation { property: "unfoldProgress"; from: 0.0; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                    }
+                }
+                exit: Transition {
+                    ParallelAnimation {
+                        NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 140; easing.type: Easing.InCubic }
+                        NumberAnimation { property: "unfoldProgress"; from: 1.0; to: 0.0; duration: 160; easing.type: Easing.InCubic }
+                    }
+                }
+
+                readonly property real fullContentHeight: Math.min(400, filterPopupCol.implicitHeight + 12)
+                implicitHeight: fullContentHeight * unfoldProgress
+                height: implicitHeight
+
+                background: Rectangle {
+                    color: appSettings.surfaceContainer
+                    border.width: 0
+                    radius: 16
+                    layer.enabled: filterPopup.visible
+                    layer.effect: MultiEffect {
+                        shadowEnabled: true
+                        shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.45 : 0.18)
+                        shadowBlur: 0.6
+                        shadowVerticalOffset: 4
+                    }
+                }
+
+                contentItem: Item {
+                    clip: true
+
+                    ColumnLayout {
+                        id: filterPopupCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        spacing: 6
+
+                        Flickable {
+                            id: filterFlick
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: Math.min(340, filterCol.implicitHeight)
+                            contentHeight: filterCol.implicitHeight
+                            clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            Column {
+                                id: filterCol
+                                width: filterFlick.width
+                                spacing: 2
+
+                                // Row 0: All Games (Clears multi-select filters)
+                                Item {
+                                    id: allGamesRow
+                                    width: filterCol.width
+                                    height: 36
+                                    readonly property bool isSelected: topBar.isAllGamesSelected()
+                                    readonly property bool isHovered: allGamesMA.containsMouse || (Boolean(uiController && uiController.isKeyboardNavActive) && filterBtn.focusedPopupIndex === 0)
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 18
+                                        color: appSettings.surfaceContainerHighest
+                                        opacity: (!allGamesRow.isSelected && allGamesRow.isHovered) ? 1.0 : 0.0
+                                        Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                    }
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 18
+                                        color: appSettings.secondaryContainer
+                                        opacity: allGamesRow.isSelected ? 1.0 : 0.0
+                                        Behavior on opacity { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+                                    }
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 18
+                                        color: Qt.rgba(0, 0, 0, 0)
+                                        border.color: appSettings.accentColor
+                                        border.width: 1.5
+                                        opacity: (filterBtn.focusedPopupIndex === 0 && !allGamesRow.isSelected && Boolean(uiController && uiController.isKeyboardNavActive)) ? 1.0 : 0.0
+                                        Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                    }
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 14
+                                        anchors.rightMargin: 14
+                                        spacing: 8
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: "All Games"
+                                            color: allGamesRow.isSelected ? appSettings.onSecondaryContainer : appSettings.textColor
+                                            font.family: "Rubik"
+                                            font.pixelSize: 13
+                                            font.weight: allGamesRow.isSelected ? Font.DemiBold : Font.Normal
+                                            renderType: Text.QtRendering
+                                            verticalAlignment: Text.AlignVCenter
+                                            elide: Text.ElideRight
+                                        }
+                                        YIcon {
+                                            size: 16
+                                            symbol: "check"
+                                            color: appSettings.onSecondaryContainer
+                                            visible: allGamesRow.isSelected
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: allGamesMA
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (uiController && uiController.searchModel) {
+                                                uiController.searchModel.clearFilters()
+                                            }
+                                            filterPopup.close()
+                                        }
+                                    }
+                                }
+
+                                // Multi-select Filter Rows: Linux Only, Windows Only, Epic Only, Favourite, Local
+                                Repeater {
+                                    model: topBar.filterOptions
+                                    delegate: Item {
+                                        id: filterRow
+                                        required property int index
+                                        required property var modelData
+                                        width: filterCol.width
+                                        height: 36
+                                        readonly property int popupRowIdx: index + 1
+                                        readonly property bool isSelected: topBar.isFilterKeySelected(modelData.key)
+                                        readonly property bool isHovered: fItemMA.containsMouse || (Boolean(uiController && uiController.isKeyboardNavActive) && filterBtn.focusedPopupIndex === popupRowIdx)
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 18
+                                            color: appSettings.surfaceContainerHighest
+                                            opacity: (!filterRow.isSelected && filterRow.isHovered) ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 18
+                                            color: appSettings.secondaryContainer
+                                            opacity: filterRow.isSelected ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 18
+                                            color: Qt.rgba(0, 0, 0, 0)
+                                            border.color: appSettings.accentColor
+                                            border.width: 1.5
+                                            opacity: (filterBtn.focusedPopupIndex === filterRow.popupRowIdx && !filterRow.isSelected && Boolean(uiController && uiController.isKeyboardNavActive)) ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                        }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 14
+                                            anchors.rightMargin: 14
+                                            spacing: 8
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: String(filterRow.modelData.label)
+                                                color: filterRow.isSelected ? appSettings.onSecondaryContainer : appSettings.textColor
+                                                font.family: "Rubik"
+                                                font.pixelSize: 13
+                                                font.weight: filterRow.isSelected ? Font.DemiBold : Font.Normal
+                                                renderType: Text.QtRendering
+                                                verticalAlignment: Text.AlignVCenter
+                                                elide: Text.ElideRight
+                                            }
+                                            YIcon {
+                                                size: 16
+                                                symbol: "check"
+                                                color: appSettings.onSecondaryContainer
+                                                visible: filterRow.isSelected
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: fItemMA
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: topBar.toggleFilterKey(filterRow.modelData.key)
+                                        }
+                                    }
+                                }
+
+                                // Collections Section (multi-selectable)
+                                Item {
+                                    visible: filterBtn.userCategories.length > 0
+                                    width: filterCol.width
+                                    height: 9
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.leftMargin: 10
+                                        anchors.rightMargin: 10
+                                        height: 1
+                                        color: appSettings.borderColor
+                                    }
+                                }
+
+                                Repeater {
+                                    model: filterBtn.userCategories
+                                    delegate: Item {
+                                        id: catRow
+                                        required property int index
+                                        required property string modelData
+                                        width: filterCol.width
+                                        height: 36
+                                        readonly property int popupRowIdx: 1 + topBar.filterOptions.length + index
+                                        readonly property bool isSelected: topBar.isCategorySelected(modelData)
+                                        readonly property bool isHovered: cItemMA.containsMouse || (Boolean(uiController && uiController.isKeyboardNavActive) && filterBtn.focusedPopupIndex === popupRowIdx)
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 18
+                                            color: appSettings.surfaceContainerHighest
+                                            opacity: (!catRow.isSelected && catRow.isHovered) ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 18
+                                            color: appSettings.secondaryContainer
+                                            opacity: catRow.isSelected ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 18
+                                            color: Qt.rgba(0, 0, 0, 0)
+                                            border.color: appSettings.accentColor
+                                            border.width: 1.5
+                                            opacity: (filterBtn.focusedPopupIndex === catRow.popupRowIdx && !catRow.isSelected && Boolean(uiController && uiController.isKeyboardNavActive)) ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                        }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 14
+                                            anchors.rightMargin: 8
+                                            spacing: 6
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: catRow.modelData
+                                                color: catRow.isSelected ? appSettings.onSecondaryContainer : appSettings.textColor
+                                                font.family: "Rubik"
+                                                font.pixelSize: 13
+                                                font.weight: catRow.isSelected ? Font.DemiBold : Font.Normal
+                                                renderType: Text.QtRendering
+                                                verticalAlignment: Text.AlignVCenter
+                                                elide: Text.ElideRight
+                                            }
+
+                                            YIcon {
+                                                size: 16
+                                                symbol: "check"
+                                                color: appSettings.onSecondaryContainer
+                                                visible: catRow.isSelected
+                                            }
+
+                                            ToolButton {
+                                                implicitWidth: 24
+                                                implicitHeight: 24
+                                                focusPolicy: Qt.NoFocus
+                                                background: Rectangle {
+                                                    radius: 12
+                                                    color: parent.hovered ? Qt.rgba(239/255, 68/255, 68/255, 0.2) : "transparent"
+                                                }
+                                                contentItem: YIcon {
+                                                    anchors.centerIn: parent
+                                                    size: 13
+                                                    source: "qrc:/tsuki_app/icons/actions/close.svg"
+                                                    color: catRow.isSelected ? appSettings.onSecondaryContainer : appSettings.textSecColor
+                                                }
+                                                onClicked: {
+                                                    if (uiController && uiController.gameManager) {
+                                                        if (uiController.searchModel && topBar.isCategorySelected(catRow.modelData)) {
+                                                            uiController.searchModel.toggleCategory(catRow.modelData)
+                                                        }
+                                                        uiController.gameManager.deleteCollection(catRow.modelData)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: cItemMA
+                                            anchors.left: parent.left
+                                            anchors.top: parent.top
+                                            anchors.bottom: parent.bottom
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 32
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (uiController && uiController.searchModel) {
+                                                    uiController.searchModel.toggleCategory(catRow.modelData)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Compact "+ New Collection" Row
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 4
+                            Layout.rightMargin: 4
+                            spacing: 6
+
+                            TextField {
+                                id: newCollectionInput
+                                Layout.fillWidth: true
+                                implicitHeight: 32
+                                placeholderText: "New collection…"
+                                color: appSettings.textColor
+                                placeholderTextColor: appSettings.textTerColor
+                                font.family: "Rubik"
+                                font.pixelSize: 12
+                                leftPadding: 12
+                                rightPadding: 10
+                                background: Rectangle {
+                                    radius: 16
+                                    color: appSettings.surfaceContainerHigh
+                                    border.color: newCollectionInput.activeFocus ? appSettings.accentColor : "transparent"
+                                    border.width: newCollectionInput.activeFocus ? 1.5 : 0
+                                }
+                                onAccepted: {
+                                    const nm = text.trim()
+                                    if (nm.length > 0 && uiController && uiController.gameManager) {
+                                        uiController.gameManager.createCollection(nm)
+                                        text = ""
+                                    }
+                                }
+                            }
+
+                            M3Button {
+                                text: "Add"
+                                buttonType: "tonal"
+                                implicitHeight: 32
+                                enabled: newCollectionInput.text.trim().length > 0
+                                onClicked: {
+                                    const nm = newCollectionInput.text.trim()
+                                    if (nm.length > 0 && uiController && uiController.gameManager) {
+                                        uiController.gameManager.createCollection(nm)
+                                        newCollectionInput.text = ""
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Top-Right M3 Pill Sort Dropdown (Second)
         Button {
             id: sortBtn
             padding: 0
@@ -275,7 +885,7 @@ Rectangle {
             Keys.onLeftPressed: (event) => {
                 if (!sortPopup.visible) {
                     event.accepted = true
-                    searchTile.forceActiveFocus()
+                    filterBtn.forceActiveFocus()
                 }
             }
             Keys.onRightPressed: (event) => {

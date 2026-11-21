@@ -22,6 +22,12 @@ class RunnerManager : public QObject {
     Q_PROPERTY(bool battleyeRuntimeAvailable READ battleyeRuntimeAvailable NOTIFY antiCheatRuntimesChanged)
     Q_PROPERTY(bool isInstallingEac READ isInstallingEac NOTIFY antiCheatRuntimesChanged)
     Q_PROPERTY(bool isInstallingBattleye READ isInstallingBattleye NOTIFY antiCheatRuntimesChanged)
+    Q_PROPERTY(QString umuRunPath READ umuRunPath NOTIFY umuRuntimeChanged)
+    Q_PROPERTY(bool umuAvailable READ umuAvailable NOTIFY umuRuntimeChanged)
+    Q_PROPERTY(QString umuVersion READ umuVersion NOTIFY umuRuntimeChanged)
+    Q_PROPERTY(bool steamRuntimeAvailable READ steamRuntimeAvailable NOTIFY umuRuntimeChanged)
+    Q_PROPERTY(bool isInstallingUmu READ isInstallingUmu NOTIFY umuRuntimeChanged)
+    Q_PROPERTY(bool cpuSupportsX86_64V3 READ cpuSupportsX86_64V3 CONSTANT)
 
 public:
     explicit RunnerManager(DatabaseManager* db, AppSettings* settings, DownloadManager* dl, QObject* parent = nullptr);
@@ -53,17 +59,32 @@ public:
     Q_INVOKABLE void installAntiCheatRuntime(const QString& runtimeName);
     Q_INVOKABLE bool removeAntiCheatRuntime(const QString& runtimeName);
 
+    // UMU Launcher & Steam Linux Runtime
+    static QString resolveUmuRunPath();
+    static QString resolveSteamLinuxRuntimePath();
+    static bool supportsX86_64V3();
+    bool cpuSupportsX86_64V3() const { return supportsX86_64V3(); }
+    QString umuRunPath() const { return resolveUmuRunPath(); }
+    bool umuAvailable() const { return !resolveUmuRunPath().isEmpty(); }
+    QString umuVersion() const;
+    bool steamRuntimeAvailable() const { return !resolveSteamLinuxRuntimePath().isEmpty(); }
+    bool isInstallingUmu() const { return m_isInstallingUmu; }
+    Q_INVOKABLE void installUmuLauncher();
+    Q_INVOKABLE bool removeUmuLauncher();
+
     Q_INVOKABLE void detectInstalledRunners();
     Q_INVOKABLE void fetchAvailableReleases(const QString& category = QStringLiteral("proton-ge"),
                                             bool forceRefresh = false);
     Q_INVOKABLE void downloadRelease(const QString& category,
                                      const QString& tagName,
                                      const QString& downloadUrl,
-                                     const QString& fileName = QString());
+                                     const QString& fileName = QString(),
+                                     const QString& sha512Url = QString());
     Q_INVOKABLE void downloadAndInstallRunner(const QString& tagName,
                                               const QString& category,
                                               const QString& downloadUrl,
-                                              const QString& fileName);
+                                              const QString& fileName,
+                                              const QString& sha512Url = QString());
     Q_INVOKABLE bool removeRunner(const QString& runnerId, bool deleteFiles = false);
     Q_INVOKABLE bool uninstallRunner(const QString& runnerId);
     Q_INVOKABLE bool updateRunnerSettings(const QString& runnerId, const QVariantMap& settings);
@@ -74,6 +95,7 @@ signals:
     void availableReleasesChanged();
     void isFetchingReleasesChanged();
     void antiCheatRuntimesChanged();
+    void umuRuntimeChanged();
     void runnerOperationStatus(const QString& message, bool isError);
 
 private:
@@ -88,6 +110,7 @@ private:
     bool m_isFetchingReleases = false;
     bool m_isInstallingEac = false;
     bool m_isInstallingBattleye = false;
+    bool m_isInstallingUmu = false;
 
     void inspectAndRegisterRunnerDir(const QString& dirPath, bool isSystemDir = false, const QString& sourceLabel = QString());
     void scanSteamRunners();

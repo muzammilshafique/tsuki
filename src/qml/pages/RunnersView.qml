@@ -62,7 +62,7 @@ Item {
                     font.letterSpacing: -0.4
                 }
                 Label {
-                    text: "Manage installed Wine, Proton, Proton-GE, Proton-CachyOS, or download GitHub releases"
+                    text: "Manage installed Wine, Proton, Proton-GE, Proton-CachyOS, Proton-Sarek, Proton-EM & UMU runtime"
                     color: appSettings.textSecColor
                     font.pixelSize: 13
                     elide: Text.ElideRight
@@ -181,6 +181,94 @@ Item {
                             font.pixelSize: 16
                             font.weight: Font.DemiBold
                             Layout.fillWidth: true
+                        }
+                    }
+
+                    // UMU Launcher & Steam Linux Runtime Status Strip
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: umuBarRow.implicitHeight + 18
+                        radius: 12
+                        color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
+                        border.color: (uiController.runnerManager && uiController.runnerManager.umuAvailable)
+                            ? Qt.rgba(34/255, 197/255, 94/255, 0.35)
+                            : appSettings.borderColor
+                        border.width: 1
+
+                        RowLayout {
+                            id: umuBarRow
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            anchors.topMargin: 9
+                            anchors.bottomMargin: 9
+                            spacing: 10
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                RowLayout {
+                                    spacing: 6
+                                    Label {
+                                        text: "UMU Launcher (Protonfixes)"
+                                        color: appSettings.textColor
+                                        font.pixelSize: 13
+                                        font.weight: Font.DemiBold
+                                    }
+                                    Rectangle {
+                                        height: 18
+                                        implicitWidth: umuStatusLbl.implicitWidth + 10
+                                        radius: 9
+                                        color: (uiController.runnerManager && uiController.runnerManager.umuAvailable)
+                                            ? Qt.rgba(34/255, 197/255, 94/255, 0.18)
+                                            : Qt.rgba(0.58, 0.64, 0.72, 0.18)
+                                        Label {
+                                            id: umuStatusLbl
+                                            anchors.centerIn: parent
+                                            text: (uiController.runnerManager && uiController.runnerManager.isInstallingUmu)
+                                                ? "INSTALLING"
+                                                : ((uiController.runnerManager && uiController.runnerManager.umuAvailable) ? "READY" : "NOT INSTALLED")
+                                            color: (uiController.runnerManager && uiController.runnerManager.umuAvailable) ? "#22c55e" : appSettings.textSecColor
+                                            font.pixelSize: 9
+                                            font.weight: Font.Bold
+                                        }
+                                    }
+                                }
+                                Label {
+                                    text: {
+                                        const rm = uiController.runnerManager
+                                        if (!rm) return ""
+                                        const slr = rm.steamRuntimeAvailable ? "Steam Runtime 3.0 (sniper) detected" : "Standalone mode"
+                                        if (rm.umuAvailable) {
+                                            const ver = rm.umuVersion ? (" · " + rm.umuVersion) : ""
+                                            return "umu-run ready" + ver + " · " + slr
+                                        }
+                                        return "Install umu-launcher for Valve Protonfixes & Steam Runtime support · " + slr
+                                    }
+                                    color: appSettings.textSecColor
+                                    font.pixelSize: 11
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            M3Button {
+                                visible: Boolean(uiController.runnerManager && !uiController.runnerManager.umuAvailable)
+                                enabled: Boolean(uiController.runnerManager && !uiController.runnerManager.isInstallingUmu)
+                                text: (uiController.runnerManager && uiController.runnerManager.isInstallingUmu) ? "Installing…" : "Install UMU"
+                                iconSource: "qrc:/tsuki_app/icons/actions/download.svg"
+                                buttonType: "filled"
+                                implicitHeight: 30
+                                onClicked: uiController.runnerManager.installUmuLauncher()
+                            }
+
+                            M3Button {
+                                visible: Boolean(uiController.runnerManager && uiController.runnerManager.umuAvailable)
+                                text: "Remove"
+                                buttonType: "tonal"
+                                implicitHeight: 30
+                                onClicked: uiController.runnerManager.removeUmuLauncher()
+                            }
                         }
                     }
 
@@ -456,10 +544,10 @@ Item {
                         }
                     }
 
-                    // ── Active Downloads Section (Lower portion of Installed Runners area) ──
+                    // ── Active Runner Downloads Section (Strictly runner/runtime/tool downloads — excludes games) ──
                     Rectangle {
                         id: dlSection
-                        visible: (uiController.downloadManager ? uiController.downloadManager.activeDownloadCount : 0) > 0
+                        visible: (uiController.downloadManager ? uiController.downloadManager.runnerDownloadCount : 0) > 0
                         Layout.fillWidth: true
                         implicitHeight: dlCol.implicitHeight + 20
                         radius: 14
@@ -586,7 +674,7 @@ Item {
                                     size: 16
                                 }
                                 Label {
-                                    text: "Active Downloads (" + (uiController.downloadManager ? uiController.downloadManager.activeDownloadCount : 0) + ")"
+                                    text: "Active Runner Downloads (" + (uiController.downloadManager ? uiController.downloadManager.runnerDownloadCount : 0) + ")"
                                     color: appSettings.textColor
                                     font.pixelSize: 13
                                     font.weight: Font.DemiBold
@@ -596,21 +684,23 @@ Item {
 
                             Repeater {
                                 id: dlRepeater
-                                model: uiController.downloadManager
+                                model: uiController.downloadManager ? uiController.downloadManager.runnerDownloads : []
 
                                 delegate: Rectangle {
                                     id: dlItemDelegate
+                                    required property int index
+                                    required property var modelData
                                     readonly property bool isRowFocused: dlSection.activeFocus && dlSection.focusedDlIndex === index
-                                    readonly property bool canPause: !model.isExtracting
+                                    readonly property bool canPause: !Boolean(modelData.isExtracting)
                                     readonly property bool isPauseFocused: isRowFocused && canPause && dlSection.focusedDlAction === 0
                                     readonly property bool isCancelFocused: isRowFocused && (!canPause || dlSection.focusedDlAction === 1)
 
                                     function triggerFocusedAction() {
                                         if (!uiController.downloadManager) return
                                         if (canPause && dlSection.focusedDlAction === 0) {
-                                            uiController.downloadManager.togglePauseDownload(model.id)
+                                            uiController.downloadManager.togglePauseDownload(modelData.id)
                                         } else {
-                                            uiController.downloadManager.cancelDownload(model.id)
+                                            uiController.downloadManager.cancelDownload(modelData.id)
                                         }
                                     }
 
@@ -633,7 +723,7 @@ Item {
                                             spacing: 8
 
                                             Label {
-                                                text: model.title || "Downloading…"
+                                                text: dlItemDelegate.modelData.title || "Downloading…"
                                                 color: appSettings.textColor
                                                 font.pixelSize: 12
                                                 font.weight: Font.Medium
@@ -642,9 +732,9 @@ Item {
                                             }
 
                                             Label {
-                                                text: (model.downloadedSizeStr || "0 B") + 
-                                                      (model.totalSizeStr ? " / " + model.totalSizeStr : "") +
-                                                      (model.eta ? " • " + model.eta : "")
+                                                text: (dlItemDelegate.modelData.downloadedSizeStr || "0 B") +
+                                                      (dlItemDelegate.modelData.totalSizeStr ? " / " + dlItemDelegate.modelData.totalSizeStr : "") +
+                                                      (dlItemDelegate.modelData.eta ? " • " + dlItemDelegate.modelData.eta : "")
                                                 color: appSettings.textSecColor
                                                 font.pixelSize: 11
                                             }
@@ -658,7 +748,7 @@ Item {
                                                 // Pause / Resume Button
                                                 Rectangle {
                                                     id: pauseBtn
-                                                    visible: !model.isExtracting
+                                                    visible: !Boolean(dlItemDelegate.modelData.isExtracting)
                                                     height: 26
                                                     width: actionBtnsRow.isCompact ? 26 : (pauseRow.implicitWidth + 20)
                                                     radius: 13
@@ -681,14 +771,14 @@ Item {
                                                         spacing: 5
                                                         YIcon {
                                                             anchors.verticalCenter: parent.verticalCenter
-                                                            source: model.isPaused ? "qrc:/tsuki_app/icons/actions/play.svg" : "qrc:/tsuki_app/icons/actions/pause.svg"
+                                                            source: Boolean(dlItemDelegate.modelData.isPaused) ? "qrc:/tsuki_app/icons/actions/play.svg" : "qrc:/tsuki_app/icons/actions/pause.svg"
                                                             color: appSettings.textColor
                                                             size: 13
                                                         }
                                                         Label {
                                                             visible: !actionBtnsRow.isCompact
                                                             anchors.verticalCenter: parent.verticalCenter
-                                                            text: model.isPaused ? "Resume" : "Pause"
+                                                            text: Boolean(dlItemDelegate.modelData.isPaused) ? "Resume" : "Pause"
                                                             color: appSettings.textColor
                                                             font.pixelSize: 11
                                                             font.weight: Font.DemiBold
@@ -696,14 +786,14 @@ Item {
                                                     }
 
                                                     ToolTip.visible: pauseHover.hovered
-                                                    ToolTip.text: model.isPaused ? "Resume download" : "Pause download"
+                                                    ToolTip.text: Boolean(dlItemDelegate.modelData.isPaused) ? "Resume download" : "Pause download"
                                                     ToolTip.delay: 300
 
                                                     MouseArea {
                                                         id: pauseMA
                                                         anchors.fill: parent
                                                         cursorShape: Qt.PointingHandCursor
-                                                        onClicked: uiController.downloadManager.togglePauseDownload(model.id)
+                                                        onClicked: uiController.downloadManager.togglePauseDownload(dlItemDelegate.modelData.id)
                                                     }
                                                 }
 
@@ -756,7 +846,7 @@ Item {
                                                         id: cancelMA
                                                         anchors.fill: parent
                                                         cursorShape: Qt.PointingHandCursor
-                                                        onClicked: uiController.downloadManager.cancelDownload(model.id)
+                                                        onClicked: uiController.downloadManager.cancelDownload(dlItemDelegate.modelData.id)
                                                     }
                                                 }
                                             }
@@ -771,7 +861,7 @@ Item {
 
                                             Rectangle {
                                                 height: parent.height
-                                                width: parent.width * Math.max(0.0, Math.min(1.0, (model.progress || 0) / 100.0))
+                                                width: parent.width * Math.max(0.0, Math.min(1.0, (dlItemDelegate.modelData.progress || 0) / 100.0))
                                                 radius: 2.5
                                                 color: appSettings.accentColor
                                                 Behavior on width { NumberAnimation { duration: 150 } }
@@ -806,17 +896,25 @@ Item {
                         font.weight: Font.DemiBold
                     }
 
-                    // Release Category Pills: 2 options only (Proton-GE and Proton-CachyOS)
+                    // Release Category Pills (Proton-GE, CachyOS, Sarek, Proton-EM)
                     M3SegmentedButton {
                         id: releaseCatSeg
                         Layout.fillWidth: true
                         model: [
                             { label: "Proton-GE", val: 0 },
-                            { label: "Proton-CachyOS", val: 1 }
+                            { label: "CachyOS",   val: 1 },
+                            { label: "Sarek",     val: 2 },
+                            { label: "Proton-EM", val: 3 }
                         ]
-                        selectedValue: root.selectedReleaseCat === "proton-ge" ? 0 : 1
+                        selectedValue: {
+                            if (root.selectedReleaseCat === "proton-cachyos") return 1
+                            if (root.selectedReleaseCat === "proton-sarek") return 2
+                            if (root.selectedReleaseCat === "proton-em") return 3
+                            return 0
+                        }
                         onSelectionChanged: (val) => {
-                            root.selectedReleaseCat = (val === 0 ? "proton-ge" : "proton-cachyos")
+                            const cats = ["proton-ge", "proton-cachyos", "proton-sarek", "proton-em"]
+                            root.selectedReleaseCat = cats[val] || "proton-ge"
                             uiController.runnerManager.fetchAvailableReleases(root.selectedReleaseCat)
                         }
                         Keys.onUpPressed: (event) => {
@@ -826,6 +924,33 @@ Item {
                         Keys.onDownPressed: (event) => {
                             event.accepted = true
                             if (releasesList.count > 0) releasesList.forceActiveFocus()
+                        }
+                    }
+
+                    // CachyOS x86-64-v3 CPU Optimization Bar
+                    RowLayout {
+                        visible: root.selectedReleaseCat === "proton-cachyos"
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: (uiController.runnerManager && uiController.runnerManager.cpuSupportsX86_64V3)
+                                ? "Prefer x86-64-v3 optimized builds (CPU supported)"
+                                : "Prefer x86-64-v3 builds (CPU uses baseline x86-64)"
+                            color: appSettings.textSecColor
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                        }
+
+                        Toggle {
+                            checked: appSettings ? appSettings.preferX86_64V3Runners : false
+                            onToggled: (c) => {
+                                if (appSettings) {
+                                    appSettings.preferX86_64V3Runners = c
+                                    uiController.runnerManager.fetchAvailableReleases("proton-cachyos", true)
+                                }
+                            }
                         }
                     }
 
@@ -932,7 +1057,8 @@ Item {
                                             root.selectedReleaseCat,
                                             relRow.modelData.tagName,
                                             relRow.modelData.downloadUrl,
-                                            relRow.modelData.fileName || ""
+                                            relRow.modelData.fileName || "",
+                                            relRow.modelData.sha512Url || ""
                                         )
                                     }
                                 }

@@ -3,12 +3,14 @@
 #include "services/ControllerManager.h"
 #include "services/DiagnosticsManager.h"
 #include "services/DownloadManager.h"
+#include "services/EpicCloudSaveService.h"
 #include "services/EpicService.h"
 #include "services/GameManager.h"
 #include "services/LaunchPipeline.h"
 #include "services/PrefixManager.h"
 #include "services/RunnerManager.h"
 #include "services/SteamGridDbService.h"
+#include "services/UmuIdResolver.h"
 #include "services/WinetricksManager.h"
 #include "ui/UiController.h"
 
@@ -81,8 +83,11 @@ int main(int argc, char *argv[]) {
   appSettings.setDatabaseManager(&dbManager);
 
   Tsuki::DownloadManager downloadManager;
+  downloadManager.setAppSettings(&appSettings);
+  downloadManager.setDatabaseManager(&dbManager);
   Tsuki::RunnerManager runnerManager(&dbManager, &appSettings,
                                      &downloadManager);
+  Tsuki::UmuIdResolver umuIdResolver(&dbManager);
   Tsuki::PrefixManager prefixManager(&dbManager, &appSettings, &runnerManager);
   Tsuki::WinetricksManager winetricksManager(&dbManager, &appSettings,
                                              &runnerManager, &downloadManager);
@@ -90,21 +95,28 @@ int main(int argc, char *argv[]) {
   Tsuki::SteamGridDbService steamGridDbService(&appSettings, &downloadManager);
   Tsuki::EpicService epicService(&dbManager, &appSettings, &runnerManager,
                                  &prefixManager, &steamGridDbService);
+  epicService.setDownloadManager(&downloadManager);
+  epicService.setUmuIdResolver(&umuIdResolver);
+  Tsuki::EpicCloudSaveService cloudSaveService(&dbManager, &appSettings,
+                                               &prefixManager, &epicService);
   Tsuki::DiagnosticsManager diagnosticsManager(&dbManager, &appSettings,
                                                &runnerManager, &prefixManager);
   Tsuki::LaunchPipeline launchPipeline(&dbManager, &appSettings, &runnerManager,
                                        &prefixManager, &controllerManager,
                                        &diagnosticsManager);
   launchPipeline.setEpicService(&epicService);
+  launchPipeline.setCloudSaveService(&cloudSaveService);
+  launchPipeline.setUmuIdResolver(&umuIdResolver);
   Tsuki::GameManager gameManager(&dbManager, &appSettings, &runnerManager,
                                  &prefixManager, &steamGridDbService,
                                  &launchPipeline);
   epicService.setGameManager(&gameManager);
+  epicService.restorePendingDownloads();
   Tsuki::UiController uiController(
       &dbManager, &appSettings, &downloadManager, &runnerManager,
       &prefixManager, &winetricksManager, &controllerManager,
       &steamGridDbService, &launchPipeline, &diagnosticsManager, &gameManager,
-      &epicService);
+      &epicService, &cloudSaveService, &umuIdResolver);
 
   if (parser.isSet(launchOption)) {
     const QString gameId = parser.value(launchOption).trimmed();

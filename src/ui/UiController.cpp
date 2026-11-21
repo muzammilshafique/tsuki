@@ -24,6 +24,8 @@ UiController::UiController(DatabaseManager* db,
                            DiagnosticsManager* diagMgr,
                            GameManager* gameMgr,
                            EpicService* epicService,
+                           EpicCloudSaveService* cloudSaveService,
+                           UmuIdResolver* umuIdResolver,
                            QObject* parent)
     : QObject(parent)
     , m_db(db)
@@ -38,6 +40,8 @@ UiController::UiController(DatabaseManager* db,
     , m_diagMgr(diagMgr)
     , m_gameMgr(gameMgr)
     , m_epicSvc(epicService)
+    , m_cloudSaveSvc(cloudSaveService)
+    , m_umuResolver(umuIdResolver)
     , m_activeInputType((ctrlMgr && ctrlMgr->isConnected()) ? ctrlMgr->controllerType() : QStringLiteral("keyboard"))
 {
     if (QCoreApplication::instance()) {
@@ -74,9 +78,18 @@ UiController::UiController(DatabaseManager* db,
     connect(m_launchPipeline, &LaunchPipeline::gameLaunchFailed, this, [this](const QString&, const QString& reason) {
         emit toastRequested(reason, true);
     });
+    connect(m_launchPipeline, &LaunchPipeline::launchStatusMessage, this, &UiController::toastRequested);
     connect(m_launchPipeline, &LaunchPipeline::gameStarted, this, [this](const QString&, const QString& title) {
         setKeyboardNavActive(false);
+        if (m_dl) {
+            m_dl->pauseForGameplay();
+        }
         emit toastRequested(QStringLiteral("Launching %1…").arg(title), false);
+    });
+    connect(m_launchPipeline, &LaunchPipeline::gameStopped, this, [this](const QString&, int, qint64) {
+        if (m_dl && m_launchPipeline->runningCount() == 0) {
+            m_dl->resumeAfterGameplay();
+        }
     });
     connect(m_diagMgr, &DiagnosticsManager::launchErrorDiagnosed, this,
             [this](const QString&, const QString& title, const QString& summary, const QString& rec) {
@@ -84,6 +97,9 @@ UiController::UiController(DatabaseManager* db,
             });
     if (m_epicSvc) {
         connect(m_epicSvc, &EpicService::operationStatus, this, &UiController::toastRequested);
+    }
+    if (m_cloudSaveSvc) {
+        connect(m_cloudSaveSvc, &EpicCloudSaveService::operationStatus, this, &UiController::toastRequested);
     }
 }
 

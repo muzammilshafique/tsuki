@@ -21,6 +21,7 @@ Item {
         "delete":              "trash.svg",
         "desktop_windows":     "desktop_windows.svg",
         "download":            "download.svg",
+        "edit":                "edit.svg",
         "folder_open":         "folder_open.svg",
         "grid_view":           "grid_view.svg",
         "info":                "info.svg",
@@ -29,6 +30,7 @@ Item {
         "menu_open":           "menu_open.svg",
         "open_in_new":         "shortcut.svg",
         "palette":             "palette.svg",
+        "pause":               "pause.svg",
         "person":              "person.svg",
         "play_arrow":          "play_arrow.svg",
         "refresh":             "refresh.svg",
@@ -37,7 +39,9 @@ Item {
         "speed":               "speed.svg",
         "stop":                "stop.svg",
         "terminal":            "terminal.svg",
-        "tune":                "tune.svg"
+        "tune":                "tune.svg",
+        "visibility":          "visibility.svg",
+        "visibility_off":      "visibility_off.svg"
     })
 
     readonly property var _filledSymbolIcons: ({

@@ -28,11 +28,15 @@ namespace Tsuki {
 
 class GameManager;
 class EpicService;
+class DownloadManager;
+class UmuIdResolver;
 
 class EpicLibraryModel : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(QString searchQuery READ searchQuery WRITE setSearchQuery NOTIFY searchQueryChanged)
     Q_PROPERTY(int sortMode READ sortMode WRITE setSortMode NOTIFY sortModeChanged)
+    Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
+    Q_PROPERTY(int hiddenCount READ hiddenCount NOTIFY countChanged)
     Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
 
 public:
@@ -53,8 +57,11 @@ public:
         BuildVersionRole,
         IsInstalledRole,
         InstalledGameIdRole,
+        HasUpdateRole,
+        IsHiddenRole,
         IsDownloadingRole,
         IsPausedRole,
+        IsQueuedRole,
         DownloadProgressRole,
         DownloadSpeedTextRole,
         DownloadEtaRole,
@@ -74,6 +81,10 @@ public:
     int sortMode() const { return m_sortMode; }
     void setSortMode(int mode);
 
+    bool showHidden() const { return m_showHidden; }
+    void setShowHidden(bool show);
+    int hiddenCount() const { return m_hiddenCount; }
+
     Q_INVOKABLE QVariantMap get(int row) const;
     Q_INVOKABLE void reload();
     void notifyAppChanged(const QString& appName);
@@ -81,6 +92,7 @@ public:
 signals:
     void searchQueryChanged();
     void sortModeChanged();
+    void showHiddenChanged();
     void countChanged();
 
 private:
@@ -88,6 +100,8 @@ private:
     DatabaseManager* m_db;
     QString m_searchQuery;
     int m_sortMode = 0; // 0: A->Z, 1: Installed First, 2: Recently Synced
+    bool m_showHidden = false;
+    int m_hiddenCount = 0;
     QList<EpicLibraryItem> m_visibleItems;
     QHash<QString, QString> m_installedGameIdsByApp;
 };
@@ -102,6 +116,7 @@ class EpicService : public QObject {
     Q_PROPERTY(QString authError READ authError NOTIFY authStateChanged)
     Q_PROPERTY(QString loginUrl READ loginUrl CONSTANT)
     Q_PROPERTY(int activeDownloadCount READ activeDownloadCount NOTIFY activeDownloadsChanged)
+    Q_PROPERTY(int updateCount READ updateCount NOTIFY updatesChanged)
     Q_PROPERTY(Tsuki::EpicLibraryModel* libraryModel READ libraryModel CONSTANT)
     Q_PROPERTY(bool eosOverlayInstalled READ isEosOverlayInstalled NOTIFY eosOverlayChanged)
     Q_PROPERTY(QString eosOverlayVersion READ eosOverlayVersion NOTIFY eosOverlayChanged)
@@ -119,15 +134,19 @@ public:
     ~EpicService() override;
 
     void setGameManager(GameManager* gm);
+    void setDownloadManager(DownloadManager* dlMgr);
+    void setUmuIdResolver(UmuIdResolver* resolver);
 
     bool isSignedIn() const { return m_isSignedIn; }
     bool isSigningIn() const { return m_isSigningIn; }
     bool isSyncing() const { return m_isSyncing; }
     QString accountDisplayName() const { return m_displayName; }
     QString accountId() const { return m_accountId; }
+    QString accessToken() const { return m_accessToken; }
     QString authError() const { return m_authError; }
     QString loginUrl() const;
     int activeDownloadCount() const { return m_downloads.size(); }
+    int updateCount() const { return m_appsWithUpdates.size(); }
     EpicLibraryModel* libraryModel() const { return m_model; }
 
     // Auth helpers
@@ -139,20 +158,35 @@ public:
     void ensureValidToken(std::function<void(bool ok)> callback);
     void requestExchangeCode(std::function<void(bool ok, const QString& code)> callback);
 
-    // Library & metadata
+    // Library, updates, DLCs & metadata
     Q_INVOKABLE void syncLibrary();
+    Q_INVOKABLE void checkForUpdates();
+    Q_INVOKABLE void toggleHideEpicGame(const QString& appName);
+    Q_INVOKABLE void restorePendingDownloads();
+    static bool isBlockedNonGameEpicApp(const QString& title,
+                                        const QString& appName = QString(),
+                                        const QString& namespaceId = QString());
+    Q_INVOKABLE bool hasUpdate(const QString& appName) const { return m_appsWithUpdates.contains(appName); }
+    Q_INVOKABLE QString latestBuildVersion(const QString& appName) const { return m_latestBuildVersions.value(appName); }
     Q_INVOKABLE void fetchInstallInfo(const QString& appName);
     Q_INVOKABLE QVariantMap getEpicGameMap(const QString& appName) const;
     Q_INVOKABLE QVariantMap getDownloadState(const QString& appName) const;
+    Q_INVOKABLE QVariantList getDlcsForGame(const QString& appName) const;
+    Q_INVOKABLE QVariantList getInstallTagsForGame(const QString& appName) const;
 
-    // Downloads, import & verification
+    // Downloads, updates, DLCs, prerequisites, import & verification
     Q_INVOKABLE void startDownload(const QString& appName,
                                    const QString& installBaseDir,
                                    const QString& runnerId = QString(),
                                    const QString& prefixMode = QStringLiteral("default-prefix"),
                                    const QString& customPrefixName = QString(),
                                    const QString& customPrefixLocation = QString(),
-                                   const QString& prefixArch = QStringLiteral("win64"));
+                                   const QString& prefixArch = QStringLiteral("win64"),
+                                   const QStringList& selectedInstallTags = QStringList(),
+                                   const QStringList& selectedDlcAppNames = QStringList());
+    Q_INVOKABLE void updateGame(const QString& gameId);
+    Q_INVOKABLE void installDlc(const QString& parentGameId, const QString& dlcAppName);
+    Q_INVOKABLE void runGamePrerequisites(const QString& gameId, bool force = false);
     Q_INVOKABLE QVariantMap inspectImportSource(const QString& appName,
                                                 const QString& sourceDir,
                                                 const QString& targetBaseDir = QString()) const;
@@ -200,6 +234,9 @@ signals:
     void downloadFinished(const QString& appName, const QString& gameId);
     void downloadFailed(const QString& appName, const QString& error);
     void installInfoReady(const QString& appName, qint64 downloadSize, qint64 installSize);
+    void installDetailsReady(const QString& appName, const QVariantList& installTags, const QVariantList& dlcs);
+    void updatesChanged();
+    void prerequisitesFinished(const QString& gameId, bool success, const QString& message);
     void eosOverlayChanged();
     void operationStatus(const QString& message, bool isError);
 
@@ -225,10 +262,12 @@ private:
     };
 
     struct DownloadSession {
+        QString queueId;
         QString appName;
         QString namespaceId;
         QString catalogItemId;
         QString title;
+        QString coverPath;
         QString installDir;
         QString runnerId;
         QString prefixMode;
@@ -236,6 +275,8 @@ private:
         QString customPrefixLocation;
         QString prefixArch;
         bool verifyOnly = false;
+        bool isUpdate = false;
+        bool isDlc = false;
         bool isImporting = false;
         bool isEosOverlay = false;
         bool verifyAfterImport = false;
@@ -244,8 +285,15 @@ private:
         QString importSourceDir;
         QString explicitExecutable;
         QString existingGameId;
+        QString parentAppName;
+        QStringList selectedInstallTags;
+        QStringList selectedDlcs;
+        QStringList filesToRemoveOnFinalize;
+        QList<EpicFileManifest> activeFiles;
 
         EpicManifest manifest;
+        EpicManifest previousManifest;
+        bool hasPreviousManifest = false;
         QList<MirrorEndpoint> mirrors;
         QHash<QString, ChunkJob> chunkJobs;
         QQueue<QString> pendingChunks;
@@ -260,10 +308,12 @@ private:
         qint64 downloadedBytes = 0;
         qint64 totalInstallBytes = 0;
         qint64 sessionBytes = 0;
+        double speedBps = 0.0;
         double progress = 0.0;
         QString speedText;
         QString etaText;
         QString stageText;
+        bool isQueued = false;
         bool isPaused = false;
         bool isCancelled = false;
         bool isVerifying = false;
@@ -285,6 +335,8 @@ private:
     PrefixManager* m_prefixMgr;
     SteamGridDbService* m_sgdb;
     GameManager* m_gameMgr = nullptr;
+    DownloadManager* m_dlMgr = nullptr;
+    UmuIdResolver* m_umuResolver = nullptr;
 
     QNetworkAccessManager m_nam;
     bool m_isSignedIn = false;
@@ -305,6 +357,11 @@ private:
     QHash<QString, QList<EpicLibraryItem>> m_pendingBatchesByNs;
     QList<QPair<QString, QList<EpicLibraryItem>>> m_catalogQueue;
     QList<EpicLibraryItem> m_syncedCatalogItems;
+    QList<EpicDlcItem> m_syncedDlcs;
+
+    // Update tracking
+    QSet<QString> m_appsWithUpdates;
+    QHash<QString, QString> m_latestBuildVersions;
 
     // Artwork queue
     QQueue<ArtworkTask> m_artworkQueue;
@@ -314,6 +371,11 @@ private:
     // Active chunk downloads keyed by appName
     QHash<QString, std::shared_ptr<DownloadSession>> m_downloads;
     EpicLibraryModel* m_model = nullptr;
+
+    void notifyDownloadManagerProgress(const std::shared_ptr<DownloadSession>& session);
+    void beginSessionExecution(const std::shared_ptr<DownloadSession>& session);
+    void persistDownloadQueueItem(const std::shared_ptr<DownloadSession>& session);
+    void removePersistedDownloadQueueItem(const QString& queueId);
 
     QString authFilePath() const;
     QString manifestCachePath(const QString& appName) const;

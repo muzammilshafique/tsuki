@@ -62,6 +62,13 @@ public:
     // Helper to suggest short prefix name (e.g. "Grand Theft Auto San Andreas" -> "GTASA")
     Q_INVOKABLE QString suggestShortPrefixName(const QString& gameTitle) const;
 
+    // Storage & Prerequisite Management
+    Q_INVOKABLE void calculatePrefixSizeAsync(const QString& prefixId);
+    Q_INVOKABLE QString cachedPrefixSizeFormatted(const QString& prefixId) const;
+    Q_INVOKABLE qint64 cleanPrefixCaches(const QString& prefixId);
+    bool arePrereqsInstalled(const QString& prefixId, const QStringList& prereqIds) const;
+    bool markPrereqsInstalled(const QString& prefixId, const QStringList& prereqIds);
+
     static void ensureProtonSymlink(const QString& prefixPath);
     static bool writeRegistryDllOverrides(const QString& prefixPath, const QVariantMap& overrides);
     static bool configureEosOverlayRegistry(const QString& prefixPath,
@@ -73,6 +80,7 @@ signals:
     void busyChanged();
     void prefixOperationFinished(const QString& prefixId, bool success, const QString& message);
     void prefixLogOutput(const QString& prefixId, const QString& line);
+    void prefixDiskUsageReady(const QString& prefixId, qint64 bytes, const QString& formatted);
 
 private:
     DatabaseManager* m_db;
@@ -80,6 +88,7 @@ private:
     RunnerManager* m_runnerMgr;
     bool m_isBusy = false;
     QString m_currentOperation;
+    QHash<QString, qint64> m_cachedSizes;
 
     void setBusyState(bool busy, const QString& op = QString());
     QProcessEnvironment buildPrefixEnvironment(const PrefixRecord& pfx, const RunnerRecord& runner) const;

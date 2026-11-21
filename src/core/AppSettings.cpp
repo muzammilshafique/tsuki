@@ -1,6 +1,7 @@
 #include "AppSettings.h"
 #include "DatabaseManager.h"
 #include "Models.h"
+#include "SecretStore.h"
 #include <QDir>
 #include <QFileInfo>
 #include <QFont>
@@ -176,10 +177,50 @@ AppSettings::AppSettings(QObject *parent)
       m_settings.value(QStringLiteral("performance/esync"), true).toBool();
   m_fsyncDefault =
       m_settings.value(QStringLiteral("performance/fsync"), true).toBool();
+  const bool defaultNtsync = QFileInfo::exists(QStringLiteral("/dev/ntsync"));
+  m_ntsyncDefault =
+      m_settings.value(QStringLiteral("performance/ntsync"), defaultNtsync).toBool();
+  m_umuDefault =
+      m_settings.value(QStringLiteral("performance/umu"), true).toBool();
+  m_waylandDriverDefault =
+      m_settings.value(QStringLiteral("performance/waylandDriver"), false).toBool();
+  m_hdrDefault =
+      m_settings.value(QStringLiteral("performance/hdr"), false).toBool();
+  m_nvapiDefault =
+      m_settings.value(QStringLiteral("performance/nvapi"), false).toBool();
+  m_fsrDefault =
+      m_settings.value(QStringLiteral("performance/fsr"), false).toBool();
+  m_defaultFsrStrength = qBound(
+      0,
+      m_settings.value(QStringLiteral("performance/fsrStrength"), 2).toInt(),
+      5);
+  m_defaultGpuSelection =
+      m_settings.value(QStringLiteral("performance/gpuSelection"), QString())
+          .toString();
+  m_preferX86_64V3Runners =
+      m_settings
+          .value(QStringLiteral("runners/preferX86_64V3"),
+                 SecretStore::detectCpuX86_64V3())
+          .toBool();
   m_defaultDxvkHud =
       m_settings
           .value(QStringLiteral("performance/dxvkHud"), QStringLiteral("none"))
           .toString();
+  m_downloadSpeedLimitKBps = qMax(
+      0,
+      m_settings.value(QStringLiteral("downloads/speedLimitKBps"), 0).toInt());
+  m_maxConcurrentChunkWorkers = qBound(
+      1,
+      m_settings.value(QStringLiteral("downloads/maxChunkWorkers"), 6).toInt(),
+      16);
+  m_maxConcurrentGameDownloads = qBound(
+      1,
+      m_settings.value(QStringLiteral("downloads/maxConcurrentGames"), 1).toInt(),
+      4);
+  m_pauseDownloadsOnGameLaunch =
+      m_settings
+          .value(QStringLiteral("downloads/pauseOnGameLaunch"), true)
+          .toBool();
 
   m_xboxEmulationDefault =
       m_settings.value(QStringLiteral("controller/xboxEmulation"), false)
@@ -954,6 +995,115 @@ void AppSettings::setFsyncDefault(bool v) {
   m_fsyncDefault = v;
   m_settings.setValue(QStringLiteral("performance/fsync"), v);
   emit performanceDefaultsChanged();
+}
+
+void AppSettings::setNtsyncDefault(bool v) {
+  if (m_ntsyncDefault == v)
+    return;
+  m_ntsyncDefault = v;
+  m_settings.setValue(QStringLiteral("performance/ntsync"), v);
+  emit performanceDefaultsChanged();
+}
+
+void AppSettings::setUmuDefault(bool v) {
+  if (m_umuDefault == v)
+    return;
+  m_umuDefault = v;
+  m_settings.setValue(QStringLiteral("performance/umu"), v);
+  emit performanceDefaultsChanged();
+}
+
+void AppSettings::setWaylandDriverDefault(bool v) {
+  if (m_waylandDriverDefault == v)
+    return;
+  m_waylandDriverDefault = v;
+  m_settings.setValue(QStringLiteral("performance/waylandDriver"), v);
+  emit performanceDefaultsChanged();
+}
+
+void AppSettings::setHdrDefault(bool v) {
+  if (m_hdrDefault == v)
+    return;
+  m_hdrDefault = v;
+  m_settings.setValue(QStringLiteral("performance/hdr"), v);
+  emit performanceDefaultsChanged();
+}
+
+void AppSettings::setNvapiDefault(bool v) {
+  if (m_nvapiDefault == v)
+    return;
+  m_nvapiDefault = v;
+  m_settings.setValue(QStringLiteral("performance/nvapi"), v);
+  emit performanceDefaultsChanged();
+}
+
+void AppSettings::setFsrDefault(bool v) {
+  if (m_fsrDefault == v)
+    return;
+  m_fsrDefault = v;
+  m_settings.setValue(QStringLiteral("performance/fsr"), v);
+  emit performanceDefaultsChanged();
+}
+
+void AppSettings::setDefaultFsrStrength(int s) {
+  s = qBound(0, s, 5);
+  if (m_defaultFsrStrength == s)
+    return;
+  m_defaultFsrStrength = s;
+  m_settings.setValue(QStringLiteral("performance/fsrStrength"), s);
+  emit performanceDefaultsChanged();
+}
+
+void AppSettings::setDefaultGpuSelection(const QString &gpu) {
+  const QString trimmed = gpu.trimmed();
+  if (m_defaultGpuSelection == trimmed)
+    return;
+  m_defaultGpuSelection = trimmed;
+  m_settings.setValue(QStringLiteral("performance/gpuSelection"), trimmed);
+  emit performanceDefaultsChanged();
+}
+
+void AppSettings::setPreferX86_64V3Runners(bool v) {
+  if (m_preferX86_64V3Runners == v)
+    return;
+  m_preferX86_64V3Runners = v;
+  m_settings.setValue(QStringLiteral("runners/preferX86_64V3"), v);
+  emit runnerDefaultsChanged();
+}
+
+void AppSettings::setDownloadSpeedLimitKBps(int kbps) {
+  kbps = qMax(0, kbps);
+  if (m_downloadSpeedLimitKBps == kbps)
+    return;
+  m_downloadSpeedLimitKBps = kbps;
+  m_settings.setValue(QStringLiteral("downloads/speedLimitKBps"), kbps);
+  emit downloadSettingsChanged();
+}
+
+void AppSettings::setMaxConcurrentChunkWorkers(int workers) {
+  workers = qBound(1, workers, 16);
+  if (m_maxConcurrentChunkWorkers == workers)
+    return;
+  m_maxConcurrentChunkWorkers = workers;
+  m_settings.setValue(QStringLiteral("downloads/maxChunkWorkers"), workers);
+  emit downloadSettingsChanged();
+}
+
+void AppSettings::setMaxConcurrentGameDownloads(int maxGames) {
+  maxGames = qBound(1, maxGames, 4);
+  if (m_maxConcurrentGameDownloads == maxGames)
+    return;
+  m_maxConcurrentGameDownloads = maxGames;
+  m_settings.setValue(QStringLiteral("downloads/maxConcurrentGames"), maxGames);
+  emit downloadSettingsChanged();
+}
+
+void AppSettings::setPauseDownloadsOnGameLaunch(bool pause) {
+  if (m_pauseDownloadsOnGameLaunch == pause)
+    return;
+  m_pauseDownloadsOnGameLaunch = pause;
+  m_settings.setValue(QStringLiteral("downloads/pauseOnGameLaunch"), pause);
+  emit downloadSettingsChanged();
 }
 
 void AppSettings::setDefaultDxvkHud(const QString &hud) {

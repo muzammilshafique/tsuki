@@ -1,5 +1,7 @@
 #include "LaunchPipeline.h"
+#include "EpicCloudSaveService.h"
 #include "EpicService.h"
+#include "UmuIdResolver.h"
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -210,6 +212,50 @@ bool LaunchPipeline::isGamescopeEnabled(const GameRecord& game) const {
     return (game.gamescopeState == -1) ? m_settings->gamescopeDefault() : (game.gamescopeState == 1);
 }
 
+bool LaunchPipeline::isUmuEnabled(const GameRecord& game) const {
+    return (game.umuState == -1) ? m_settings->umuDefault() : (game.umuState == 1);
+}
+
+void LaunchPipeline::applyGpuEnvironment(QProcessEnvironment& env, const GameRecord& game, bool isNative) const {
+    const QString sel = game.gpuSelection.trimmed().isEmpty()
+                            ? m_settings->defaultGpuSelection().trimmed()
+                            : game.gpuSelection.trimmed();
+    if (sel.isEmpty() || sel.compare(QStringLiteral("auto"), Qt::CaseInsensitive) == 0) {
+        return;
+    }
+
+    std::optional<DiagnosticsManager::GpuInfo> gpuOpt;
+    if (m_diagMgr) {
+        gpuOpt = m_diagMgr->findGpu(sel);
+    }
+
+    if (gpuOpt.has_value()) {
+        if (!isNative) {
+            env.insert(QStringLiteral("DXVK_FILTER_DEVICE_NAME"), gpuOpt->name);
+            env.insert(QStringLiteral("VKD3D_FILTER_DEVICE_NAME"), gpuOpt->name);
+        }
+        if (gpuOpt->vendor == QLatin1String("nvidia")) {
+            env.insert(QStringLiteral("__NV_PRIME_RENDER_OFFLOAD"), QStringLiteral("1"));
+            env.insert(QStringLiteral("__GLX_VENDOR_LIBRARY_NAME"), QStringLiteral("nvidia"));
+            env.insert(QStringLiteral("__VK_LAYER_NV_optimus"), QStringLiteral("NVIDIA_only"));
+        } else {
+            env.insert(QStringLiteral("DRI_PRIME"), QString::number(gpuOpt->driPrimeIndex));
+        }
+    } else {
+        // Fallback: treat explicit string as DXVK/VKD3D filter device name or DRI_PRIME value
+        if (sel.startsWith(QStringLiteral("nvidia"), Qt::CaseInsensitive)) {
+            env.insert(QStringLiteral("__NV_PRIME_RENDER_OFFLOAD"), QStringLiteral("1"));
+            env.insert(QStringLiteral("__GLX_VENDOR_LIBRARY_NAME"), QStringLiteral("nvidia"));
+            env.insert(QStringLiteral("__VK_LAYER_NV_optimus"), QStringLiteral("NVIDIA_only"));
+        } else if (sel == QLatin1String("0") || sel == QLatin1String("1")) {
+            env.insert(QStringLiteral("DRI_PRIME"), sel);
+        } else if (!isNative) {
+            env.insert(QStringLiteral("DXVK_FILTER_DEVICE_NAME"), sel);
+            env.insert(QStringLiteral("VKD3D_FILTER_DEVICE_NAME"), sel);
+        }
+    }
+}
+
 GamescopeConfig LaunchPipeline::resolveEffectiveGamescopeConfig(const GameRecord& game) const {
     if (game.gamescope.inheritGlobal) {
         GamescopeConfig cfg = GamescopeConfig::fromVariantMap(m_settings->defaultGamescopeConfig());
@@ -353,6 +399,12 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
     const bool useVkd3d = (game.vkd3dState == -1) ? m_settings->vkd3dDefault() : (game.vkd3dState == 1);
     const bool useEsync = (game.esyncState == -1) ? m_settings->esyncDefault() : (game.esyncState == 1);
     const bool useFsync = (game.fsyncState == -1) ? m_settings->fsyncDefault() : (game.fsyncState == 1);
+    const bool useNtsync = (game.ntsyncState == -1) ? m_settings->ntsyncDefault() : (game.ntsyncState == 1);
+    const bool useWayland = (game.waylandDriverState == -1) ? m_settings->waylandDriverDefault() : (game.waylandDriverState == 1);
+    const bool useHdr = (game.hdrState == -1) ? m_settings->hdrDefault() : (game.hdrState == 1);
+    const bool useNvapi = (game.nvapiState == -1) ? m_settings->nvapiDefault() : (game.nvapiState == 1);
+    const bool useFsr = (game.fsrState == -1) ? m_settings->fsrDefault() : (game.fsrState == 1);
+    const int fsrStrength = (game.fsrState == -1) ? m_settings->defaultFsrStrength() : qBound(0, game.fsrStrength, 5);
     const bool useMangohud = (game.mangohudState == -1) ? m_settings->mangohudDefault() : (game.mangohudState == 1);
     const bool useGamemode = (game.gamemodeState == -1) ? m_settings->gamemodeDefault() : (game.gamemodeState == 1);
     const bool useGamescope = isGamescopeEnabled(game);
@@ -361,13 +413,41 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
     plan.useXboxEmulation = (game.xboxEmulationState == 1);
     plan.usesGamescope = useGamescope;
 
-    // Esync & Fsync
+    // Esync, Fsync & NTSync
     env.insert(QStringLiteral("WINEESYNC"), useEsync ? QStringLiteral("1") : QStringLiteral("0"));
     env.insert(QStringLiteral("WINEFSYNC"), useFsync ? QStringLiteral("1") : QStringLiteral("0"));
     env.insert(QStringLiteral("PROTON_NO_ESYNC"), useEsync ? QStringLiteral("0") : QStringLiteral("1"));
     env.insert(QStringLiteral("PROTON_NO_FSYNC"), useFsync ? QStringLiteral("0") : QStringLiteral("1"));
+    if (useNtsync) {
+        env.insert(QStringLiteral("PROTON_USE_NTSYNC"), QStringLiteral("1"));
+        env.insert(QStringLiteral("WINE_NTSYNC"), QStringLiteral("1"));
+    } else if (game.ntsyncState == 0) {
+        env.insert(QStringLiteral("PROTON_NO_NTSYNC"), QStringLiteral("1"));
+        env.insert(QStringLiteral("WINE_NTSYNC"), QStringLiteral("0"));
+    }
     if (!useDxvk) {
         env.insert(QStringLiteral("PROTON_USE_WINED3D"), QStringLiteral("1"));
+    }
+
+    // Native Wine Wayland, HDR, NVAPI/DLSS, and Wine Fullscreen FSR
+    if (useWayland && !useGamescope) {
+        env.insert(QStringLiteral("PROTON_ENABLE_WAYLAND"), QStringLiteral("1"));
+        if (!env.value(QStringLiteral("WAYLAND_DISPLAY")).isEmpty()) {
+            env.remove(QStringLiteral("DISPLAY"));
+        }
+    }
+    if (useHdr || (useGamescope && gsCfg.hdrEnabled)) {
+        env.insert(QStringLiteral("PROTON_ENABLE_HDR"), QStringLiteral("1"));
+        env.insert(QStringLiteral("DXVK_HDR"), QStringLiteral("1"));
+    }
+    if (useNvapi) {
+        env.insert(QStringLiteral("PROTON_ENABLE_NVAPI"), QStringLiteral("1"));
+        env.insert(QStringLiteral("DXVK_ENABLE_NVAPI"), QStringLiteral("1"));
+        env.insert(QStringLiteral("PROTON_HIDE_NVIDIA_GPU"), QStringLiteral("0"));
+    }
+    if (useFsr && !useGamescope) {
+        env.insert(QStringLiteral("WINE_FULLSCREEN_FSR"), QStringLiteral("1"));
+        env.insert(QStringLiteral("WINE_FULLSCREEN_FSR_STRENGTH"), QString::number(fsrStrength));
     }
 
     // DXVK HUD
@@ -376,7 +456,7 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
         env.insert(QStringLiteral("DXVK_HUD"), hud);
     }
 
-    // DLL Overrides (Prefix + Per-Game + DXVK/VKD3D)
+    // DLL Overrides (Prefix + Per-Game + DXVK/VKD3D; respect explicit user mscoree/mshtml overrides)
     QVariantMap mergedOverrides = prefix.dllOverrides;
     if (useDxvk) {
         mergedOverrides[QStringLiteral("d3d9")] = QStringLiteral("n,b");
@@ -397,14 +477,49 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
         mergedOverrides.insert(it.key(), it.value());
     }
     QStringList overrideParts;
-    overrideParts << QStringLiteral("mscoree,mshtml=");
+    if (game.disableMonoGecko) {
+        if (!mergedOverrides.contains(QStringLiteral("mscoree"))) {
+            overrideParts << QStringLiteral("mscoree=");
+        }
+        if (!mergedOverrides.contains(QStringLiteral("mshtml"))) {
+            overrideParts << QStringLiteral("mshtml=");
+        }
+    }
     for (auto it = mergedOverrides.constBegin(); it != mergedOverrides.constEnd(); ++it) {
         overrideParts << QStringLiteral("%1=%2").arg(it.key(), it.value().toString());
     }
-    env.insert(QStringLiteral("WINEDLLOVERRIDES"), overrideParts.join(QLatin1Char(';')));
+    if (!overrideParts.isEmpty()) {
+        env.insert(QStringLiteral("WINEDLLOVERRIDES"), overrideParts.join(QLatin1Char(';')));
+    }
 
-    // Standalone Proton environment variables (no Steam client required)
+    // Proton environment: prefer umu-launcher (Steam Linux Runtime 3.0 + umu-protonfixes) when enabled & available
+    const QString umuBin = !m_umuBinOverride.isEmpty() ? m_umuBinOverride : RunnerManager::resolveUmuRunPath();
+    const bool useUmu = runner.isProton() && isUmuEnabled(game) && !umuBin.isEmpty() && QFileInfo::exists(umuBin);
     if (runner.isProton()) {
+        if (useUmu) {
+            plan.usesUmu = true;
+            plan.umuGameId = m_umuResolver
+                                 ? m_umuResolver->resolveGameIdSync(game)
+                                 : (!game.umuGameId.trimmed().isEmpty() ? game.umuGameId.trimmed() : QStringLiteral("umu-default"));
+            const QString protonDir = !runner.path.trimmed().isEmpty()
+                                          ? runner.path
+                                          : QFileInfo(runner.binaryPath).absolutePath();
+            env.insert(QStringLiteral("PROTONPATH"), protonDir);
+            env.insert(QStringLiteral("GAMEID"), plan.umuGameId);
+            env.insert(QStringLiteral("STORE"), UmuIdResolver::storeForGame(game));
+            env.insert(QStringLiteral("PROTON_VERB"), QStringLiteral("waitforexitandrun"));
+            if (!plan.workingDirectory.isEmpty()) {
+                env.insert(QStringLiteral("STEAM_COMPAT_INSTALL_PATH"), plan.workingDirectory);
+            }
+            // Skip blocking network runtime self-updates on launch when Steam Linux Runtime 3.0 is already installed
+            if (!RunnerManager::resolveSteamLinuxRuntimePath().isEmpty() &&
+                !env.contains(QStringLiteral("UMU_RUNTIME_UPDATE"))) {
+                env.insert(QStringLiteral("UMU_RUNTIME_UPDATE"), QStringLiteral("0"));
+            }
+            if (game.disableProtonfixes) {
+                env.insert(QStringLiteral("PROTONFIXES_DISABLE"), QStringLiteral("1"));
+            }
+        }
         env.insert(QStringLiteral("STEAM_COMPAT_DATA_PATH"), prefix.path);
         QString steamClientPath = QDir::homePath() + QStringLiteral("/.local/share/Steam");
         if (!QDir(steamClientPath).exists()) {
@@ -414,9 +529,11 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
             steamClientPath = AppSettings::dataDir();
         }
         env.insert(QStringLiteral("STEAM_COMPAT_CLIENT_INSTALL_PATH"), steamClientPath);
-        env.insert(QStringLiteral("SteamAppId"), QStringLiteral("0"));
-        env.insert(QStringLiteral("SteamGameId"), QStringLiteral("0"));
-        env.insert(QStringLiteral("ULWGL_ID"), QStringLiteral("tsuki-") + game.id);
+        if (!useUmu) {
+            env.insert(QStringLiteral("SteamAppId"), QStringLiteral("0"));
+            env.insert(QStringLiteral("SteamGameId"), QStringLiteral("0"));
+            env.insert(QStringLiteral("ULWGL_ID"), QStringLiteral("tsuki-") + game.id);
+        }
     }
 
     // Proton Anti-Cheat Runtimes (EAC & BattlEye)
@@ -451,11 +568,10 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
         }
     }
 
-    if (useGamescope && gsCfg.hdrEnabled) {
-        env.insert(QStringLiteral("DXVK_HDR"), QStringLiteral("1"));
-    }
+    // GPU / Hybrid PRIME Selection
+    applyGpuEnvironment(env, game, false);
 
-    // Per-game custom environment variables
+    // Per-game custom environment variables (always highest priority)
     for (auto it = game.environmentVariables.constBegin(); it != game.environmentVariables.constEnd(); ++it) {
         if (!it.key().isEmpty()) {
             env.insert(it.key(), it.value().toString());
@@ -466,11 +582,15 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
         env.insert(QStringLiteral("MANGOHUD"), QStringLiteral("1"));
     }
 
-    // Build wrapper chain: [taskset] -> [nice] -> [gamemoderun] -> [gamescope flags --] -> [mangohud?] -> [wine/proton] -> [virtual desktop?] -> [exe] [args]
+    // Build wrapper chain: [taskset] -> [nice] -> [gamemoderun] -> [gamescope flags --] -> [mangohud?] -> [umu-run | wine/proton] -> [virtual desktop?] -> [exe] [args]
     QStringList fullCmd = buildExecutionWrappers(game, useGamemode, useMangohud, useGamescope, gsCfg);
 
     if (runner.isProton()) {
-        fullCmd << runner.binaryPath << QStringLiteral("waitforexitandrun");
+        if (useUmu) {
+            fullCmd << umuBin;
+        } else {
+            fullCmd << runner.binaryPath << QStringLiteral("waitforexitandrun");
+        }
         if (game.virtualDesktop && !useGamescope) {
             const QString res = game.virtualDesktopResolution.isEmpty() ? QStringLiteral("1920x1080") : game.virtualDesktopResolution;
             fullCmd << QStringLiteral("explorer") << QStringLiteral("/desktop=Tsuki,%1").arg(res);
@@ -529,6 +649,13 @@ LaunchPlan LaunchPipeline::buildNativeLaunchPlan(const GameRecord& game) const {
         env.insert(QStringLiteral("MANGOHUD"), QStringLiteral("1"));
     }
 
+    const bool useHdr = (game.hdrState == -1) ? m_settings->hdrDefault() : (game.hdrState == 1);
+    if (useHdr || (useGamescope && gsCfg.hdrEnabled)) {
+        env.insert(QStringLiteral("DXVK_HDR"), QStringLiteral("1"));
+    }
+
+    applyGpuEnvironment(env, game, true);
+
     // Per-game custom environment variables
     for (auto it = game.environmentVariables.constBegin(); it != game.environmentVariables.constEnd(); ++it) {
         if (!it.key().isEmpty()) {
@@ -575,7 +702,7 @@ void LaunchPipeline::executeScript(const QString& scriptPathOrCmd,
     }
 }
 
-bool LaunchPipeline::launchGame(const QString& gameId) {
+bool LaunchPipeline::launchGame(const QString& gameId, bool skipCloudSync) {
     if (m_running.contains(gameId) || m_pendingEpicLaunches.contains(gameId)) {
         return true; // Already running or launching
     }
@@ -601,6 +728,53 @@ bool LaunchPipeline::launchGame(const QString& gameId) {
         return false;
     }
 
+    // Pre-launch Epic Cloud Save sync (with conflict prompt before overwriting)
+    if (!skipCloudSync && !game.isNative() && game.isEpic() &&
+        game.epicCloudSavesEnabled && game.epicAutoSyncCloudSaves && !game.epicOfflineMode &&
+        m_cloudSaveService && m_epicService && m_epicService->isSignedIn() &&
+        !m_cloudSaveService->resolveLocalSaveDirForGame(gameId).isEmpty()) {
+        m_pendingEpicLaunches.insert(gameId);
+        m_cloudSaveService->syncGameSaves(
+            gameId,
+            QStringLiteral("auto"),
+            [this, game, gameId](bool, const QString& outcome, const QVariantMap& details) {
+                if (!m_pendingEpicLaunches.remove(gameId)) return;
+                if (outcome == QLatin1String("conflict")) {
+                    emit cloudSaveConflict(gameId, details);
+                    return;
+                }
+                continueLaunchAfterCloudSync(game);
+            });
+        return true;
+    }
+
+    return continueLaunchAfterCloudSync(game);
+}
+
+void LaunchPipeline::resolveCloudConflictAndLaunch(const QString& gameId, const QString& resolution) {
+    auto gameOpt = m_db->getGame(gameId);
+    if (!gameOpt.has_value()) return;
+    const QString res = resolution.trimmed().toLower();
+    if (res == QLatin1String("cancel")) {
+        return;
+    }
+    if (res == QLatin1String("skip") || !m_cloudSaveService) {
+        launchGame(gameId, true);
+        return;
+    }
+    const QString mode = (res == QLatin1String("upload")) ? QStringLiteral("upload") : QStringLiteral("download");
+    m_pendingEpicLaunches.insert(gameId);
+    m_cloudSaveService->syncGameSaves(
+        gameId,
+        mode,
+        [this, gameId](bool, const QString&, const QVariantMap&) {
+            if (!m_pendingEpicLaunches.remove(gameId)) return;
+            launchGame(gameId, true);
+        });
+}
+
+bool LaunchPipeline::continueLaunchAfterCloudSync(const GameRecord& game) {
+    const QString gameId = game.id;
     const bool isNative = game.isNative();
     if (isNative) {
         QFile::Permissions perms = QFile::permissions(game.executablePath);
@@ -788,6 +962,8 @@ bool LaunchPipeline::startLaunchProcess(const GameRecord& game,
     session->startTimeEpoch = QDateTime::currentSecsSinceEpoch();
     session->process = proc;
     session->isNative = isNative;
+    session->isEpic = game.isEpic();
+    session->autoSyncCloudSaves = game.isEpic() && game.epicCloudSavesEnabled && game.epicAutoSyncCloudSaves && !game.epicOfflineMode;
     session->usesXboxEmulation = plan.useXboxEmulation;
     session->usesGamescope = plan.usesGamescope;
     session->workingDirectory = plan.workingDirectory;
@@ -807,11 +983,24 @@ bool LaunchPipeline::startLaunchProcess(const GameRecord& game,
             }
         }
     });
-    connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc, gameId]() {
-        m_diagMgr->appendGameLog(gameId, QString::fromUtf8(proc->readAllStandardOutput()));
+    auto umuNotified = std::make_shared<bool>(false);
+    connect(proc, &QProcess::readyReadStandardOutput, this, [this, proc, gameId, umuNotified]() {
+        const QString text = QString::fromUtf8(proc->readAllStandardOutput());
+        m_diagMgr->appendGameLog(gameId, text);
+        if (!*umuNotified && (text.contains(QStringLiteral("Downloading steamrt"), Qt::CaseInsensitive) ||
+                              text.contains(QStringLiteral("Updating steamrt"), Qt::CaseInsensitive))) {
+            *umuNotified = true;
+            emit launchStatusMessage(QStringLiteral("UMU: Preparing Steam Linux Runtime (first-time setup)…"), false);
+        }
     });
-    connect(proc, &QProcess::readyReadStandardError, this, [this, proc, gameId]() {
-        m_diagMgr->appendGameLog(gameId, QString::fromUtf8(proc->readAllStandardError()));
+    connect(proc, &QProcess::readyReadStandardError, this, [this, proc, gameId, umuNotified]() {
+        const QString text = QString::fromUtf8(proc->readAllStandardError());
+        m_diagMgr->appendGameLog(gameId, text);
+        if (!*umuNotified && (text.contains(QStringLiteral("Downloading steamrt"), Qt::CaseInsensitive) ||
+                              text.contains(QStringLiteral("Updating steamrt"), Qt::CaseInsensitive))) {
+            *umuNotified = true;
+            emit launchStatusMessage(QStringLiteral("UMU: Preparing Steam Linux Runtime (first-time setup)…"), false);
+        }
     });
 
     connect(proc, &QProcess::errorOccurred, this, [this, gameId, proc](QProcess::ProcessError err) {
@@ -838,6 +1027,7 @@ void LaunchPipeline::handleSessionTermination(const QString& gameId, int exitCod
     RunningSession* sess = m_running.take(gameId);
 
     const bool shouldSweepOrphans = (sess->usesGamescope || sess->stopRequested) && !isFailedToStart;
+    const bool shouldUploadCloud = sess->autoSyncCloudSaves && !isFailedToStart;
     const qint64 rootPid = sess->rootPid;
     const QString sessionToken = sess->sessionToken;
 
@@ -879,6 +1069,11 @@ void LaunchPipeline::handleSessionTermination(const QString& gameId, int exitCod
 
     updateEmulationLifecycle();
     emit runningGamesChanged();
+
+    if (shouldUploadCloud && m_cloudSaveService && m_epicService && m_epicService->isSignedIn() &&
+        !m_cloudSaveService->resolveLocalSaveDirForGame(gameId).isEmpty()) {
+        m_cloudSaveService->syncGameSaves(gameId, QStringLiteral("upload"));
+    }
 }
 
 void LaunchPipeline::updateEmulationLifecycle() {

@@ -1,4 +1,5 @@
 #include "DiagnosticsManager.h"
+#include "../core/SecretStore.h"
 #include <QStandardPaths>
 #include <QFileInfo>
 #include <QFile>
@@ -6,6 +7,9 @@
 #include <QUrl>
 #include <QProcess>
 #include <QDateTime>
+#include <QPointer>
+#include <QRegularExpression>
+#include <algorithm>
 
 namespace Tsuki {
 
@@ -251,7 +255,211 @@ void DiagnosticsManager::runSystemDiagnostics() {
                  : QStringLiteral("/dev/uinput not writable (Fallback SDL_GAMECONTROLLERCONFIG active)"),
              QStringLiteral("Controller"));
 
+    // 8. UMU Launcher & Steam Linux Runtime (sniper)
+    const QString umuBin = RunnerManager::resolveUmuRunPath();
+    const QString slrDir = RunnerManager::resolveSteamLinuxRuntimePath();
+    addCheck(QStringLiteral("UMU Launcher (umu-run)"),
+             !umuBin.isEmpty(),
+             !umuBin.isEmpty()
+                 ? QStringLiteral("%1 (Protonfixes enabled)").arg(umuBin)
+                 : QStringLiteral("Not installed — install in Runners for Steam Linux Runtime & automatic Protonfixes"),
+             QStringLiteral("Runner"));
+    addCheck(QStringLiteral("Steam Linux Runtime 3.0 (sniper)"),
+             !slrDir.isEmpty(),
+             !slrDir.isEmpty()
+                 ? QStringLiteral("%1 ready").arg(slrDir)
+                 : QStringLiteral("Will auto-bootstrap on first UMU launch"),
+             QStringLiteral("Runner"));
+
+    // 9. Kernel NTSync (/dev/ntsync)
+    QFileInfo ntsyncFi(QStringLiteral("/dev/ntsync"));
+    m_ntsyncAvailable = ntsyncFi.exists() && ntsyncFi.isReadable();
+    addCheck(QStringLiteral("Kernel NTSync (/dev/ntsync)"),
+             m_ntsyncAvailable,
+             m_ntsyncAvailable
+                 ? QStringLiteral("/dev/ntsync available (Low-overhead NT synchronization ready)")
+                 : QStringLiteral("Not detected (Using Esync/Fsync fallback — requires Linux 6.14+ ntsync module)"),
+             QStringLiteral("Performance"));
+
+    // 10. Display Server & GPU Enumeration
+    refreshDetectedGpus();
+    const bool isWayland = !qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY");
+    addCheck(QStringLiteral("Display Session"),
+             true,
+             isWayland ? QStringLiteral("Wayland (%1)").arg(qEnvironmentVariable("WAYLAND_DISPLAY"))
+                       : QStringLiteral("X11 (%1)").arg(qEnvironmentVariable("DISPLAY", QStringLiteral("headless"))),
+             QStringLiteral("Graphics"));
+    QStringList gpuNames;
+    for (const GpuInfo& g : m_gpus) {
+        gpuNames.append(g.name);
+    }
+    addCheck(QStringLiteral("Detected GPUs"),
+             !m_gpus.isEmpty(),
+             m_gpus.isEmpty() ? QStringLiteral("No DRM GPU nodes detected")
+                              : gpuNames.join(QStringLiteral(" · ")),
+             QStringLiteral("Graphics"));
+
+    // 11. Credential Storage Backend
+    const bool keyringReady = SecretStore::isKeyringAvailable();
+    addCheck(QStringLiteral("Credential Storage"),
+             true,
+             keyringReady ? QStringLiteral("Freedesktop Secret Service (System Keyring active)")
+                          : QStringLiteral("Protected local file fallback (0600 permissions)"),
+             QStringLiteral("System"));
+
     emit systemChecksChanged();
+}
+
+QList<DiagnosticsManager::GpuInfo> DiagnosticsManager::enumerateSysfsGpus() {
+    QList<GpuInfo> gpus;
+    QDir drmDir(QStringLiteral("/sys/class/drm"));
+    if (!drmDir.exists()) return gpus;
+
+    const QFileInfoList entries = drmDir.entryInfoList(
+        {QStringLiteral("card[0-9]*")}, QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    int primeIdx = 0;
+    for (const QFileInfo& fi : entries) {
+        const QString cardName = fi.fileName();
+        if (cardName.contains(QLatin1Char('-'))) continue; // Skip connectors like card0-DP-1
+
+        const QString devDir = fi.absoluteFilePath() + QStringLiteral("/device");
+        QFile vf(devDir + QStringLiteral("/vendor"));
+        if (!vf.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+        const QString vendorHex = QString::fromUtf8(vf.readAll()).trimmed().toLower();
+        vf.close();
+
+        QString deviceHex;
+        QFile df(devDir + QStringLiteral("/device"));
+        if (df.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            deviceHex = QString::fromUtf8(df.readAll()).trimmed().toLower();
+            df.close();
+        }
+
+        bool isBootVga = false;
+        QFile bf(devDir + QStringLiteral("/boot_vga"));
+        if (bf.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            isBootVga = (QString::fromUtf8(bf.readAll()).trimmed() == QLatin1String("1"));
+            bf.close();
+        }
+
+        GpuInfo info;
+        info.id = cardName;
+        info.pciVendorId = vendorHex;
+        info.pciDeviceId = deviceHex;
+        info.driPrimeIndex = primeIdx++;
+        if (vendorHex == QLatin1String("0x10de")) {
+            info.vendor = QStringLiteral("nvidia");
+            info.name = QStringLiteral("NVIDIA GPU (%1)").arg(deviceHex);
+            info.isDiscrete = true;
+        } else if (vendorHex == QLatin1String("0x1002")) {
+            info.vendor = QStringLiteral("amd");
+            info.name = QStringLiteral("AMD Radeon GPU (%1)").arg(deviceHex);
+            info.isDiscrete = !isBootVga;
+        } else if (vendorHex == QLatin1String("0x8086")) {
+            info.vendor = QStringLiteral("intel");
+            info.name = QStringLiteral("Intel Graphics (%1)").arg(deviceHex);
+            info.isDiscrete = !isBootVga;
+        } else {
+            info.vendor = QStringLiteral("unknown");
+            info.name = QStringLiteral("GPU %1 (%2:%3)").arg(cardName, vendorHex, deviceHex);
+            info.isDiscrete = !isBootVga;
+        }
+        gpus.append(info);
+    }
+    return gpus;
+}
+
+void DiagnosticsManager::refreshDetectedGpus() {
+    m_gpus = enumerateSysfsGpus();
+    emit detectedGpusChanged();
+
+    // Optional non-blocking enrichment via vulkaninfo --summary for exact Vulkan device names
+    const QString vkInfo = QStandardPaths::findExecutable(QStringLiteral("vulkaninfo"));
+    if (vkInfo.isEmpty() || qgetenv("QT_QPA_PLATFORM") == "offscreen") {
+        return;
+    }
+
+    auto* proc = new QProcess(this);
+    QPointer<DiagnosticsManager> self(this);
+    connect(proc, &QProcess::finished, this, [self, proc](int exitCode, QProcess::ExitStatus) {
+        const QString out = QString::fromUtf8(proc->readAllStandardOutput());
+        proc->deleteLater();
+        if (!self || exitCode != 0 || out.isEmpty()) return;
+
+        // Parse GPU blocks from `vulkaninfo --summary`
+        QList<GpuInfo> parsed;
+        const QStringList lines = out.split(QLatin1Char('\n'));
+        GpuInfo cur;
+        bool inGpu = false;
+        int idx = 0;
+        auto flushCur = [&]() {
+            if (!inGpu || cur.name.isEmpty()) return;
+            if (cur.name.contains(QStringLiteral("llvmpipe"), Qt::CaseInsensitive) ||
+                cur.name.contains(QStringLiteral("lavapipe"), Qt::CaseInsensitive)) {
+                return;
+            }
+            cur.id = cur.name;
+            cur.driPrimeIndex = idx++;
+            parsed.append(cur);
+        };
+        for (const QString& rawLine : lines) {
+            const QString line = rawLine.trimmed();
+            if (line.startsWith(QStringLiteral("GPU")) && line.endsWith(QLatin1Char(':'))) {
+                flushCur();
+                cur = GpuInfo{};
+                inGpu = true;
+                continue;
+            }
+            if (!inGpu) continue;
+            if (line.startsWith(QStringLiteral("vendorID"))) {
+                const QString val = line.section(QLatin1Char('='), 1).trimmed().toLower();
+                cur.pciVendorId = val;
+                if (val == QLatin1String("0x10de")) cur.vendor = QStringLiteral("nvidia");
+                else if (val == QLatin1String("0x1002")) cur.vendor = QStringLiteral("amd");
+                else if (val == QLatin1String("0x8086")) cur.vendor = QStringLiteral("intel");
+                else cur.vendor = QStringLiteral("unknown");
+            } else if (line.startsWith(QStringLiteral("deviceID"))) {
+                cur.pciDeviceId = line.section(QLatin1Char('='), 1).trimmed().toLower();
+            } else if (line.startsWith(QStringLiteral("deviceType"))) {
+                cur.isDiscrete = line.contains(QStringLiteral("DISCRETE_GPU"), Qt::CaseInsensitive);
+            } else if (line.startsWith(QStringLiteral("deviceName"))) {
+                cur.name = line.section(QLatin1Char('='), 1).trimmed();
+            }
+        }
+        flushCur();
+
+        if (!parsed.isEmpty()) {
+            self->m_gpus = parsed;
+            emit self->detectedGpusChanged();
+        }
+    });
+    proc->start(vkInfo, {QStringLiteral("--summary")});
+}
+
+QVariantList DiagnosticsManager::detectedGpus() const {
+    QVariantList list;
+    for (const GpuInfo& g : m_gpus) {
+        list.append(g.toVariantMap());
+    }
+    return list;
+}
+
+std::optional<DiagnosticsManager::GpuInfo> DiagnosticsManager::findGpu(const QString& gpuSelection) const {
+    const QString sel = gpuSelection.trimmed();
+    if (sel.isEmpty()) return std::nullopt;
+    for (const GpuInfo& g : m_gpus) {
+        if (g.id.compare(sel, Qt::CaseInsensitive) == 0 ||
+            g.name.compare(sel, Qt::CaseInsensitive) == 0) {
+            return g;
+        }
+    }
+    // Partial substring match as fallback
+    for (const GpuInfo& g : m_gpus) {
+        if (g.name.contains(sel, Qt::CaseInsensitive)) {
+            return g;
+        }
+    }
+    return std::nullopt;
 }
 
 QVariantMap DiagnosticsManager::diagnosePrefix(const QString& prefixId) const {

@@ -251,6 +251,8 @@ struct GameRecord {
 
     bool isFavorite = false;
     bool isPinned = false;
+    bool isHidden = false;
+    QStringList categories;
     qint64 playtimeSeconds = 0;
     qint64 lastPlayedTimestamp = 0;
     qint64 addedTimestamp = 0;
@@ -262,6 +264,17 @@ struct GameRecord {
     int vkd3dState = -1;      // -1: Default, 0: Off, 1: On
     int esyncState = -1;      // -1: Default, 0: Off, 1: On
     int fsyncState = -1;      // -1: Default, 0: Off, 1: On
+    int ntsyncState = -1;     // -1: Default, 0: Off, 1: On
+    int umuState = -1;        // -1: Default, 0: Off, 1: On
+    QString umuGameId;
+    bool disableProtonfixes = false;
+    bool disableMonoGecko = false;
+    int waylandDriverState = -1; // -1: Default, 0: Off, 1: On
+    int hdrState = -1;        // -1: Default, 0: Off, 1: On
+    int nvapiState = -1;      // -1: Default, 0: Off, 1: On
+    int fsrState = -1;        // -1: Default, 0: Off, 1: On
+    int fsrStrength = 2;      // 0..5
+    QString gpuSelection;     // "": Default / Auto, else GPU id/name
     QString dxvkHud;          // "": Default, "none", "fps", "compiler", "devinfo,fps,frametimes", "full"
     bool virtualDesktop = false;
     QString virtualDesktopResolution = QStringLiteral("1920x1080");
@@ -275,6 +288,20 @@ struct GameRecord {
     GamescopeConfig gamescope;
     int xboxEmulationState = 0;  // 0: Off, 1: On
 
+    // Epic prerequisites, selective tags, DLCs, and cloud saves
+    QString epicPrereqName;
+    QString epicPrereqPath;
+    QString epicPrereqArgs;
+    QStringList epicPrereqIds;
+    bool epicPrereqCompleted = false;
+    QStringList epicSelectedInstallTags;
+    QStringList epicSelectedDlcs;
+    bool epicCloudSavesEnabled = true;
+    bool epicAutoSyncCloudSaves = true;
+    QString epicCloudSaveFolder;
+    QStringList epicCloudIncludeList;
+    QStringList epicCloudExcludeList;
+
     QString launchConfigToJson() const {
         QJsonObject obj;
         obj["environmentVariables"] = QJsonObject::fromVariantMap(environmentVariables);
@@ -283,6 +310,17 @@ struct GameRecord {
         obj["vkd3dState"] = vkd3dState;
         obj["esyncState"] = esyncState;
         obj["fsyncState"] = fsyncState;
+        obj["ntsyncState"] = ntsyncState;
+        obj["umuState"] = umuState;
+        obj["umuGameId"] = umuGameId;
+        obj["disableProtonfixes"] = disableProtonfixes;
+        obj["disableMonoGecko"] = disableMonoGecko;
+        obj["waylandDriverState"] = waylandDriverState;
+        obj["hdrState"] = hdrState;
+        obj["nvapiState"] = nvapiState;
+        obj["fsrState"] = fsrState;
+        obj["fsrStrength"] = qBound(0, fsrStrength, 5);
+        obj["gpuSelection"] = gpuSelection;
         obj["dxvkHud"] = dxvkHud;
         obj["virtualDesktop"] = virtualDesktop;
         obj["virtualDesktopResolution"] = virtualDesktopResolution;
@@ -300,6 +338,18 @@ struct GameRecord {
         obj["enableEosOverlay"] = enableEosOverlay;
         obj["enableEacRuntime"] = enableEacRuntime;
         obj["enableBattlEyeRuntime"] = enableBattlEyeRuntime;
+        obj["epicPrereqName"] = epicPrereqName;
+        obj["epicPrereqPath"] = epicPrereqPath;
+        obj["epicPrereqArgs"] = epicPrereqArgs;
+        obj["epicPrereqIds"] = QJsonArray::fromStringList(epicPrereqIds);
+        obj["epicPrereqCompleted"] = epicPrereqCompleted;
+        obj["epicSelectedInstallTags"] = QJsonArray::fromStringList(epicSelectedInstallTags);
+        obj["epicSelectedDlcs"] = QJsonArray::fromStringList(epicSelectedDlcs);
+        obj["epicCloudSavesEnabled"] = epicCloudSavesEnabled;
+        obj["epicAutoSyncCloudSaves"] = epicAutoSyncCloudSaves;
+        obj["epicCloudSaveFolder"] = epicCloudSaveFolder;
+        obj["epicCloudIncludeList"] = QJsonArray::fromStringList(epicCloudIncludeList);
+        obj["epicCloudExcludeList"] = QJsonArray::fromStringList(epicCloudExcludeList);
         return QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
     }
 
@@ -308,12 +358,32 @@ struct GameRecord {
         QJsonDocument doc = QJsonDocument::fromJson(jsonStr.toUtf8());
         if (!doc.isObject()) return;
         QJsonObject obj = doc.object();
+        auto readStringList = [&obj](const char* key) {
+            QStringList out;
+            const QJsonArray arr = obj[QLatin1String(key)].toArray();
+            for (const QJsonValue& v : arr) {
+                const QString s = v.toString().trimmed();
+                if (!s.isEmpty()) out.append(s);
+            }
+            return out;
+        };
         environmentVariables = obj["environmentVariables"].toObject().toVariantMap();
         dllOverrides = obj["dllOverrides"].toObject().toVariantMap();
         dxvkState = obj["dxvkState"].toInt(-1);
         vkd3dState = obj["vkd3dState"].toInt(-1);
         esyncState = obj["esyncState"].toInt(-1);
         fsyncState = obj["fsyncState"].toInt(-1);
+        ntsyncState = obj["ntsyncState"].toInt(-1);
+        umuState = obj["umuState"].toInt(-1);
+        umuGameId = obj["umuGameId"].toString();
+        disableProtonfixes = obj["disableProtonfixes"].toBool(false);
+        disableMonoGecko = obj["disableMonoGecko"].toBool(false);
+        waylandDriverState = obj["waylandDriverState"].toInt(-1);
+        hdrState = obj["hdrState"].toInt(-1);
+        nvapiState = obj["nvapiState"].toInt(-1);
+        fsrState = obj["fsrState"].toInt(-1);
+        fsrStrength = qBound(0, obj["fsrStrength"].toInt(2), 5);
+        gpuSelection = obj["gpuSelection"].toString();
         dxvkHud = obj["dxvkHud"].toString();
         virtualDesktop = obj["virtualDesktop"].toBool(false);
         virtualDesktopResolution = obj["virtualDesktopResolution"].toString(QStringLiteral("1920x1080"));
@@ -335,6 +405,18 @@ struct GameRecord {
         enableEosOverlay = obj["enableEosOverlay"].toBool(false);
         enableEacRuntime = obj["enableEacRuntime"].toBool(false);
         enableBattlEyeRuntime = obj["enableBattlEyeRuntime"].toBool(false);
+        epicPrereqName = obj["epicPrereqName"].toString();
+        epicPrereqPath = obj["epicPrereqPath"].toString();
+        epicPrereqArgs = obj["epicPrereqArgs"].toString();
+        epicPrereqIds = readStringList("epicPrereqIds");
+        epicPrereqCompleted = obj["epicPrereqCompleted"].toBool(false);
+        epicSelectedInstallTags = readStringList("epicSelectedInstallTags");
+        epicSelectedDlcs = readStringList("epicSelectedDlcs");
+        epicCloudSavesEnabled = obj["epicCloudSavesEnabled"].toBool(true);
+        epicAutoSyncCloudSaves = obj["epicAutoSyncCloudSaves"].toBool(true);
+        epicCloudSaveFolder = obj["epicCloudSaveFolder"].toString();
+        epicCloudIncludeList = readStringList("epicCloudIncludeList");
+        epicCloudExcludeList = readStringList("epicCloudExcludeList");
     }
 
     static QString toFileUrlOrOriginal(const QString& path) {
@@ -364,7 +446,9 @@ struct GameRecord {
         return dt.toString(QStringLiteral("MMM d, yyyy"));
     }
 
-    QVariantMap toVariantMap(bool isRunning = false, const QString& resolvedRunnerTag = QStringLiteral("WINE")) const {
+    QVariantMap toVariantMap(bool isRunning = false,
+                             const QString& resolvedRunnerTag = QStringLiteral("WINE"),
+                             bool hasUpdate = false) const {
         QVariantMap map;
         map["id"] = id;
         map["gameId"] = id;
@@ -387,6 +471,9 @@ struct GameRecord {
         map["steamGridAppId"] = steamGridAppId;
         map["isFavorite"] = isFavorite;
         map["isPinned"] = isPinned;
+        map["isHidden"] = isHidden;
+        map["categories"] = categories;
+        map["category"] = categories.isEmpty() ? QString() : categories.first();
         map["playtimeSeconds"] = playtimeSeconds;
         map["playtimeFormatted"] = formatPlaytime(playtimeSeconds);
         map["lastPlayedTimestamp"] = lastPlayedTimestamp;
@@ -406,6 +493,7 @@ struct GameRecord {
         map["enableEosOverlay"] = enableEosOverlay;
         map["enableEacRuntime"] = enableEacRuntime;
         map["enableBattlEyeRuntime"] = enableBattlEyeRuntime;
+        map["hasUpdate"] = hasUpdate;
         map["isRunning"] = isRunning;
 
         const QString effectiveRunnerTag = isNative() ? QStringLiteral("LINUX") : resolvedRunnerTag;
@@ -415,7 +503,9 @@ struct GameRecord {
         int tagType = 1;
         if (isNative()) {
             tagType = 3;
-        } else if (effectiveRunnerTag.contains(QStringLiteral("PROTON"), Qt::CaseInsensitive)) {
+        } else if (effectiveRunnerTag.contains(QStringLiteral("PROTON"), Qt::CaseInsensitive) ||
+                   effectiveRunnerTag.contains(QStringLiteral("CACHYOS"), Qt::CaseInsensitive) ||
+                   effectiveRunnerTag.contains(QStringLiteral("SAREK"), Qt::CaseInsensitive)) {
             tagType = 0;
         } else if (effectiveRunnerTag.contains(QStringLiteral("STAGING"), Qt::CaseInsensitive) ||
                    effectiveRunnerTag.contains(QStringLiteral("CUSTOM"), Qt::CaseInsensitive)) {
@@ -429,6 +519,17 @@ struct GameRecord {
         map["vkd3dState"] = vkd3dState;
         map["esyncState"] = esyncState;
         map["fsyncState"] = fsyncState;
+        map["ntsyncState"] = ntsyncState;
+        map["umuState"] = umuState;
+        map["umuGameId"] = umuGameId;
+        map["disableProtonfixes"] = disableProtonfixes;
+        map["disableMonoGecko"] = disableMonoGecko;
+        map["waylandDriverState"] = waylandDriverState;
+        map["hdrState"] = hdrState;
+        map["nvapiState"] = nvapiState;
+        map["fsrState"] = fsrState;
+        map["fsrStrength"] = fsrStrength;
+        map["gpuSelection"] = gpuSelection;
         map["dxvkHud"] = dxvkHud;
         map["virtualDesktop"] = virtualDesktop;
         map["virtualDesktopResolution"] = virtualDesktopResolution;
@@ -441,6 +542,18 @@ struct GameRecord {
         map["gamescopeState"] = gamescopeState;
         map["gamescope"] = gamescope.toVariantMap();
         map["xboxEmulationState"] = xboxEmulationState;
+        map["epicPrereqName"] = epicPrereqName;
+        map["epicPrereqPath"] = epicPrereqPath;
+        map["epicPrereqArgs"] = epicPrereqArgs;
+        map["epicPrereqIds"] = epicPrereqIds;
+        map["epicPrereqCompleted"] = epicPrereqCompleted;
+        map["epicSelectedInstallTags"] = epicSelectedInstallTags;
+        map["epicSelectedDlcs"] = epicSelectedDlcs;
+        map["epicCloudSavesEnabled"] = epicCloudSavesEnabled;
+        map["epicAutoSyncCloudSaves"] = epicAutoSyncCloudSaves;
+        map["epicCloudSaveFolder"] = epicCloudSaveFolder;
+        map["epicCloudIncludeList"] = epicCloudIncludeList;
+        map["epicCloudExcludeList"] = epicCloudExcludeList;
         return map;
     }
 };
@@ -456,6 +569,7 @@ struct PrefixRecord {
     bool vkd3dInstalled = false;
     QVariantMap dllOverrides;
     QStringList installedWinetricks;
+    QStringList installedPrereqIds;
     qint64 createdAt = 0;
 
     QVariantMap toVariantMap() const {
@@ -470,6 +584,7 @@ struct PrefixRecord {
         m["vkd3dInstalled"] = vkd3dInstalled;
         m["dllOverrides"] = dllOverrides;
         m["installedWinetricks"] = installedWinetricks;
+        m["installedPrereqIds"] = installedPrereqIds;
         m["createdAt"] = createdAt;
         m["existsOnDisk"] = QFileInfo::exists(path);
         return m;
@@ -479,7 +594,7 @@ struct PrefixRecord {
 struct RunnerRecord {
     QString id;
     QString name;
-    QString type; // "wine", "wine-staging", "proton", "proton-ge", "custom"
+    QString type; // "wine", "wine-staging", "proton", "proton-ge", "proton-cachyos", "proton-sarek", "proton-em", "custom"
     QString version;
     QString path;
     QString binaryPath;
@@ -490,6 +605,8 @@ struct RunnerRecord {
         return type == QStringLiteral("proton") ||
                type == QStringLiteral("proton-ge") ||
                type == QStringLiteral("proton-cachyos") ||
+               type == QStringLiteral("proton-sarek") ||
+               type == QStringLiteral("proton-em") ||
                binaryPath.endsWith(QStringLiteral("/proton"));
     }
 
@@ -525,6 +642,10 @@ struct EpicLibraryItem {
     qint64 downloadSize = 0;
     qint64 installSize = 0;
     QString buildVersion;
+    QString cloudSaveFolder;
+    QStringList cloudIncludeList;
+    QStringList cloudExcludeList;
+    bool isHidden = false;
     qint64 lastSynced = 0;
 
     static QString formatSize(qint64 bytes) {
@@ -539,7 +660,9 @@ struct EpicLibraryItem {
         return QStringLiteral("%1 GB").arg(b, 0, 'f', 2);
     }
 
-    QVariantMap toVariantMap(bool isInstalled = false, const QString& installedGameId = QString()) const {
+    QVariantMap toVariantMap(bool isInstalled = false,
+                             const QString& installedGameId = QString(),
+                             bool hasUpdate = false) const {
         QVariantMap m;
         m["appName"] = appName;
         m["epicAppName"] = appName;
@@ -562,12 +685,53 @@ struct EpicLibraryItem {
         m["downloadSizeFormatted"] = formatSize(downloadSize);
         m["installSizeFormatted"] = formatSize(installSize);
         m["buildVersion"] = buildVersion;
+        m["cloudSaveFolder"] = cloudSaveFolder;
+        m["cloudIncludeList"] = cloudIncludeList;
+        m["cloudExcludeList"] = cloudExcludeList;
+        m["isHidden"] = isHidden;
         m["lastSynced"] = lastSynced;
         m["isInstalled"] = isInstalled;
         m["installedGameId"] = installedGameId;
+        m["hasUpdate"] = hasUpdate;
         m["isEpic"] = true;
         return m;
     }
+};
+
+struct EpicDlcItem {
+    QString appName;
+    QString parentAppName;
+    QString namespaceId;
+    QString catalogItemId;
+    QString title;
+    QString description;
+    qint64 installSize = 0;
+    bool isInstalled = false;
+
+    QVariantMap toVariantMap() const {
+        QVariantMap m;
+        m["appName"] = appName;
+        m["parentAppName"] = parentAppName;
+        m["namespaceId"] = namespaceId;
+        m["catalogItemId"] = catalogItemId;
+        m["title"] = title;
+        m["description"] = description;
+        m["installSize"] = installSize;
+        m["installSizeFormatted"] = EpicLibraryItem::formatSize(installSize);
+        m["isInstalled"] = isInstalled;
+        return m;
+    }
+};
+
+struct QueuedDownloadRecord {
+    QString id;
+    QString kind;       // "epic_install", "epic_update", "epic_verify", "runner", etc.
+    QString title;
+    QString appName;
+    QString payloadJson;
+    QString status = QStringLiteral("queued"); // "queued", "active", "paused"
+    int sortOrder = 0;
+    qint64 createdAt = 0;
 };
 
 } // namespace Tsuki

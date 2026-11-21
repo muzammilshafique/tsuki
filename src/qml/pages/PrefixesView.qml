@@ -279,6 +279,8 @@ Item {
                 required property var modelData
                 required property int index
                 property alias runExeBtn: runExeBtnItem
+                property string diskUsageText: (uiController && uiController.prefixManager && modelData && modelData.id)
+                    ? uiController.prefixManager.cachedPrefixSizeFormatted(modelData.id) : ""
                 readonly property bool isCurrentRow: prefixesList.activeFocus && prefixesList.currentIndex === index
                 width: ListView.view.width
                 implicitHeight: cardInner.implicitHeight + 28
@@ -286,6 +288,21 @@ Item {
                 color: appSettings.surfaceColor
                 border.color: isCurrentRow ? appSettings.accentColor : (Boolean(modelData.isDefault) ? appSettings.accentColor : appSettings.borderColor)
                 border.width: (isCurrentRow || Boolean(modelData.isDefault)) ? 2 : 1
+
+                Component.onCompleted: {
+                    if (uiController && uiController.prefixManager && pfxCard.modelData && pfxCard.modelData.id) {
+                        uiController.prefixManager.calculatePrefixSizeAsync(pfxCard.modelData.id)
+                    }
+                }
+
+                Connections {
+                    target: uiController ? uiController.prefixManager : null
+                    function onPrefixDiskUsageReady(pid, bytes, formatted) {
+                        if (pfxCard.modelData && pid === pfxCard.modelData.id) {
+                            pfxCard.diskUsageText = formatted
+                        }
+                    }
+                }
 
                 RowLayout {
                     id: cardInner
@@ -334,6 +351,25 @@ Item {
                                     anchors.centerIn: parent
                                     text: (pfxCard.modelData && pfxCard.modelData.arch) ? String(pfxCard.modelData.arch).toUpperCase() : "WIN64"
                                     color: "#38bdf8"
+                                    font.pixelSize: 10
+                                    font.weight: Font.Medium
+                                }
+                            }
+
+                            Rectangle {
+                                visible: pfxCard.diskUsageText.length > 0
+                                height: 20
+                                implicitWidth: pfxSizeLbl.implicitWidth + 12
+                                width: implicitWidth
+                                radius: 4
+                                Layout.alignment: Qt.AlignVCenter
+                                color: appSettings.surfaceContainerHigh
+                                Label {
+                                    id: pfxSizeLbl
+                                    anchors.centerIn: parent
+                                    text: pfxCard.diskUsageText
+                                    color: appSettings.textSecColor
+                                    font.family: "JetBrains Mono NF"
                                     font.pixelSize: 10
                                     font.weight: Font.Medium
                                 }
@@ -401,6 +437,24 @@ Item {
                             Layout.alignment: Qt.AlignVCenter
                             onClicked: uiController.prefixManager.openPrefixInFileManager(pfxCard.modelData.id)
                             Keys.onLeftPressed: (event) => { event.accepted = true; winetricksBtnItem.forceActiveFocus() }
+                            Keys.onRightPressed: (event) => { event.accepted = true; cleanCacheBtnItem.forceActiveFocus() }
+                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
+                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                        }
+
+                        M3Button {
+                            id: cleanCacheBtnItem
+                            text: "Clean Cache"
+                            buttonType: "tonal"
+                            Layout.alignment: Qt.AlignVCenter
+                            onClicked: {
+                                uiController.prefixManager.cleanPrefixCaches(pfxCard.modelData.id)
+                                uiController.prefixManager.calculatePrefixSizeAsync(pfxCard.modelData.id)
+                            }
+                            Keys.onLeftPressed: (event) => { event.accepted = true; folderBtnItem.forceActiveFocus() }
                             Keys.onRightPressed: (event) => { event.accepted = true; backupBtnItem.forceActiveFocus() }
                             Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
                             Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
@@ -415,7 +469,7 @@ Item {
                             buttonType: "tonal"
                             Layout.alignment: Qt.AlignVCenter
                             onClicked: uiController.prefixManager.backupPrefix(pfxCard.modelData.id, "")
-                            Keys.onLeftPressed: (event) => { event.accepted = true; folderBtnItem.forceActiveFocus() }
+                            Keys.onLeftPressed: (event) => { event.accepted = true; cleanCacheBtnItem.forceActiveFocus() }
                             Keys.onRightPressed: (event) => { if (deleteBtnItem.visible) { event.accepted = true; deleteBtnItem.forceActiveFocus() } }
                             Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
                             Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }

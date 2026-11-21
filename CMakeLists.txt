@@ -24,6 +24,7 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+pkg_check_modules(LIBSECRET IMPORTED_TARGET libsecret-1)
 find_package(ZLIB REQUIRED)
 
 find_package(Qt6 REQUIRED COMPONENTS
@@ -44,12 +45,16 @@ set(TSUKI_CORE_SOURCES
     src/core/Models.h
     src/core/AppSettings.h
     src/core/AppSettings.cpp
+    src/core/SecretStore.h
+    src/core/SecretStore.cpp
     src/core/DatabaseManager.h
     src/core/DatabaseManager.cpp
     src/services/DownloadManager.h
     src/services/DownloadManager.cpp
     src/services/RunnerManager.h
     src/services/RunnerManager.cpp
+    src/services/UmuIdResolver.h
+    src/services/UmuIdResolver.cpp
     src/services/PrefixManager.h
     src/services/PrefixManager.cpp
     src/services/WinetricksManager.h
@@ -66,6 +71,8 @@ set(TSUKI_CORE_SOURCES
     src/services/LaunchPipeline.cpp
     src/services/EpicManifestParser.h
     src/services/EpicManifestParser.cpp
+    src/services/EpicCloudSaveService.h
+    src/services/EpicCloudSaveService.cpp
     src/services/EpicService.h
     src/services/EpicService.cpp
     src/services/GameManager.h
@@ -90,6 +97,10 @@ target_link_libraries(tsuki_core PUBLIC
     PkgConfig::SDL2
     ZLIB::ZLIB
 )
+if(LIBSECRET_FOUND)
+    target_link_libraries(tsuki_core PUBLIC PkgConfig::LIBSECRET)
+    target_compile_definitions(tsuki_core PUBLIC TSUKI_HAS_LIBSECRET=1)
+endif()
 
 # Leave TSUKI_VERSION empty by default so updates to the root VERSION file
 # propagate without getting pinned in CMakeCache; packagers can still pass

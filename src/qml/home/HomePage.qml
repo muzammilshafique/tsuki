@@ -59,6 +59,8 @@ Page {
             grid.forceFocus()
         } else if (page.activeSection === "epic") {
             _focusLoaderSection("epic", epicLoader)
+        } else if (page.activeSection === "downloads") {
+            _focusLoaderSection("downloads", downloadsLoader)
         } else if (page.activeSection === "runners") {
             _focusLoaderSection("runners", runnersLoader)
         } else if (page.activeSection === "prefixes") {
@@ -73,9 +75,10 @@ Page {
             { navIdx: 0, section: "library",     filter: -1 },
             { navIdx: 1, section: "library",     filter: 3 },
             { navIdx: 2, section: "epic",        filter: -1 },
-            { navIdx: 4, section: "prefixes",    filter: -1 },
-            { navIdx: 5, section: "runners",     filter: -1 },
-            { navIdx: 6, section: "diagnostics", filter: -1 }
+            { navIdx: 3, section: "downloads",   filter: -1 },
+            { navIdx: 5, section: "prefixes",    filter: -1 },
+            { navIdx: 6, section: "runners",     filter: -1 },
+            { navIdx: 7, section: "diagnostics", filter: -1 }
         ]
         let cur = 0
         for (let i = 0; i < tabs.length; ++i) {
@@ -94,6 +97,7 @@ Page {
         sidebar.focusedNavIndex = t.navIdx
         if (t.section === "library") {
             page.activeSection = "library"
+            uiController.searchModel.clearFilters()
             uiController.searchModel.filterType = t.filter
         } else {
             page.activeSection = t.section
@@ -183,6 +187,7 @@ Page {
             currentSection: page.activeSection
             onFilterRequested: (type) => {
                 page.activeSection = "library"
+                uiController.searchModel.clearFilters()
                 uiController.searchModel.filterType = type
             }
             onSectionRequested: (sec) => {
@@ -206,7 +211,7 @@ Page {
                 visible: page.activeSection === "library"
                 onVisibleChanged: if (!visible) closeAddMenu()
                 onSearchRequested: (query) => {
-                    uiController.search(query, sidebar.currentFilter)
+                    uiController.searchModel.searchQuery = query
                 }
                 onAddGameRequested: (platform) => page.openAddGameDialog(platform)
                 onFocusGridRequested: grid.forceFocus()
@@ -253,6 +258,27 @@ Page {
                         page.gameDetailsRequested(gameId, epicAppName)
                     }
                     function onFocusSidebarRequested() { sidebar.forceActiveFocus() }
+                }
+
+                Loader {
+                    id: downloadsLoader
+                    anchors.fill: parent
+                    active: page.activeSection === "downloads"
+                    visible: active
+                    source: active ? Qt.resolvedUrl("../pages/DownloadsView.qml") : ""
+                    onLoaded: {
+                        if (page._pendingFocusSection === "downloads" && item) {
+                            page._pendingFocusSection = ""
+                            Qt.callLater(function() { if (downloadsLoader.item) downloadsLoader.item.forceFocus() })
+                        }
+                    }
+                }
+                Connections {
+                    target: downloadsLoader.item
+                    function onFocusSidebarRequested() { sidebar.forceActiveFocus() }
+                    function onOpenGameDetailsRequested(gameId, epicAppName) {
+                        page.gameDetailsRequested(gameId, epicAppName)
+                    }
                 }
 
                 Loader {

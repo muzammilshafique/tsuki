@@ -81,7 +81,7 @@ ApplicationWindow {
 
         initialItem: HomePage {
             id: homePage
-            externalModalOpen: window.isWinetricksOpen
+            externalModalOpen: window.isWinetricksOpen || window.isCloudConflictOpen
             onGameDetailsRequested: function(gameId, epicAppName) {
                 window.openGameDetailPage(gameId, epicAppName)
             }
@@ -97,6 +97,7 @@ ApplicationWindow {
     property string _pendingWtPrefixId: ""
     property string _pendingWtTitle: ""
     readonly property bool isWinetricksOpen: Boolean(winetricksLoader.item && winetricksLoader.item.visible)
+    readonly property bool isCloudConflictOpen: Boolean(cloudConflictDialog.visible)
 
     function openSettingsPage() {
         if (stack.currentItem && stack.currentItem.objectName === "settingsPage") return
@@ -112,7 +113,7 @@ ApplicationWindow {
             epicAppName: epicAppName || ""
         })
         if (item) {
-            item.externalModalOpen = Qt.binding(function() { return window.isWinetricksOpen })
+            item.externalModalOpen = Qt.binding(function() { return window.isWinetricksOpen || window.isCloudConflictOpen })
             item.backRequested.connect(function() { stack.pop() })
             item.winetricksRequested.connect(function(prefixId, gameTitle) {
                 window.openWinetricks(prefixId, gameTitle)
@@ -158,10 +159,21 @@ ApplicationWindow {
         }
     }
 
+    CloudSaveConflictDialog {
+        id: cloudConflictDialog
+    }
+
+    Connections {
+        target: uiController ? uiController.launchPipeline : null
+        function onCloudSaveConflict(gameId, details) {
+            cloudConflictDialog.openConflict(gameId, details)
+        }
+    }
+
     Connections {
         target: uiController ? uiController.controllerManager : null
         function onSettingsActionRequested() {
-            if (window.isWinetricksOpen) return
+            if (window.isWinetricksOpen || window.isCloudConflictOpen) return
             window.openSettingsPage()
         }
     }
@@ -170,6 +182,7 @@ ApplicationWindow {
         sequence: "Tab"
         context: Qt.ApplicationShortcut
         enabled: !window.isWinetricksOpen
+                 && !window.isCloudConflictOpen
                  && !(stack.currentItem && stack.currentItem.isAnyModalOpen && stack.currentItem.isAnyModalOpen())
                  && !(stack.currentItem && stack.currentItem.isModalOpen)
                  && !(stack.currentItem && stack.currentItem.isTextInputActive && stack.currentItem.isTextInputActive())

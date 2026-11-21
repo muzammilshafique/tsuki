@@ -39,6 +39,27 @@ Popup {
     property string customPrefixLocation: appSettings ? appSettings.defaultPrefixLocation : ""
     property string prefixArch: "win64"
 
+    property var availableInstallTags: []
+    property var selectedInstallTags: []
+    property var availableDlcs: []
+    property var selectedDlcAppNames: []
+
+    function toggleInstallTag(tag) {
+        let arr = Array.from(root.selectedInstallTags || [])
+        const idx = arr.indexOf(tag)
+        if (idx >= 0) arr.splice(idx, 1)
+        else arr.push(tag)
+        root.selectedInstallTags = arr
+    }
+
+    function toggleDlc(dlcApp) {
+        let arr = Array.from(root.selectedDlcAppNames || [])
+        const idx = arr.indexOf(dlcApp)
+        if (idx >= 0) arr.splice(idx, 1)
+        else arr.push(dlcApp)
+        root.selectedDlcAppNames = arr
+    }
+
     readonly property string resolvedInstallPreview: (uiController && uiController.epicService && root.gameTitle.length > 0)
         ? uiController.epicService.suggestInstallDirectory(root.installBaseDir, root.gameTitle)
         : root.installBaseDir
@@ -83,6 +104,13 @@ Popup {
         root.customPrefixLocation = appSettings ? appSettings.defaultPrefixLocation : ""
         root.prefixArch = "win64"
 
+        root.availableInstallTags = (uiController && uiController.epicService && root.appName.length > 0)
+            ? uiController.epicService.getInstallTagsForGame(root.appName) : []
+        root.selectedInstallTags = []
+        root.availableDlcs = (uiController && uiController.epicService && root.appName.length > 0)
+            ? uiController.epicService.getDlcsForGame(root.appName) : []
+        root.selectedDlcAppNames = []
+
         if (uiController && uiController.epicService && root.appName.length > 0) {
             uiController.epicService.fetchInstallInfo(root.appName)
         }
@@ -100,6 +128,12 @@ Popup {
                 root.installSizeBytes = Number(instSize || 0)
                 root.downloadSizeStr = epicMap.downloadSizeFormatted || ""
                 root.installSizeStr = epicMap.installSizeFormatted || ""
+            }
+        }
+        function onInstallDetailsReady(app, installTags, dlcs) {
+            if (app === root.appName && root.visible) {
+                root.availableInstallTags = installTags || []
+                root.availableDlcs = dlcs || []
             }
         }
     }
@@ -688,6 +722,113 @@ Popup {
                             }
                         }
                     }
+
+                    // Card 3: Optional Components (Install Tags) & Owned DLCs
+                    Rectangle {
+                        visible: (root.availableInstallTags && root.availableInstallTags.length > 0)
+                              || (root.availableDlcs && root.availableDlcs.length > 0)
+                        Layout.fillWidth: true
+                        radius: 14
+                        color: appSettings.surfaceContainerLow
+                        border.color: appSettings.borderColor
+                        border.width: 1
+                        implicitHeight: dlcTagsCol.implicitHeight + 28
+
+                        ColumnLayout {
+                            id: dlcTagsCol
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.margins: 14
+                            spacing: 8
+
+                            Label {
+                                text: "Optional Components & DLCs"
+                                color: appSettings.textSecColor
+                                font.family: "Rubik"
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
+                            }
+
+                            Repeater {
+                                model: root.availableInstallTags || []
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    readonly property bool isChecked: root.selectedInstallTags.indexOf(modelData.tag) !== -1
+                                    Layout.fillWidth: true
+                                    height: 34
+                                    radius: 10
+                                    color: isChecked ? appSettings.secondaryContainer : appSettings.surfaceContainer
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 12
+                                        anchors.rightMargin: 12
+                                        spacing: 8
+                                        YIcon {
+                                            size: 16
+                                            symbol: isChecked ? "check" : "add"
+                                            color: isChecked ? appSettings.onSecondaryContainer : appSettings.textSecColor
+                                        }
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: String(modelData.tag || "")
+                                            color: isChecked ? appSettings.onSecondaryContainer : appSettings.textColor
+                                            font.pixelSize: 12
+                                            font.weight: isChecked ? Font.DemiBold : Font.Normal
+                                            elide: Text.ElideRight
+                                        }
+                                        Label {
+                                            text: String(modelData.installSizeFormatted || "")
+                                            color: isChecked ? appSettings.onSecondaryContainer : appSettings.textTerColor
+                                            font.family: "JetBrains Mono NF"
+                                            font.pixelSize: 11
+                                        }
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.toggleInstallTag(String(modelData.tag || ""))
+                                    }
+                                }
+                            }
+
+                            Repeater {
+                                model: root.availableDlcs || []
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    readonly property bool isChecked: root.selectedDlcAppNames.indexOf(modelData.dlcAppName) !== -1
+                                    Layout.fillWidth: true
+                                    height: 34
+                                    radius: 10
+                                    color: isChecked ? appSettings.secondaryContainer : appSettings.surfaceContainer
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 12
+                                        anchors.rightMargin: 12
+                                        spacing: 8
+                                        YIcon {
+                                            size: 16
+                                            symbol: isChecked ? "check" : "download"
+                                            color: isChecked ? appSettings.onSecondaryContainer : appSettings.accentColor
+                                        }
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: "DLC: " + String(modelData.title || modelData.dlcAppName || "")
+                                            color: isChecked ? appSettings.onSecondaryContainer : appSettings.textColor
+                                            font.pixelSize: 12
+                                            font.weight: isChecked ? Font.DemiBold : Font.Normal
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.toggleDlc(String(modelData.dlcAppName || ""))
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -757,7 +898,9 @@ Popup {
                             pfxMode,
                             root.customPrefixName,
                             root.customPrefixLocation,
-                            root.prefixArch
+                            root.prefixArch,
+                            root.selectedInstallTags || [],
+                            root.selectedDlcAppNames || []
                         )
                         root.downloadStarted(root.appName)
                         root.close()

@@ -16,6 +16,9 @@ Page {
     property int gamescopeStateDraft: -1
     property var gamescopeDraft: ({})
     property bool externalModalOpen: false
+    property var cloudStatus: ({})
+    property var cloudSnapshots: []
+    property var gameDlcs: []
 
     readonly property bool isEpicEntry: root.epicAppName.length > 0 || Boolean(root.gameData.isEpic)
     readonly property bool isUninstalledEpic: root.isEpicEntry && root.gameId.length === 0
@@ -67,16 +70,21 @@ Page {
 
     readonly property var tabList: {
         if (root.isNative) {
-            return [
-                { label: "General & Paths", stackIndex: 0 },
-                { label: "Performance & Controller", stackIndex: 2 },
-                { label: "Artwork & Media", stackIndex: 3 },
-                { label: "Execution Logs", stackIndex: 4 }
+            let nativeTabs = [
+                { label: "General & Paths", stackIndex: 0 }
             ]
+            if (root.isEpicEntry) {
+                nativeTabs.push({ label: "Epic & Online", stackIndex: 5 })
+            }
+            nativeTabs.push({ label: "Performance & Controller", stackIndex: 2 })
+            nativeTabs.push({ label: "Artwork & Media", stackIndex: 3 })
+            nativeTabs.push({ label: "Execution Logs", stackIndex: 4 })
+            return nativeTabs
         }
         return [
             { label: "General & Paths", stackIndex: 0 },
             { label: "Wine & DXVK", stackIndex: 1 },
+            { label: root.isEpicEntry ? "Epic & Online" : "Online & Anti-Cheat", stackIndex: 5 },
             { label: "Performance & Controller", stackIndex: 2 },
             { label: "Artwork & Media", stackIndex: 3 },
             { label: "Execution Logs", stackIndex: 4 }
@@ -84,7 +92,7 @@ Page {
     }
 
     onGameDataChanged: {
-        if (root.isNative && root.activeTab === 1) {
+        if (root.isNative && (root.activeTab === 1 || (root.activeTab === 5 && !root.isEpicEntry))) {
             root.activeTab = 0
         }
     }
@@ -113,6 +121,9 @@ Page {
         if (typeof detailRunnerCombo !== "undefined" && detailRunnerCombo.popup.visible) return true
         if (typeof detailPrefixCombo !== "undefined" && detailPrefixCombo.popup.visible) return true
         if (typeof hudCombo !== "undefined" && hudCombo.popup.visible) return true
+        if (typeof gpuCombo !== "undefined" && gpuCombo.popup.visible) return true
+        if (typeof fsrStrengthCombo !== "undefined" && fsrStrengthCombo.popup.visible) return true
+        if (typeof cloudSnapshotsCombo !== "undefined" && cloudSnapshotsCombo.popup.visible) return true
         return false
     }
 
@@ -155,8 +166,9 @@ Page {
             rows.push([workDirField, workDirBrowseBtn])
             if (!root.isNative) {
                 rows.push([detailRunnerCombo, detailPrefixCombo])
-                if (root.isEpicEntry && !root.isUninstalledEpic) {
-                    rows.push([epicOnlineAuthToggle])
+                rows.push([umuToggle])
+                if (umuToggle.checked) {
+                    rows.push([umuGameIdField, disableProtonfixesToggle])
                 }
             } else {
                 rows.push([nativeEnvWrap])
@@ -167,7 +179,14 @@ Page {
             rows.push(hudToggle.checked ? [hudCombo, hudToggle] : [hudToggle])
             rows.push([esyncToggle])
             rows.push([fsyncToggle])
+            rows.push([ntsyncToggle])
+            rows.push([waylandToggle])
+            rows.push([hdrToggle])
+            rows.push([nvapiToggle])
+            rows.push(fsrToggle.checked ? [fsrStrengthCombo, fsrToggle] : [fsrToggle])
+            rows.push([gpuCombo])
             rows.push(vdesktopCheck.checked ? [vdesktopResField, vdesktopCheck] : [vdesktopCheck])
+            rows.push([disableMonoGeckoToggle])
             rows.push([dllOverridesWrap, envVarsWrap])
         } else if (root.activeTab === 2) {
             rows.push([mangohudToggle])
@@ -187,6 +206,24 @@ Page {
         } else if (root.activeTab === 4) {
             rows.push([exportLogBtn, clearLogBtn])
             rows.push([logAreaWrap])
+        } else if (root.activeTab === 5) {
+            if (root.isEpicEntry && !root.isUninstalledEpic) {
+                rows.push([epicOnlineAuthToggle])
+            }
+            if (root.isEpicEntry && !root.isUninstalledEpic && !root.isNative) {
+                rows.push([eosOverlayToggle])
+            }
+            if (!root.isNative) {
+                rows.push([eacRuntimeToggle])
+                rows.push([battleyeRuntimeToggle])
+            }
+            if (root.isEpicEntry && !root.isUninstalledEpic) {
+                rows.push([cloudEnabledToggle])
+                if (cloudEnabledToggle.checked) {
+                    rows.push([cloudAutoSyncToggle])
+                }
+                rows.push([cloudFolderOverrideField])
+            }
         }
         return rows
     }
@@ -364,15 +401,30 @@ Page {
             if (typeof battleyeRuntimeToggle !== "undefined" && battleyeRuntimeToggle) {
                 battleyeRuntimeToggle.checked = Boolean(root.gameData.enableBattlEyeRuntime)
             }
+            if (typeof cloudEnabledToggle !== "undefined" && cloudEnabledToggle) {
+                cloudEnabledToggle.checked = Boolean(root.gameData.epicCloudSavesEnabled)
+            }
+            if (typeof cloudAutoSyncToggle !== "undefined" && cloudAutoSyncToggle) {
+                cloudAutoSyncToggle.checked = Boolean(root.gameData.epicAutoSyncCloudSaves)
+            }
+            if (uiController && uiController.cloudSaveService) {
+                root.cloudStatus = uiController.cloudSaveService.getCloudSaveStatus(gameId)
+                root.cloudSnapshots = uiController.cloudSaveService.listLocalSnapshots(gameId)
+            }
         }
         if (root.epicAppName.length > 0 && uiController && uiController.epicService) {
             root.epicData = uiController.epicService.getEpicGameMap(root.epicAppName)
+            root.gameDlcs = uiController.epicService.getDlcsForGame(root.epicAppName)
             if (root.gameId.length === 0 && root.epicData && root.epicData.installedGameId && root.epicData.installedGameId.length > 0) {
                 root.gameId = root.epicData.installedGameId
                 root.gameData = uiController.gameManager.getGameMap(root.gameId)
                 gamescopeStateDraft = (gameData.gamescopeState !== undefined) ? gameData.gamescopeState : -1
                 gamescopeDraft = gameData.gamescope || ({})
                 uiController.diagnosticsManager.selectedLogGameId = root.gameId
+                if (uiController && uiController.cloudSaveService) {
+                    root.cloudStatus = uiController.cloudSaveService.getCloudSaveStatus(root.gameId)
+                    root.cloudSnapshots = uiController.cloudSaveService.listLocalSnapshots(root.gameId)
+                }
             }
         }
     }
@@ -442,6 +494,18 @@ Page {
             if (appName === root.epicAppName && newGameId.length > 0) {
                 root.gameId = newGameId
                 root.reloadGame()
+            }
+        }
+        function onUpdatesChanged() {
+            root.reloadGame()
+        }
+    }
+    Connections {
+        target: (uiController && uiController.cloudSaveService) ? uiController.cloudSaveService : null
+        function onCloudSaveStatusChanged(gid) {
+            if (gid === root.gameId && root.gameId.length > 0) {
+                root.cloudStatus = uiController.cloudSaveService.getCloudSaveStatus(root.gameId)
+                root.cloudSnapshots = uiController.cloudSaveService.listLocalSnapshots(root.gameId)
             }
         }
     }
@@ -521,6 +585,44 @@ Page {
             ? (fsyncToggle.checked ? 1 : 0)
             : (root.isNative ? -1 : (root.gameData.fsyncState !== undefined ? root.gameData.fsyncState : -1))
 
+        let ntsyncVal = (!root.isNative && typeof ntsyncToggle !== "undefined" && ntsyncToggle)
+            ? (ntsyncToggle.checked ? 1 : 0)
+            : (root.isNative ? -1 : (root.gameData.ntsyncState !== undefined ? root.gameData.ntsyncState : -1))
+
+        let umuVal = (!root.isNative && typeof umuToggle !== "undefined" && umuToggle)
+            ? (umuToggle.checked ? 1 : 0)
+            : (root.isNative ? -1 : (root.gameData.umuState !== undefined ? root.gameData.umuState : -1))
+
+        let waylandVal = (!root.isNative && typeof waylandToggle !== "undefined" && waylandToggle)
+            ? (waylandToggle.checked ? 1 : 0)
+            : (root.isNative ? -1 : (root.gameData.waylandDriverState !== undefined ? root.gameData.waylandDriverState : -1))
+
+        let hdrVal = (!root.isNative && typeof hdrToggle !== "undefined" && hdrToggle)
+            ? (hdrToggle.checked ? 1 : 0)
+            : (root.isNative ? -1 : (root.gameData.hdrState !== undefined ? root.gameData.hdrState : -1))
+
+        let nvapiVal = (!root.isNative && typeof nvapiToggle !== "undefined" && nvapiToggle)
+            ? (nvapiToggle.checked ? 1 : 0)
+            : (root.isNative ? -1 : (root.gameData.nvapiState !== undefined ? root.gameData.nvapiState : -1))
+
+        let fsrVal = (!root.isNative && typeof fsrToggle !== "undefined" && fsrToggle)
+            ? (fsrToggle.checked ? 1 : 0)
+            : (root.isNative ? -1 : (root.gameData.fsrState !== undefined ? root.gameData.fsrState : -1))
+
+        let fsrStrengthVal = (!root.isNative && typeof fsrStrengthCombo !== "undefined" && fsrStrengthCombo && fsrStrengthCombo.selectedIndex >= 0)
+            ? fsrStrengthCombo.selectedIndex
+            : (root.gameData.fsrStrength !== undefined ? root.gameData.fsrStrength : -1)
+
+        let gpuSelVal = root.gameData.gpuSelection || ""
+        if (!root.isNative && typeof gpuCombo !== "undefined" && gpuCombo) {
+            const gpus = (uiController && uiController.diagnosticsManager) ? uiController.diagnosticsManager.detectedGpus : []
+            if (gpuCombo.selectedIndex === 0) {
+                gpuSelVal = ""
+            } else if (gpuCombo.selectedIndex - 1 >= 0 && gpuCombo.selectedIndex - 1 < gpus.length) {
+                gpuSelVal = gpus[gpuCombo.selectedIndex - 1].id
+            }
+        }
+
         let mangohudVal = (typeof mangohudToggle !== "undefined" && mangohudToggle)
             ? (mangohudToggle.checked ? 1 : 0)
             : (root.gameData.mangohudState !== undefined ? root.gameData.mangohudState : -1)
@@ -555,6 +657,20 @@ Page {
             vkd3dState: vkd3dVal,
             esyncState: esyncVal,
             fsyncState: fsyncVal,
+            ntsyncState: ntsyncVal,
+            umuState: umuVal,
+            umuGameId: (!root.isNative && typeof umuGameIdField !== "undefined" && umuGameIdField) ? umuGameIdField.text.trim() : (root.gameData.umuGameId || ""),
+            disableProtonfixes: (!root.isNative && typeof disableProtonfixesToggle !== "undefined" && disableProtonfixesToggle) ? disableProtonfixesToggle.checked : Boolean(root.gameData.disableProtonfixes),
+            disableMonoGecko: (!root.isNative && typeof disableMonoGeckoToggle !== "undefined" && disableMonoGeckoToggle) ? disableMonoGeckoToggle.checked : Boolean(root.gameData.disableMonoGecko),
+            waylandDriverState: waylandVal,
+            hdrState: hdrVal,
+            nvapiState: nvapiVal,
+            fsrState: fsrVal,
+            fsrStrength: fsrStrengthVal,
+            gpuSelection: gpuSelVal,
+            epicCloudSavesEnabled: (typeof cloudEnabledToggle !== "undefined" && cloudEnabledToggle) ? cloudEnabledToggle.checked : Boolean(root.gameData.epicCloudSavesEnabled),
+            epicAutoSyncCloudSaves: (typeof cloudAutoSyncToggle !== "undefined" && cloudAutoSyncToggle) ? cloudAutoSyncToggle.checked : Boolean(root.gameData.epicAutoSyncCloudSaves),
+            epicCloudSaveFolder: (typeof cloudFolderOverrideField !== "undefined" && cloudFolderOverrideField) ? cloudFolderOverrideField.text.trim() : (root.gameData.epicCloudSaveFolder || ""),
             dxvkHud: hudVal,
             virtualDesktop: (!root.isNative && typeof vdesktopCheck !== "undefined" && vdesktopCheck) ? vdesktopCheck.checked : false,
             virtualDesktopResolution: (!root.isNative && typeof vdesktopResField !== "undefined" && vdesktopResField && vdesktopResField.text.length > 0) ? vdesktopResField.text : (root.gameData.virtualDesktopResolution || "1920x1080"),
@@ -744,6 +860,16 @@ Page {
                                     return items
                                 }
                                 if (root.isEpicEntry && uiController && uiController.epicService) {
+                                    if (Boolean(root.gameData.hasUpdate)) {
+                                        items.push({
+                                            name: "Update Game",
+                                            symbol: "download",
+                                            destructive: false,
+                                            action: function() {
+                                                uiController.epicService.updateGame(root.gameId)
+                                            }
+                                        })
+                                    }
                                     items.push({
                                         name: "Verify Files",
                                         symbol: "refresh",
@@ -752,6 +878,16 @@ Page {
                                             uiController.epicService.verifyGame(root.gameId)
                                         }
                                     })
+                                    if (root.gameData.epicPrereqPath && String(root.gameData.epicPrereqPath).length > 0) {
+                                        items.push({
+                                            name: "Run Prerequisites",
+                                            symbol: "build",
+                                            destructive: false,
+                                            action: function() {
+                                                uiController.epicService.runGamePrerequisites(root.gameId, true)
+                                            }
+                                        })
+                                    }
                                 }
                                 if (!root.isNative) {
                                     items.push({
@@ -763,6 +899,25 @@ Page {
                                         }
                                     })
                                 }
+                                items.push({
+                                    name: "Move Game Folder…",
+                                    symbol: "folder_open",
+                                    destructive: false,
+                                    action: function() {
+                                        const dest = uiController.selectFolder("Select Destination Folder to Move Game Into", "")
+                                        if (dest && dest.length > 0) {
+                                            uiController.gameManager.relocateGame(root.gameId, dest)
+                                        }
+                                    }
+                                })
+                                items.push({
+                                    name: Boolean(root.gameData.isHidden) ? "Unhide Game" : "Hide Game",
+                                    symbol: "tune",
+                                    destructive: false,
+                                    action: function() {
+                                        uiController.gameManager.toggleHidden(root.gameId)
+                                    }
+                                })
                                 items.push({
                                     name: "Shortcut",
                                     symbol: "shortcut",
@@ -1169,13 +1324,23 @@ Page {
                             Popup {
                                 id: actionsPopup
                                 parent: splitButtonContainer
-                                readonly property real fullContentHeight: Math.min(260, actionsContentCol.implicitHeight + 12)
-                                readonly property bool opensUpward: {
+                                property real _spaceBelow: 460
+                                property real _spaceAbove: 460
+                                function refreshAvailableSpace() {
                                     let win = root.Window.window
-                                    if (!win) return false
-                                    let p = splitButtonContainer.mapToItem(null, 0, splitButtonContainer.height)
-                                    return (p.y + fullContentHeight + 16 > win.height) && (p.y > win.height / 2)
+                                    if (!win) {
+                                        _spaceBelow = Math.max(460, naturalContentHeight)
+                                        _spaceAbove = Math.max(460, naturalContentHeight)
+                                        return
+                                    }
+                                    let pBottom = splitButtonContainer.mapToItem(null, 0, splitButtonContainer.height)
+                                    let pTop = splitButtonContainer.mapToItem(null, 0, 0)
+                                    _spaceBelow = Math.max(180, win.height - pBottom.y - 16)
+                                    _spaceAbove = Math.max(180, pTop.y - 16)
                                 }
+                                readonly property real naturalContentHeight: actionsContentCol.implicitHeight + 12
+                                readonly property bool opensUpward: (naturalContentHeight > _spaceBelow) && (_spaceAbove > _spaceBelow)
+                                readonly property real fullContentHeight: Math.min(opensUpward ? _spaceAbove : _spaceBelow, naturalContentHeight)
                                 y: opensUpward ? (-height - 6) : (splitButtonContainer.height + 6)
                                 x: 0
                                 width: Math.max(splitButtonContainer.implicitWidth, 210)
@@ -1186,6 +1351,7 @@ Page {
                                 property int focusedActionIndex: 0
                                 onAboutToShow: {
                                     focusedActionIndex = 0
+                                    refreshAvailableSpace()
                                 }
 
                                 function handleDown() {
@@ -1820,6 +1986,7 @@ Page {
                         case 2: return tab2Perf ? tab2Perf.implicitHeight : 650
                         case 3: return tab3Art ? tab3Art.implicitHeight : 300
                         case 4: return tab4Logs ? tab4Logs.implicitHeight : 360
+                        case 5: return tab5Online ? tab5Online.implicitHeight : 420
                         default: return 400
                     }
                 }
@@ -2109,40 +2276,8 @@ Page {
                                     }
                                 }
 
-                                // Epic Online Auth Toggle (for installed Epic Games)
+                                // UMU Launcher Toggle
                                 RowLayout {
-                                    visible: root.isEpicEntry && !root.isUninstalledEpic
-                                    Layout.fillWidth: true
-                                    spacing: 16
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 2
-                                        Label {
-                                            text: "Epic Online Authentication"
-                                            color: appSettings.textColor
-                                            font.pixelSize: 14
-                                            font.weight: Font.Medium
-                                        }
-                                        Label {
-                                            text: "Pass an Epic Games single-use auth exchange token when launching online"
-                                            color: appSettings.textSecColor
-                                            font.pixelSize: 12
-                                            wrapMode: Text.WordWrap
-                                            Layout.fillWidth: true
-                                        }
-                                    }
-
-                                    Toggle {
-                                        id: epicOnlineAuthToggle
-                                        checked: !Boolean(root.gameData.epicOfflineMode)
-                                        onToggled: root.saveAllChanges()
-                                    }
-                                }
-
-                                // EOS Social Overlay Toggle
-                                RowLayout {
-                                    visible: root.isEpicEntry && !root.isUninstalledEpic && !root.isNative
                                     Layout.fillWidth: true
                                     spacing: 12
 
@@ -2150,17 +2285,15 @@ Page {
                                         Layout.fillWidth: true
                                         spacing: 2
                                         Label {
-                                            text: "EOS Social Overlay"
+                                            text: "UMU Launcher (Protonfixes & Steam Runtime)"
                                             color: appSettings.textColor
                                             font.pixelSize: 14
                                             font.weight: Font.Medium
                                         }
                                         Label {
-                                            text: (uiController && uiController.epicService && uiController.epicService.isInstallingEosOverlay)
-                                                ? ("Installing EOS Overlay… (" + Math.round(Number(uiController.epicService.eosOverlayProgress || 0)) + "%)")
-                                                : ((uiController && uiController.epicService && uiController.epicService.eosOverlayInstalled)
-                                                    ? "Enable Epic Online Services social overlay (friends & invites) in prefix"
-                                                    : "EOS Overlay is not installed yet — install once to enable Epic social overlay")
+                                            text: (uiController && uiController.runnerManager && uiController.runnerManager.umuAvailable)
+                                                ? "Run Proton through umu-run for automatic per-game Protonfixes & container runtime"
+                                                : "umu-launcher not installed — falls back to standalone Proton until installed in Runners"
                                             color: appSettings.textSecColor
                                             font.pixelSize: 12
                                             wrapMode: Text.WordWrap
@@ -2168,107 +2301,184 @@ Page {
                                         }
                                     }
 
-                                    M3Button {
-                                        visible: Boolean(uiController && uiController.epicService && !uiController.epicService.eosOverlayInstalled)
-                                        enabled: Boolean(uiController && uiController.epicService && !uiController.epicService.isInstallingEosOverlay)
-                                        text: (uiController && uiController.epicService && uiController.epicService.isInstallingEosOverlay) ? "Installing…" : "Install"
-                                        buttonType: "tonal"
-                                        onClicked: if (uiController && uiController.epicService) uiController.epicService.installEosOverlay()
-                                    }
-
                                     Toggle {
-                                        id: eosOverlayToggle
-                                        objectName: "eosOverlayToggle"
-                                        checked: Boolean(root.gameData.enableEosOverlay)
+                                        id: umuToggle
+                                        objectName: "detailUmuToggle"
+                                        checked: (root.gameData.umuState === 1) ? true : ((root.gameData.umuState === 0) ? false : appSettings.umuDefault)
                                         onToggled: root.saveAllChanges()
                                     }
                                 }
 
-                                // Proton EasyAntiCheat Runtime Toggle
+                                // UMU Game ID & Disable Protonfixes Row (50/50 Two-Column Split)
                                 RowLayout {
-                                    visible: !root.isUninstalledEpic && !root.isNative
+                                    visible: umuToggle.checked
                                     Layout.fillWidth: true
-                                    spacing: 12
+                                    spacing: 20
 
+                                    // Left Half: UMU Game ID
                                     ColumnLayout {
                                         Layout.fillWidth: true
-                                        spacing: 2
+                                        Layout.preferredWidth: 1
+                                        spacing: 4
                                         Label {
-                                            text: "EasyAntiCheat Runtime (EAC)"
+                                            text: "UMU Game ID (GAMEID)"
                                             color: appSettings.textColor
                                             font.pixelSize: 14
                                             font.weight: Font.Medium
+                                            Layout.fillWidth: true
                                         }
                                         Label {
-                                            text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingEac)
-                                                ? "Downloading Proton EasyAntiCheat Runtime…"
-                                                : ((uiController && uiController.runnerManager && uiController.runnerManager.eacRuntimeAvailable)
-                                                    ? "Set PROTON_EAC_RUNTIME for online EasyAntiCheat multiplayer titles"
-                                                    : "EAC runtime not found (uses Steam or 1-click install below)")
+                                            text: "Auto-resolved from UMU database, or override manually (e.g. umu-123456)"
                                             color: appSettings.textSecColor
                                             font.pixelSize: 12
                                             wrapMode: Text.WordWrap
                                             Layout.fillWidth: true
                                         }
+                                        Item { Layout.preferredHeight: 2 }
+                                        M3TextField {
+                                            id: umuGameIdField
+                                            twoStageFocus: true
+                                            Layout.fillWidth: true
+                                            text: root.gameData.umuGameId || ""
+                                            placeholderText: "Auto-resolved (or override e.g. umu-123456)"
+                                            onCommit: root.saveAllChanges()
+                                            onMoveUp: root.navigateStep(-1, 0)
+                                            onMoveDown: root.navigateStep(1, 0)
+                                        }
                                     }
 
-                                    M3Button {
-                                        visible: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.eacRuntimeAvailable)
-                                        enabled: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.isInstallingEac)
-                                        text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingEac) ? "Installing…" : "Install"
-                                        buttonType: "tonal"
-                                        onClicked: if (uiController && uiController.runnerManager) uiController.runnerManager.installAntiCheatRuntime("eac_runtime")
-                                    }
+                                    // Right Half: Disable Protonfixes Toggle + Explanation
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Layout.preferredWidth: 1
+                                        Layout.alignment: Qt.AlignVCenter
+                                        spacing: 14
 
-                                    Toggle {
-                                        id: eacRuntimeToggle
-                                        objectName: "eacRuntimeToggle"
-                                        checked: Boolean(root.gameData.enableEacRuntime)
-                                        onToggled: root.saveAllChanges()
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 4
+                                            Label {
+                                                text: "Disable Protonfixes"
+                                                color: appSettings.textColor
+                                                font.pixelSize: 14
+                                                font.weight: Font.Medium
+                                                Layout.fillWidth: true
+                                            }
+                                            Label {
+                                                text: "Skip automatic per-game UMU fixes (tweaks, DLL overrides, and launch workarounds)"
+                                                color: appSettings.textSecColor
+                                                font.pixelSize: 12
+                                                wrapMode: Text.WordWrap
+                                                Layout.fillWidth: true
+                                            }
+                                        }
+
+                                        Toggle {
+                                            id: disableProtonfixesToggle
+                                            Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                                            checked: Boolean(root.gameData.disableProtonfixes)
+                                            onToggled: root.saveAllChanges()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 2.5: Collections & Tags
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: collectionsCardCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
+
+                            ColumnLayout {
+                                id: collectionsCardCol
+                                anchors.fill: parent
+                                anchors.margins: 24
+                                spacing: 14
+
+                                Label {
+                                    text: "Collections"
+                                    color: appSettings.accentColor
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Repeater {
+                                        model: (uiController && uiController.gameManager) ? uiController.gameManager.categories : []
+                                        delegate: Rectangle {
+                                            required property string modelData
+                                            readonly property bool isAssigned: Boolean(root.gameData.categories && root.gameData.categories.indexOf(modelData) !== -1)
+                                            height: 32
+                                            width: colChipRow.implicitWidth + 20
+                                            radius: 16
+                                            color: isAssigned ? appSettings.secondaryContainer : appSettings.surfaceContainerHigh
+                                            border.color: isAssigned ? appSettings.accentColor : appSettings.borderColor
+                                            border.width: 1
+
+                                            Row {
+                                                id: colChipRow
+                                                anchors.centerIn: parent
+                                                spacing: 6
+                                                YIcon {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    size: 14
+                                                    symbol: isAssigned ? "check" : "add"
+                                                    color: isAssigned ? appSettings.onSecondaryContainer : appSettings.textSecColor
+                                                }
+                                                Label {
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    text: modelData
+                                                    color: isAssigned ? appSettings.onSecondaryContainer : appSettings.textColor
+                                                    font.pixelSize: 12
+                                                    font.weight: isAssigned ? Font.DemiBold : Font.Medium
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (!uiController || !uiController.gameManager) return
+                                                    if (isAssigned) uiController.gameManager.removeGameFromCollection(root.gameId, modelData)
+                                                    else uiController.gameManager.addGameToCollection(root.gameId, modelData)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
-                                // Proton BattlEye Runtime Toggle
                                 RowLayout {
-                                    visible: !root.isUninstalledEpic && !root.isNative
                                     Layout.fillWidth: true
-                                    spacing: 12
-
-                                    ColumnLayout {
+                                    spacing: 8
+                                    M3TextField {
+                                        id: detailNewColField
                                         Layout.fillWidth: true
-                                        spacing: 2
-                                        Label {
-                                            text: "BattlEye Runtime"
-                                            color: appSettings.textColor
-                                            font.pixelSize: 14
-                                            font.weight: Font.Medium
-                                        }
-                                        Label {
-                                            text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingBattleye)
-                                                ? "Downloading Proton BattlEye Runtime…"
-                                                : ((uiController && uiController.runnerManager && uiController.runnerManager.battleyeRuntimeAvailable)
-                                                    ? "Set PROTON_BATTLEYE_RUNTIME for online BattlEye multiplayer titles"
-                                                    : "BattlEye runtime not found (uses Steam or 1-click install below)")
-                                            color: appSettings.textSecColor
-                                            font.pixelSize: 12
-                                            wrapMode: Text.WordWrap
-                                            Layout.fillWidth: true
+                                        Layout.maximumWidth: 320
+                                        placeholderText: "Create & assign collection…"
+                                        onCommit: (val) => {
+                                            const nm = val.trim()
+                                            if (nm.length > 0 && uiController && uiController.gameManager) {
+                                                uiController.gameManager.addGameToCollection(root.gameId, nm)
+                                                detailNewColField.text = ""
+                                            }
                                         }
                                     }
-
                                     M3Button {
-                                        visible: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.battleyeRuntimeAvailable)
-                                        enabled: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.isInstallingBattleye)
-                                        text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingBattleye) ? "Installing…" : "Install"
+                                        text: "Add"
                                         buttonType: "tonal"
-                                        onClicked: if (uiController && uiController.runnerManager) uiController.runnerManager.installAntiCheatRuntime("battleye_runtime")
-                                    }
-
-                                    Toggle {
-                                        id: battleyeRuntimeToggle
-                                        objectName: "battleyeRuntimeToggle"
-                                        checked: Boolean(root.gameData.enableBattlEyeRuntime)
-                                        onToggled: root.saveAllChanges()
+                                        onClicked: {
+                                            const nm = detailNewColField.text.trim()
+                                            if (nm.length > 0 && uiController && uiController.gameManager) {
+                                                uiController.gameManager.addGameToCollection(root.gameId, nm)
+                                                detailNewColField.text = ""
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -2509,6 +2719,170 @@ Page {
                                     }
                                 }
 
+                                // Row 2.1: NTSync (Toggle)
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        RowLayout {
+                                            spacing: 8
+                                            Label { text: "NTSync (Linux 6.14+ /dev/ntsync)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                            Rectangle {
+                                                height: 18
+                                                implicitWidth: ntsyncBadgeLbl.implicitWidth + 10
+                                                radius: 9
+                                                color: (uiController && uiController.diagnosticsManager && uiController.diagnosticsManager.ntsyncAvailable)
+                                                    ? Qt.rgba(34/255, 197/255, 94/255, 0.16)
+                                                    : Qt.rgba(0.58, 0.64, 0.72, 0.16)
+                                                Label {
+                                                    id: ntsyncBadgeLbl
+                                                    anchors.centerIn: parent
+                                                    text: (uiController && uiController.diagnosticsManager && uiController.diagnosticsManager.ntsyncAvailable) ? "Available" : "No /dev/ntsync"
+                                                    color: (uiController && uiController.diagnosticsManager && uiController.diagnosticsManager.ntsyncAvailable) ? "#22c55e" : appSettings.textSecColor
+                                                    font.pixelSize: 10
+                                                    font.weight: Font.Medium
+                                                }
+                                            }
+                                        }
+                                        Label { text: "Native kernel NT synchronization primitives for lowest CPU overhead"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Toggle {
+                                        id: ntsyncToggle
+                                        objectName: "detailNtsyncToggle"
+                                        checked: (root.gameData.ntsyncState === 1) ? true : ((root.gameData.ntsyncState === 0) ? false : appSettings.ntsyncDefault)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                // Row 2.2: Native Wine Wayland Driver
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "Native Wine Wayland Driver"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Bypass XWayland via PROTON_ENABLE_WAYLAND=1 (Proton 10+ / GE-Proton 10+)"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Toggle {
+                                        id: waylandToggle
+                                        checked: (root.gameData.waylandDriverState === 1) ? true : ((root.gameData.waylandDriverState === 0) ? false : appSettings.waylandDriverDefault)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                // Row 2.3: HDR Output
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "HDR Output"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Enable PROTON_ENABLE_HDR=1 and DXVK_HDR=1 for Wayland / Gamescope HDR"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Toggle {
+                                        id: hdrToggle
+                                        checked: (root.gameData.hdrState === 1) ? true : ((root.gameData.hdrState === 0) ? false : appSettings.hdrDefault)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                // Row 2.4: NVIDIA NVAPI / DLSS
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "NVIDIA NVAPI / DLSS / Reflex"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Expose PROTON_ENABLE_NVAPI=1 and DXVK_ENABLE_NVAPI=1 for DLSS & Reflex"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Toggle {
+                                        id: nvapiToggle
+                                        checked: (root.gameData.nvapiState === 1) ? true : ((root.gameData.nvapiState === 0) ? false : appSettings.nvapiDefault)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                // Row 2.5: Wine Fullscreen FSR + Sharpness
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "Wine Fullscreen FSR"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Upscale lower fullscreen resolutions with AMD FSR (suppressed when Gamescope is active)"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    RowLayout {
+                                        spacing: 10
+                                        StyledCombo {
+                                            id: fsrStrengthCombo
+                                            Layout.preferredWidth: 140
+                                            upDownNavigatesFocus: true
+                                            enabled: fsrToggle.checked
+                                            opacity: fsrToggle.checked ? 1.0 : 0.4
+                                            comboModel: ["0 (Sharpest)", "1", "2 (Balanced)", "3", "4", "5 (Softest)"]
+                                            selectedIndex: {
+                                                const s = (root.gameData.fsrStrength !== undefined && root.gameData.fsrStrength >= 0)
+                                                    ? root.gameData.fsrStrength : appSettings.defaultFsrStrength
+                                                return Math.max(0, Math.min(5, s))
+                                            }
+                                            onSelected: root.saveAllChanges()
+                                        }
+                                        Toggle {
+                                            id: fsrToggle
+                                            checked: (root.gameData.fsrState === 1) ? true : ((root.gameData.fsrState === 0) ? false : appSettings.fsrDefault)
+                                            onToggled: root.saveAllChanges()
+                                        }
+                                    }
+                                }
+
+                                // Row 2.6: GPU / PRIME Selection
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 46
+                                    spacing: 16
+                                    ColumnLayout {
+                                        spacing: 2
+                                        Label { text: "GPU / Hybrid PRIME Selector"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Pin DirectX/Vulkan rendering and PRIME offload to a specific GPU"; color: appSettings.textSecColor; font.pixelSize: 12 }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    StyledCombo {
+                                        id: gpuCombo
+                                        objectName: "detailGpuCombo"
+                                        Layout.preferredWidth: 260
+                                        upDownNavigatesFocus: true
+                                        readonly property var gpuList: (uiController && uiController.diagnosticsManager)
+                                            ? uiController.diagnosticsManager.detectedGpus : []
+                                        comboModel: {
+                                            let list = ["Auto (Global / Default)"]
+                                            for (let i = 0; i < gpuList.length; ++i) {
+                                                list.push(gpuList[i].name)
+                                            }
+                                            return list
+                                        }
+                                        selectedIndex: {
+                                            const cur = root.gameData.gpuSelection || ""
+                                            if (!cur || cur.length === 0) return 0
+                                            for (let i = 0; i < gpuList.length; ++i) {
+                                                if (gpuList[i].id === cur || gpuList[i].name === cur) return i + 1
+                                            }
+                                            return 0
+                                        }
+                                        onSelected: root.saveAllChanges()
+                                    }
+                                }
+
 
                                 // Row 3: Virtual Desktop
                                 RowLayout {
@@ -2564,6 +2938,23 @@ Page {
                                     font.family: "Rubik"
                                     font.pixelSize: 17
                                     font.weight: Font.DemiBold
+                                }
+
+                                // Opt-in Disable Mono / Gecko DLL Override
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 16
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label { text: "Disable Wine Mono & Gecko (mscoree,mshtml=)"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label { text: "Leave OFF for Unity/.NET and embedded-browser launchers; turn ON only to suppress Wine installer dialogs"; color: appSettings.textSecColor; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                                    }
+                                    Toggle {
+                                        id: disableMonoGeckoToggle
+                                        checked: Boolean(root.gameData.disableMonoGecko)
+                                        onToggled: root.saveAllChanges()
+                                    }
                                 }
 
                                 RowLayout {
@@ -3355,6 +3746,442 @@ Page {
                                             font.pixelSize: 12
                                             wrapMode: TextEdit.Wrap
                                             background: null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // TAB 5: Epic & Online / Anti-Cheat
+                    ColumnLayout {
+                        id: tab5Online
+                        objectName: "detailOnlineTab"
+                        Layout.fillWidth: true
+                        width: tabStack.width
+                        visible: !root.isNative || root.isEpicEntry
+                        spacing: 16
+
+                        // Card 1: Online Authentication, EOS Overlay & Anti-Cheat Runtimes
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: onlineCardCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
+
+                            ColumnLayout {
+                                id: onlineCardCol
+                                anchors.fill: parent
+                                anchors.margins: 24
+                                spacing: 18
+
+                                Label {
+                                    text: root.isEpicEntry ? "Epic Online Services & Anti-Cheat" : "Online & Anti-Cheat Runtimes"
+                                    color: appSettings.accentColor
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
+                                    font.weight: Font.DemiBold
+                                }
+
+                                // Epic Online Auth Toggle (for installed Epic Games)
+                                RowLayout {
+                                    visible: root.isEpicEntry && !root.isUninstalledEpic
+                                    Layout.fillWidth: true
+                                    spacing: 16
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label {
+                                            text: "Epic Online Authentication"
+                                            color: appSettings.textColor
+                                            font.pixelSize: 14
+                                            font.weight: Font.Medium
+                                        }
+                                        Label {
+                                            text: "Pass an Epic Games single-use auth exchange token when launching online"
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    Toggle {
+                                        id: epicOnlineAuthToggle
+                                        checked: !Boolean(root.gameData.epicOfflineMode)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                // EOS Social Overlay Toggle
+                                RowLayout {
+                                    visible: root.isEpicEntry && !root.isUninstalledEpic && !root.isNative
+                                    Layout.fillWidth: true
+                                    spacing: 12
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label {
+                                            text: "EOS Social Overlay"
+                                            color: appSettings.textColor
+                                            font.pixelSize: 14
+                                            font.weight: Font.Medium
+                                        }
+                                        Label {
+                                            text: (uiController && uiController.epicService && uiController.epicService.isInstallingEosOverlay)
+                                                ? ("Installing EOS Overlay… (" + Math.round(Number(uiController.epicService.eosOverlayProgress || 0)) + "%)")
+                                                : ((uiController && uiController.epicService && uiController.epicService.eosOverlayInstalled)
+                                                    ? "Enable Epic Online Services social overlay (friends & invites) — press Shift+F3 in-game to open"
+                                                    : "EOS Overlay is not installed yet — install once to enable Epic social overlay (Shift+F3 in-game)")
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    M3Button {
+                                        visible: Boolean(uiController && uiController.epicService && !uiController.epicService.eosOverlayInstalled)
+                                        enabled: Boolean(uiController && uiController.epicService && !uiController.epicService.isInstallingEosOverlay)
+                                        text: (uiController && uiController.epicService && uiController.epicService.isInstallingEosOverlay) ? "Installing…" : "Install"
+                                        buttonType: "tonal"
+                                        onClicked: if (uiController && uiController.epicService) uiController.epicService.installEosOverlay()
+                                    }
+
+                                    Toggle {
+                                        id: eosOverlayToggle
+                                        objectName: "eosOverlayToggle"
+                                        checked: Boolean(root.gameData.enableEosOverlay)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                // Proton EasyAntiCheat Runtime Toggle
+                                RowLayout {
+                                    visible: !root.isUninstalledEpic && !root.isNative
+                                    Layout.fillWidth: true
+                                    spacing: 12
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label {
+                                            text: "EasyAntiCheat Runtime (EAC)"
+                                            color: appSettings.textColor
+                                            font.pixelSize: 14
+                                            font.weight: Font.Medium
+                                        }
+                                        Label {
+                                            text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingEac)
+                                                ? "Downloading Proton EasyAntiCheat Runtime…"
+                                                : ((uiController && uiController.runnerManager && uiController.runnerManager.eacRuntimeAvailable)
+                                                    ? "Set PROTON_EAC_RUNTIME for online EasyAntiCheat multiplayer titles"
+                                                    : "EAC runtime not found (uses Steam or 1-click install below)")
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    M3Button {
+                                        visible: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.eacRuntimeAvailable)
+                                        enabled: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.isInstallingEac)
+                                        text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingEac) ? "Installing…" : "Install"
+                                        buttonType: "tonal"
+                                        onClicked: if (uiController && uiController.runnerManager) uiController.runnerManager.installAntiCheatRuntime("eac_runtime")
+                                    }
+
+                                    Toggle {
+                                        id: eacRuntimeToggle
+                                        objectName: "eacRuntimeToggle"
+                                        checked: Boolean(root.gameData.enableEacRuntime)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                // Proton BattlEye Runtime Toggle
+                                RowLayout {
+                                    visible: !root.isUninstalledEpic && !root.isNative
+                                    Layout.fillWidth: true
+                                    spacing: 12
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label {
+                                            text: "BattlEye Runtime"
+                                            color: appSettings.textColor
+                                            font.pixelSize: 14
+                                            font.weight: Font.Medium
+                                        }
+                                        Label {
+                                            text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingBattleye)
+                                                ? "Downloading Proton BattlEye Runtime…"
+                                                : ((uiController && uiController.runnerManager && uiController.runnerManager.battleyeRuntimeAvailable)
+                                                    ? "Set PROTON_BATTLEYE_RUNTIME for online BattlEye multiplayer titles"
+                                                    : "BattlEye runtime not found (uses Steam or 1-click install below)")
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    M3Button {
+                                        visible: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.battleyeRuntimeAvailable)
+                                        enabled: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.isInstallingBattleye)
+                                        text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingBattleye) ? "Installing…" : "Install"
+                                        buttonType: "tonal"
+                                        onClicked: if (uiController && uiController.runnerManager) uiController.runnerManager.installAntiCheatRuntime("battleye_runtime")
+                                    }
+
+                                    Toggle {
+                                        id: battleyeRuntimeToggle
+                                        objectName: "battleyeRuntimeToggle"
+                                        checked: Boolean(root.gameData.enableBattlEyeRuntime)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 2: Epic Cloud Saves (Installed Epic Games)
+                        Rectangle {
+                            visible: root.isEpicEntry && !root.isUninstalledEpic
+                            Layout.fillWidth: true
+                            implicitHeight: epicCloudCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
+
+                            ColumnLayout {
+                                id: epicCloudCol
+                                anchors.fill: parent
+                                anchors.margins: 24
+                                spacing: 16
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Label {
+                                        text: "Epic Cloud Saves"
+                                        color: appSettings.accentColor
+                                        font.family: "Rubik"
+                                        font.pixelSize: 17
+                                        font.weight: Font.DemiBold
+                                        Layout.fillWidth: true
+                                    }
+                                    M3Button {
+                                        visible: Boolean(root.gameData.hasUpdate)
+                                        text: "Update Available"
+                                        iconSymbol: "download"
+                                        buttonType: "filled"
+                                        onClicked: if (uiController && uiController.epicService) uiController.epicService.updateGame(root.gameId)
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 16
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label { text: "Enable Epic Cloud Saves"; color: appSettings.textColor; font.pixelSize: 14; font.weight: Font.Medium }
+                                        Label {
+                                            text: root.cloudStatus.localSaveDir
+                                                ? ("Save folder: " + root.cloudStatus.localSaveDir + " (" + (root.cloudStatus.localFileCount || 0) + " files)")
+                                                : "Configure or override the save path below to sync saves with Epic Cloud Storage"
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            elide: Text.ElideMiddle
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+                                    M3Button {
+                                        visible: Boolean(root.cloudStatus.localSaveDir && String(root.cloudStatus.localSaveDir).length > 0)
+                                        text: "Open Folder"
+                                        iconSymbol: "folder_open"
+                                        buttonType: "tonal"
+                                        onClicked: if (uiController && uiController.cloudSaveService) uiController.cloudSaveService.openSaveFolder(root.gameId)
+                                    }
+                                    Toggle {
+                                        id: cloudEnabledToggle
+                                        objectName: "detailCloudEnabledToggle"
+                                        checked: Boolean(root.gameData.epicCloudSavesEnabled)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                RowLayout {
+                                    visible: cloudEnabledToggle.checked
+                                    Layout.fillWidth: true
+                                    spacing: 16
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Label {
+                                            text: "Auto-Sync Before Launch & After Exit"
+                                            color: appSettings.textColor
+                                            font.pixelSize: 14
+                                            font.weight: Font.Medium
+                                            Layout.fillWidth: true
+                                        }
+                                        Label {
+                                            text: "Always pauses on conflict and backs up local saves before overwriting"
+                                            color: appSettings.textSecColor
+                                            font.pixelSize: 12
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+                                    Toggle {
+                                        id: cloudAutoSyncToggle
+                                        Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                                        checked: Boolean(root.gameData.epicAutoSyncCloudSaves)
+                                        onToggled: root.saveAllChanges()
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+                                    Label { text: "Custom Save Folder Override (optional)"; color: appSettings.textColor; font.pixelSize: 13; font.weight: Font.Medium }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        M3TextField {
+                                            id: cloudFolderOverrideField
+                                            Layout.fillWidth: true
+                                            text: root.gameData.epicCloudSaveFolder || ""
+                                            placeholderText: "{AppData}/GameName/Saved"
+                                            onCommit: root.saveAllChanges()
+                                        }
+                                        M3Button {
+                                            text: "Browse…"
+                                            iconSymbol: "folder_open"
+                                            buttonType: "tonal"
+                                            onClicked: {
+                                                const d = uiController.selectFolder("Select Custom Save Folder", cloudFolderOverrideField.text)
+                                                if (d && d.length > 0) {
+                                                    cloudFolderOverrideField.text = d
+                                                    root.saveAllChanges()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    visible: cloudEnabledToggle.checked
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    M3Button {
+                                        text: "Sync Now"
+                                        iconSymbol: "refresh"
+                                        buttonType: "filled"
+                                        onClicked: {
+                                            root.saveAllChanges()
+                                            if (uiController && uiController.cloudSaveService) uiController.cloudSaveService.syncGameSaves(root.gameId, "auto")
+                                        }
+                                    }
+                                    M3Button {
+                                        text: "Force Download"
+                                        iconSymbol: "download"
+                                        buttonType: "tonal"
+                                        onClicked: {
+                                            root.saveAllChanges()
+                                            if (uiController && uiController.cloudSaveService) uiController.cloudSaveService.syncGameSaves(root.gameId, "download")
+                                        }
+                                    }
+                                    M3Button {
+                                        text: "Force Upload"
+                                        buttonType: "tonal"
+                                        onClicked: {
+                                            root.saveAllChanges()
+                                            if (uiController && uiController.cloudSaveService) uiController.cloudSaveService.syncGameSaves(root.gameId, "upload")
+                                        }
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                }
+
+                                // Safety Snapshots Restore Row
+                                RowLayout {
+                                    visible: root.cloudSnapshots && root.cloudSnapshots.length > 0
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    Label {
+                                        text: "Safety Snapshots:"
+                                        color: appSettings.textSecColor
+                                        font.pixelSize: 12
+                                        font.weight: Font.Medium
+                                    }
+                                    StyledCombo {
+                                        id: cloudSnapshotsCombo
+                                        Layout.fillWidth: true
+                                        comboModel: {
+                                            let out = []
+                                            for (let i = 0; i < root.cloudSnapshots.length; ++i) {
+                                                out.push(root.cloudSnapshots[i].fileName + " (" + root.cloudSnapshots[i].sizeFormatted + ")")
+                                            }
+                                            return out
+                                        }
+                                        selectedIndex: 0
+                                    }
+                                    M3Button {
+                                        text: "Restore"
+                                        buttonType: "tonal"
+                                        onClicked: {
+                                            if (uiController && uiController.cloudSaveService && cloudSnapshotsCombo.selectedIndex >= 0 && cloudSnapshotsCombo.selectedIndex < root.cloudSnapshots.length) {
+                                                uiController.cloudSaveService.restoreLocalSnapshot(root.gameId, root.cloudSnapshots[cloudSnapshotsCombo.selectedIndex].path)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 3: Owned DLCs (Installed Epic Games)
+                        Rectangle {
+                            visible: root.isEpicEntry && !root.isUninstalledEpic && root.gameDlcs && root.gameDlcs.length > 0
+                            Layout.fillWidth: true
+                            implicitHeight: epicDlcsCardCol.implicitHeight + 48
+                            radius: 24
+                            color: appSettings.surfaceContainerLow
+
+                            ColumnLayout {
+                                id: epicDlcsCardCol
+                                anchors.fill: parent
+                                anchors.margins: 24
+                                spacing: 12
+
+                                Label {
+                                    text: "Owned DLCs (" + (root.gameDlcs ? root.gameDlcs.length : 0) + ")"
+                                    color: appSettings.accentColor
+                                    font.family: "Rubik"
+                                    font.pixelSize: 17
+                                    font.weight: Font.DemiBold
+                                }
+
+                                Repeater {
+                                    model: root.gameDlcs || []
+                                    delegate: RowLayout {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        spacing: 10
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: String(modelData.title || modelData.dlcAppName || "")
+                                            color: appSettings.textColor
+                                            font.pixelSize: 13
+                                            elide: Text.ElideRight
+                                        }
+                                        M3Button {
+                                            text: modelData.isInstalled ? "Installed ✓" : "Install DLC"
+                                            buttonType: modelData.isInstalled ? "tonal" : "filled"
+                                            enabled: !modelData.isInstalled
+                                            implicitHeight: 30
+                                            onClicked: if (uiController && uiController.epicService) uiController.epicService.installDlc(root.gameId, String(modelData.dlcAppName))
                                         }
                                     }
                                 }

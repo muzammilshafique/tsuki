@@ -1,11 +1,16 @@
 #include "GameManager.h"
+#include "EpicService.h"
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QPointer>
 #include <QRegularExpression>
+#include <QStorageInfo>
+#include <QThreadPool>
 #include <QUrl>
 #include <QUuid>
 #include <algorithm>
@@ -23,6 +28,14 @@ GameListModel::GameListModel(DatabaseManager *db, RunnerManager *runnerMgr,
   connect(m_runnerMgr, &RunnerManager::runnersChanged, this,
           &GameListModel::reload);
   reload();
+}
+
+void GameListModel::setEpicService(EpicService *epicSvc) {
+  if (m_epicService == epicSvc) return;
+  m_epicService = epicSvc;
+  if (m_epicService) {
+    connect(m_epicService, &EpicService::updatesChanged, this, &GameListModel::reload);
+  }
 }
 
 int GameListModel::rowCount(const QModelIndex &parent) const {
@@ -46,18 +59,21 @@ QHash<int, QByteArray> GameListModel::roleNames() const {
           {RunnerTagRole, "runnerTag"},
           {IsPinnedRole, "isPinned"},
           {IsFavoriteRole, "isFavorite"},
+          {IsHiddenRole, "isHidden"},
           {IsRunningRole, "isRunning"},
           {PlaytimeSecondsRole, "playtimeSeconds"},
           {PlaytimeFormattedRole, "playtimeFormatted"},
           {LastPlayedFormattedRole, "lastPlayedFormatted"},
           {CategoryRole, "category"},
+          {CategoriesRole, "categories"},
           {PrefixIdRole, "prefixId"},
           {ExecutablePathRole, "executablePath"},
           {PlatformRole, "platform"},
           {IsNativeRole, "isNative"},
           {SourceRole, "source"},
           {IsEpicRole, "isEpic"},
-          {EpicAppNameRole, "epicAppName"}};
+          {EpicAppNameRole, "epicAppName"},
+          {HasUpdateRole, "hasUpdate"}};
 }
 
 QVariant GameListModel::data(const QModelIndex &index, int role) const {
@@ -68,6 +84,7 @@ QVariant GameListModel::data(const QModelIndex &index, int role) const {
   const GameRecord &g = m_visibleGames.at(index.row());
   const bool running = m_launchPipeline->isGameRunning(g.id);
   const QString runnerTag = m_runnerMgr->runnerTagForId(g.runnerId);
+  const bool hasUpd = (g.isEpic() && m_epicService && m_epicService->hasUpdate(g.epicAppName));
 
   switch (role) {
   case IdRole:
@@ -92,7 +109,9 @@ QVariant GameListModel::data(const QModelIndex &index, int role) const {
   case TypeRole: {
     if (g.isNative())
       return 3;
-    if (runnerTag.contains(QStringLiteral("PROTON")))
+    if (runnerTag.contains(QStringLiteral("PROTON")) ||
+        runnerTag.contains(QStringLiteral("CACHYOS")) ||
+        runnerTag.contains(QStringLiteral("SAREK")))
       return 0;
     if (runnerTag.contains(QStringLiteral("STAGING")) ||
         runnerTag.contains(QStringLiteral("CUSTOM")))
@@ -105,6 +124,8 @@ QVariant GameListModel::data(const QModelIndex &index, int role) const {
     return g.isPinned;
   case IsFavoriteRole:
     return g.isFavorite;
+  case IsHiddenRole:
+    return g.isHidden;
   case IsRunningRole:
     return running;
   case PlaytimeSecondsRole:
@@ -114,7 +135,9 @@ QVariant GameListModel::data(const QModelIndex &index, int role) const {
   case LastPlayedFormattedRole:
     return GameRecord::formatLastPlayed(g.lastPlayedTimestamp);
   case CategoryRole:
-    return QString();
+    return g.categories.isEmpty() ? QString() : g.categories.first();
+  case CategoriesRole:
+    return g.categories;
   case PrefixIdRole:
     return g.prefixId;
   case ExecutablePathRole:
@@ -129,6 +152,8 @@ QVariant GameListModel::data(const QModelIndex &index, int role) const {
     return g.isEpic();
   case EpicAppNameRole:
     return g.epicAppName;
+  case HasUpdateRole:
+    return hasUpd;
   default:
     return QVariant();
   }
@@ -138,8 +163,10 @@ QVariantMap GameListModel::get(int row) const {
   if (row < 0 || row >= m_visibleGames.size())
     return QVariantMap();
   const GameRecord &g = m_visibleGames.at(row);
+  const bool hasUpd = (g.isEpic() && m_epicService && m_epicService->hasUpdate(g.epicAppName));
   return g.toVariantMap(m_launchPipeline->isGameRunning(g.id),
-                        g.isNative() ? QStringLiteral("LINUX") : m_runnerMgr->runnerTagForId(g.runnerId));
+                        g.isNative() ? QStringLiteral("LINUX") : m_runnerMgr->runnerTagForId(g.runnerId),
+                        hasUpd);
 }
 
 void GameListModel::setFilterType(int type) {
@@ -147,6 +174,7 @@ void GameListModel::setFilterType(int type) {
     return;
   m_filterType = type;
   emit filterTypeChanged();
+  emit activeFiltersChanged();
   reload();
 }
 
@@ -163,7 +191,105 @@ void GameListModel::setCategoryFilter(const QString &cat) {
     return;
   m_categoryFilter = cat;
   emit categoryFilterChanged();
+  emit activeFiltersChanged();
   reload();
+}
+
+void GameListModel::setActiveFilters(const QStringList &filters) {
+  QStringList clean;
+  for (const QString &f : filters) {
+    const QString low = f.trimmed().toLower();
+    if (!low.isEmpty() && !clean.contains(low)) {
+      clean.append(low);
+    }
+  }
+  if (m_activeFilters == clean)
+    return;
+  m_activeFilters = clean;
+  emit activeFiltersChanged();
+  reload();
+}
+
+void GameListModel::setActiveCategories(const QStringList &categories) {
+  QStringList clean;
+  for (const QString &c : categories) {
+    const QString trimmed = c.trimmed();
+    if (!trimmed.isEmpty() && !clean.contains(trimmed, Qt::CaseInsensitive)) {
+      clean.append(trimmed);
+    }
+  }
+  if (m_activeCategories == clean)
+    return;
+  m_activeCategories = clean;
+  emit activeCategoriesChanged();
+  emit activeFiltersChanged();
+  reload();
+}
+
+void GameListModel::toggleFilter(const QString &filterKey) {
+  const QString low = filterKey.trimmed().toLower();
+  if (low.isEmpty()) return;
+  QStringList next = m_activeFilters;
+  if (next.contains(low)) {
+    next.removeAll(low);
+  } else {
+    next.append(low);
+  }
+  if (m_filterType != -1) {
+    m_filterType = -1;
+    emit filterTypeChanged();
+  }
+  setActiveFilters(next);
+}
+
+void GameListModel::toggleCategory(const QString &categoryName) {
+  const QString trimmed = categoryName.trimmed();
+  if (trimmed.isEmpty()) return;
+  QStringList next = m_activeCategories;
+  int existingIdx = -1;
+  for (int i = 0; i < next.size(); ++i) {
+    if (next.at(i).compare(trimmed, Qt::CaseInsensitive) == 0) {
+      existingIdx = i;
+      break;
+    }
+  }
+  if (existingIdx >= 0) {
+    next.removeAt(existingIdx);
+  } else {
+    next.append(trimmed);
+  }
+  if (!m_categoryFilter.isEmpty()) {
+    m_categoryFilter.clear();
+    emit categoryFilterChanged();
+  }
+  setActiveCategories(next);
+}
+
+void GameListModel::clearFilters() {
+  bool changed = false;
+  if (m_filterType != -1) {
+    m_filterType = -1;
+    emit filterTypeChanged();
+    changed = true;
+  }
+  if (!m_categoryFilter.isEmpty()) {
+    m_categoryFilter.clear();
+    emit categoryFilterChanged();
+    changed = true;
+  }
+  if (!m_activeFilters.isEmpty()) {
+    m_activeFilters.clear();
+    changed = true;
+  }
+  if (!m_activeCategories.isEmpty()) {
+    m_activeCategories.clear();
+    emit activeCategoriesChanged();
+    changed = true;
+  }
+  if (changed) {
+    emit activeFiltersChanged();
+    reload();
+  }
 }
 
 void GameListModel::setSearchQuery(const QString &query) {
@@ -180,18 +306,68 @@ void GameListModel::reload() {
   m_visibleGames.clear();
 
   const QString q = m_searchQuery.toLower();
+  const QString catFilter = m_categoryFilter.trimmed();
+  const bool fLinux = m_activeFilters.contains(QStringLiteral("linux"));
+  const bool fWindows = m_activeFilters.contains(QStringLiteral("windows"));
+  const bool fEpic = m_activeFilters.contains(QStringLiteral("epic"));
+  const bool fLocal = m_activeFilters.contains(QStringLiteral("local"));
+  const bool fFavourite = m_activeFilters.contains(QStringLiteral("favourite"));
+
   for (const GameRecord &g : all) {
     const QString rTag = m_runnerMgr->runnerTagForId(g.runnerId);
     const bool running = m_launchPipeline->isGameRunning(g.id);
 
-    if (m_filterType == 0 && (g.isNative() || !rTag.contains(QStringLiteral("PROTON"))))
+    // Filter 7 explicitly shows hidden games; all other filters exclude hidden games
+    if (m_filterType == 7) {
+      if (!g.isHidden) continue;
+    } else {
+      if (g.isHidden) continue;
+    }
+
+    const bool isProtonTag = rTag.contains(QStringLiteral("PROTON")) ||
+                             rTag.contains(QStringLiteral("CACHYOS")) ||
+                             rTag.contains(QStringLiteral("SAREK"));
+    if (m_filterType == 0 && (g.isNative() || !isProtonTag))
       continue;
-    if (m_filterType == 1 && (g.isNative() || rTag.contains(QStringLiteral("PROTON"))))
+    if (m_filterType == 1 && (g.isNative() || isProtonTag))
       continue;
     if (m_filterType == 2 && !running)
       continue;
     if (m_filterType == 3 && !g.isFavorite)
       continue;
+    if (m_filterType == 4 && !g.isNative())
+      continue;
+    if (m_filterType == 5 && !g.isEpic())
+      continue;
+    if (m_filterType == 6 && g.isEpic())
+      continue;
+
+    // Multi-select filter pills (AND across groups, OR within Platform / Source groups)
+    if (fLinux || fWindows) {
+      const bool platMatch = (fLinux && g.isNative()) || (fWindows && !g.isNative());
+      if (!platMatch) continue;
+    }
+    if (fEpic || fLocal) {
+      const bool srcMatch = (fEpic && g.isEpic()) || (fLocal && !g.isEpic());
+      if (!srcMatch) continue;
+    }
+    if (fFavourite && !g.isFavorite) {
+      continue;
+    }
+
+    if (!catFilter.isEmpty() && !g.categories.contains(catFilter, Qt::CaseInsensitive))
+      continue;
+
+    if (!m_activeCategories.isEmpty()) {
+      bool catMatch = false;
+      for (const QString &ac : m_activeCategories) {
+        if (g.categories.contains(ac, Qt::CaseInsensitive)) {
+          catMatch = true;
+          break;
+        }
+      }
+      if (!catMatch) continue;
+    }
 
     if (!q.isEmpty() && !g.title.toLower().contains(q) &&
         !g.executablePath.toLower().contains(q)) {
@@ -245,7 +421,16 @@ GameManager::GameManager(DatabaseManager *db, AppSettings *settings,
   }
 }
 
-QStringList GameManager::categories() const { return QStringList(); }
+QStringList GameManager::categories() const {
+  return m_db ? m_db->getAllCollections() : QStringList();
+}
+
+void GameManager::setEpicService(EpicService *epicSvc) {
+  m_epicService = epicSvc;
+  if (m_model) {
+    m_model->setEpicService(epicSvc);
+  }
+}
 
 QString GameManager::detectPlatform(const QString &path) const {
   QString clean = path.trimmed();
@@ -663,6 +848,42 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
           g.esyncState = updates.value(QStringLiteral("esyncState")).toInt();
         if (updates.contains(QStringLiteral("fsyncState")))
           g.fsyncState = updates.value(QStringLiteral("fsyncState")).toInt();
+        if (updates.contains(QStringLiteral("ntsyncState")))
+          g.ntsyncState = updates.value(QStringLiteral("ntsyncState")).toInt();
+        if (updates.contains(QStringLiteral("umuState")))
+          g.umuState = updates.value(QStringLiteral("umuState")).toInt();
+        if (updates.contains(QStringLiteral("umuGameId")))
+          g.umuGameId = updates.value(QStringLiteral("umuGameId")).toString().trimmed();
+        if (updates.contains(QStringLiteral("disableProtonfixes")))
+          g.disableProtonfixes = updates.value(QStringLiteral("disableProtonfixes")).toBool();
+        if (updates.contains(QStringLiteral("disableMonoGecko")))
+          g.disableMonoGecko = updates.value(QStringLiteral("disableMonoGecko")).toBool();
+        if (updates.contains(QStringLiteral("waylandDriverState")))
+          g.waylandDriverState = updates.value(QStringLiteral("waylandDriverState")).toInt();
+        if (updates.contains(QStringLiteral("hdrState")))
+          g.hdrState = updates.value(QStringLiteral("hdrState")).toInt();
+        if (updates.contains(QStringLiteral("nvapiState")))
+          g.nvapiState = updates.value(QStringLiteral("nvapiState")).toInt();
+        if (updates.contains(QStringLiteral("fsrState")))
+          g.fsrState = updates.value(QStringLiteral("fsrState")).toInt();
+        if (updates.contains(QStringLiteral("fsrStrength")))
+          g.fsrStrength = qBound(0, updates.value(QStringLiteral("fsrStrength")).toInt(), 5);
+        if (updates.contains(QStringLiteral("gpuSelection")))
+          g.gpuSelection = updates.value(QStringLiteral("gpuSelection")).toString().trimmed();
+        if (updates.contains(QStringLiteral("isHidden")))
+          g.isHidden = updates.value(QStringLiteral("isHidden")).toBool();
+        if (updates.contains(QStringLiteral("categories")))
+          g.categories = updates.value(QStringLiteral("categories")).toStringList();
+        if (updates.contains(QStringLiteral("epicCloudSavesEnabled")))
+          g.epicCloudSavesEnabled = updates.value(QStringLiteral("epicCloudSavesEnabled")).toBool();
+        if (updates.contains(QStringLiteral("epicAutoSyncCloudSaves")))
+          g.epicAutoSyncCloudSaves = updates.value(QStringLiteral("epicAutoSyncCloudSaves")).toBool();
+        if (updates.contains(QStringLiteral("epicCloudSaveFolder")))
+          g.epicCloudSaveFolder = cleanPath(updates.value(QStringLiteral("epicCloudSaveFolder")).toString());
+        if (updates.contains(QStringLiteral("epicSelectedInstallTags")))
+          g.epicSelectedInstallTags = updates.value(QStringLiteral("epicSelectedInstallTags")).toStringList();
+        if (updates.contains(QStringLiteral("epicSelectedDlcs")))
+          g.epicSelectedDlcs = updates.value(QStringLiteral("epicSelectedDlcs")).toStringList();
         if (updates.contains(QStringLiteral("dxvkHud")))
           g.dxvkHud = updates.value(QStringLiteral("dxvkHud")).toString();
         if (updates.contains(QStringLiteral("virtualDesktop")))
@@ -731,7 +952,26 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
             g.runnerId == orig.runnerId && g.prefixId == orig.prefixId &&
             g.dxvkState == orig.dxvkState && g.vkd3dState == orig.vkd3dState &&
             g.esyncState == orig.esyncState &&
-            g.fsyncState == orig.fsyncState && g.dxvkHud == orig.dxvkHud &&
+            g.fsyncState == orig.fsyncState &&
+            g.ntsyncState == orig.ntsyncState &&
+            g.umuState == orig.umuState &&
+            g.umuGameId == orig.umuGameId &&
+            g.disableProtonfixes == orig.disableProtonfixes &&
+            g.disableMonoGecko == orig.disableMonoGecko &&
+            g.waylandDriverState == orig.waylandDriverState &&
+            g.hdrState == orig.hdrState &&
+            g.nvapiState == orig.nvapiState &&
+            g.fsrState == orig.fsrState &&
+            g.fsrStrength == orig.fsrStrength &&
+            g.gpuSelection == orig.gpuSelection &&
+            g.isHidden == orig.isHidden &&
+            g.categories == orig.categories &&
+            g.epicCloudSavesEnabled == orig.epicCloudSavesEnabled &&
+            g.epicAutoSyncCloudSaves == orig.epicAutoSyncCloudSaves &&
+            g.epicCloudSaveFolder == orig.epicCloudSaveFolder &&
+            g.epicSelectedInstallTags == orig.epicSelectedInstallTags &&
+            g.epicSelectedDlcs == orig.epicSelectedDlcs &&
+            g.dxvkHud == orig.dxvkHud &&
             g.virtualDesktop == orig.virtualDesktop &&
             g.virtualDesktopResolution == orig.virtualDesktopResolution &&
             g.preLaunchScript == orig.preLaunchScript &&
@@ -987,6 +1227,289 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         emit gamesChanged();
       }
 
+      void GameManager::toggleHidden(const QString &gameId) {
+        auto opt = m_db->getGame(gameId);
+        if (!opt.has_value())
+          return;
+        GameRecord g = *opt;
+        g.isHidden = !g.isHidden;
+        m_db->saveGame(g);
+        m_model->reload();
+        emit gamesChanged();
+        emit gameOperationStatus(
+            g.isHidden
+                ? QStringLiteral("Hidden '%1' from main library.").arg(g.title)
+                : QStringLiteral("Restored '%1' to library.").arg(g.title),
+            false);
+      }
+
+      bool GameManager::createCollection(const QString &name) {
+        const bool ok = m_db && m_db->createCollection(name);
+        if (ok) {
+          emit gamesChanged();
+          emit gameOperationStatus(
+              QStringLiteral("Created collection '%1'.").arg(name.trimmed()), false);
+        }
+        return ok;
+      }
+
+      bool GameManager::renameCollection(const QString &oldName, const QString &newName) {
+        const bool ok = m_db && m_db->renameCollection(oldName, newName);
+        if (ok) {
+          if (m_model && m_model->categoryFilter() == oldName.trimmed()) {
+            m_model->setCategoryFilter(newName.trimmed());
+          } else if (m_model) {
+            m_model->reload();
+          }
+          emit gamesChanged();
+        }
+        return ok;
+      }
+
+      bool GameManager::deleteCollection(const QString &name) {
+        const bool ok = m_db && m_db->deleteCollection(name);
+        if (ok) {
+          if (m_model && m_model->categoryFilter() == name.trimmed()) {
+            m_model->setCategoryFilter(QString());
+          } else if (m_model) {
+            m_model->reload();
+          }
+          emit gamesChanged();
+        }
+        return ok;
+      }
+
+      bool GameManager::setGameCategories(const QString &gameId, const QStringList &categories) {
+        auto opt = m_db->getGame(gameId);
+        if (!opt.has_value()) return false;
+        GameRecord g = *opt;
+        QStringList clean;
+        for (const QString &c : categories) {
+          const QString t = c.trimmed();
+          if (!t.isEmpty() && !clean.contains(t, Qt::CaseInsensitive)) {
+            clean.append(t);
+            m_db->createCollection(t);
+          }
+        }
+        g.categories = clean;
+        const bool ok = m_db->saveGame(g);
+        if (ok) {
+          m_model->reload();
+          emit gamesChanged();
+        }
+        return ok;
+      }
+
+      bool GameManager::addGameToCollection(const QString &gameId, const QString &collectionName) {
+        auto opt = m_db->getGame(gameId);
+        if (!opt.has_value() || collectionName.trimmed().isEmpty()) return false;
+        QStringList cats = opt->categories;
+        const QString clean = collectionName.trimmed();
+        if (!cats.contains(clean, Qt::CaseInsensitive)) {
+          cats.append(clean);
+        }
+        return setGameCategories(gameId, cats);
+      }
+
+      bool GameManager::removeGameFromCollection(const QString &gameId, const QString &collectionName) {
+        auto opt = m_db->getGame(gameId);
+        if (!opt.has_value()) return false;
+        QStringList cats;
+        for (const QString &c : opt->categories) {
+          if (c.compare(collectionName.trimmed(), Qt::CaseInsensitive) != 0) {
+            cats.append(c);
+          }
+        }
+        return setGameCategories(gameId, cats);
+      }
+
+      void GameManager::relocateGame(const QString &gameId, const QString &targetParentDir) {
+        if (m_isRelocating) {
+          emit gameOperationStatus(QStringLiteral("Another game relocation is already in progress."), true);
+          return;
+        }
+        auto opt = m_db->getGame(gameId);
+        if (!opt.has_value()) return;
+        const GameRecord g = *opt;
+        if (m_launchPipeline && m_launchPipeline->isGameRunning(gameId)) {
+          emit gameOperationStatus(QStringLiteral("Stop '%1' before moving its files.").arg(g.title), true);
+          return;
+        }
+
+        QString cleanParent = targetParentDir.trimmed();
+        if (cleanParent.startsWith(QStringLiteral("file://"))) {
+          cleanParent = QUrl(cleanParent).toLocalFile();
+        }
+        cleanParent = QDir::cleanPath(cleanParent);
+        if (cleanParent.isEmpty()) return;
+
+        QString srcDir;
+        if (!g.epicInstallDir.isEmpty()) {
+          srcDir = QDir::cleanPath(g.epicInstallDir);
+        } else {
+          const QString exeDir = QDir::cleanPath(QFileInfo(g.executablePath).absolutePath());
+          const QString workDir = QDir::cleanPath(g.workingDirectory);
+          const QString homeClean = QDir::cleanPath(QDir::homePath());
+          if (!workDir.isEmpty() && workDir != QStringLiteral("/") && workDir != homeClean &&
+              (exeDir == workDir || exeDir.startsWith(workDir + QLatin1Char('/')))) {
+            srcDir = workDir;
+          } else {
+            srcDir = exeDir;
+          }
+        }
+        if (srcDir.isEmpty() || !QDir(srcDir).exists()) {
+          emit gameOperationStatus(QStringLiteral("Source game folder does not exist."), true);
+          emit gameRelocationFinished(gameId, false, QString());
+          return;
+        }
+
+        const QString folderName = QFileInfo(srcDir).fileName();
+        const QString dstDir = QDir::cleanPath(QDir(cleanParent).filePath(folderName));
+        if (dstDir == srcDir || dstDir.startsWith(srcDir + QLatin1Char('/'))) {
+          emit gameOperationStatus(QStringLiteral("Choose a different destination folder."), true);
+          emit gameRelocationFinished(gameId, false, QString());
+          return;
+        }
+        if (QFileInfo::exists(dstDir)) {
+          emit gameOperationStatus(QStringLiteral("Destination folder already exists: %1").arg(dstDir), true);
+          emit gameRelocationFinished(gameId, false, QString());
+          return;
+        }
+
+        m_isRelocating = true;
+        m_relocationProgress = 0.0;
+        emit relocatingChanged();
+        emit gameOperationStatus(QStringLiteral("Moving '%1' to %2…").arg(g.title, dstDir), false);
+
+        QPointer<GameManager> self(this);
+        QThreadPool::globalInstance()->start([self, gameId, g, srcDir, dstDir, cleanParent]() {
+          QDir().mkpath(cleanParent);
+          bool ok = false;
+          QString errMsg;
+
+          const QStorageInfo srcVol(srcDir);
+          const QStorageInfo dstVol(cleanParent);
+          const bool sameFs = srcVol.isValid() && dstVol.isValid() &&
+                              !srcVol.device().isEmpty() && srcVol.device() == dstVol.device();
+
+          if (sameFs && QDir().rename(srcDir, dstDir)) {
+            ok = true;
+          } else {
+            // Cross-filesystem streamed copy + cleanup
+            qint64 totalBytes = 0;
+            struct FileItem { QString rel; QString abs; qint64 size; QFileDevice::Permissions perms; bool isLink; QString linkTarget; };
+            QList<FileItem> items;
+            QDirIterator it(srcDir, QDir::Files | QDir::System | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+            while (it.hasNext()) {
+              it.next();
+              const QFileInfo fi = it.fileInfo();
+              FileItem item;
+              item.abs = fi.absoluteFilePath();
+              item.rel = QDir(srcDir).relativeFilePath(item.abs);
+              item.isLink = fi.isSymLink();
+              item.linkTarget = item.isLink ? fi.symLinkTarget() : QString();
+              item.size = item.isLink ? 0 : fi.size();
+              item.perms = fi.permissions();
+              totalBytes += item.size;
+              items.append(item);
+            }
+
+            const qint64 freeBytes = QStorageInfo(cleanParent).bytesAvailable();
+            if (freeBytes >= 0 && totalBytes > freeBytes) {
+              errMsg = QStringLiteral("Insufficient free space on destination drive.");
+            } else if (!QDir().mkpath(dstDir)) {
+              errMsg = QStringLiteral("Failed to create destination folder.");
+            } else {
+              qint64 copied = 0;
+              QByteArray buf(1024 * 1024, '\0');
+              ok = true;
+              for (const FileItem &item : items) {
+                const QString dstFile = QDir(dstDir).filePath(item.rel);
+                QDir().mkpath(QFileInfo(dstFile).absolutePath());
+                if (item.isLink) {
+                  QFile::remove(dstFile);
+                  QFile::link(item.linkTarget, dstFile);
+                  continue;
+                }
+                QFile sf(item.abs);
+                QFile df(dstFile);
+                if (!sf.open(QIODevice::ReadOnly) || !df.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                  ok = false;
+                  errMsg = QStringLiteral("I/O error while moving %1").arg(item.rel);
+                  break;
+                }
+                while (!sf.atEnd()) {
+                  const qint64 n = sf.read(buf.data(), buf.size());
+                  if (n <= 0) break;
+                  if (df.write(buf.constData(), n) != n) {
+                    ok = false;
+                    errMsg = QStringLiteral("Write error while moving %1").arg(item.rel);
+                    break;
+                  }
+                  copied += n;
+                }
+                sf.close();
+                df.close();
+                if (!ok) break;
+                QFile::setPermissions(dstFile, item.perms);
+                const double pct = totalBytes > 0 ? (100.0 * static_cast<double>(copied) / static_cast<double>(totalBytes)) : 100.0;
+                if (self) {
+                  QMetaObject::invokeMethod(self, [self, pct]() {
+                    if (!self) return;
+                    self->m_relocationProgress = pct;
+                    emit self->relocatingChanged();
+                  }, Qt::QueuedConnection);
+                }
+              }
+              if (ok) {
+                const QString homeClean = QDir::cleanPath(QDir::homePath());
+                if (srcDir != QStringLiteral("/") && srcDir != homeClean) {
+                  QDir(srcDir).removeRecursively();
+                }
+              } else {
+                QDir(dstDir).removeRecursively();
+              }
+            }
+          }
+
+          if (self) {
+            QMetaObject::invokeMethod(self, [self, gameId, srcDir, dstDir, ok, errMsg]() {
+              if (!self) return;
+              self->m_isRelocating = false;
+              self->m_relocationProgress = ok ? 100.0 : 0.0;
+              emit self->relocatingChanged();
+
+              if (ok) {
+                if (auto fresh = self->m_db->getGame(gameId); fresh.has_value()) {
+                  GameRecord upd = *fresh;
+                  auto remap = [&srcDir, &dstDir](const QString &p) {
+                    const QString clean = QDir::cleanPath(p);
+                    if (clean == srcDir) return dstDir;
+                    if (clean.startsWith(srcDir + QLatin1Char('/'))) {
+                      return dstDir + clean.mid(srcDir.length());
+                    }
+                    return p;
+                  };
+                  upd.executablePath = remap(upd.executablePath);
+                  upd.workingDirectory = remap(upd.workingDirectory);
+                  if (!upd.epicInstallDir.isEmpty()) {
+                    upd.epicInstallDir = dstDir;
+                  }
+                  self->m_db->saveGame(upd);
+                  self->m_model->reload();
+                  emit self->gamesChanged();
+                  emit self->gameOperationStatus(QStringLiteral("Moved '%1' to %2.").arg(upd.title, dstDir), false);
+                }
+              } else {
+                emit self->gameOperationStatus(
+                    errMsg.isEmpty() ? QStringLiteral("Failed to move game folder.") : errMsg, true);
+              }
+              emit self->gameRelocationFinished(gameId, ok, ok ? dstDir : QString());
+            }, Qt::QueuedConnection);
+          }
+        });
+      }
+
       void GameManager::syncXboxEmulationToAllGames(bool enabled) {
         if (m_db) {
           m_db->setAllGamesXboxEmulationState(enabled);
@@ -1001,8 +1524,10 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         auto opt = m_db->getGame(gameId);
         if (!opt.has_value())
           return QVariantMap();
+        const bool hasUpd = (opt->isEpic() && m_epicService && m_epicService->hasUpdate(opt->epicAppName));
         return opt->toVariantMap(m_launchPipeline->isGameRunning(gameId),
-                                 opt->isNative() ? QStringLiteral("LINUX") : m_runnerMgr->runnerTagForId(opt->runnerId));
+                                 opt->isNative() ? QStringLiteral("LINUX") : m_runnerMgr->runnerTagForId(opt->runnerId),
+                                 hasUpd);
       }
 
       bool GameManager::createDesktopShortcut(const QString &gameId,
@@ -1012,9 +1537,25 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
           return false;
         const GameRecord g = *opt;
 
-        QString appBin = QCoreApplication::applicationFilePath();
+        // Prefer APPIMAGE env var inside AppImages because applicationFilePath() points to an ephemeral /tmp/.mount_* path
+        QString appBin;
+        const QString appImagePath = qEnvironmentVariable("APPIMAGE").trimmed();
+        if (!appImagePath.isEmpty() && QFileInfo::exists(appImagePath)) {
+          appBin = QFileInfo(appImagePath).absoluteFilePath();
+        } else {
+          appBin = QCoreApplication::applicationFilePath();
+        }
         if (appBin.isEmpty())
           appBin = QStringLiteral("tsuki");
+
+        // Escape Desktop Entry Exec double-quoted special characters (\, ", $, `)
+        auto escapeDesktopArg = [](QString s) {
+          s.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
+          s.replace(QLatin1Char('"'), QStringLiteral("\\\""));
+          s.replace(QLatin1Char('$'), QStringLiteral("\\$"));
+          s.replace(QLatin1Char('`'), QStringLiteral("\\`"));
+          return s;
+        };
 
         const QString iconPath =
             !g.iconPath.isEmpty()
@@ -1028,13 +1569,13 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
                            "Type=Application\n"
                            "Name=%1\n"
                            "Comment=Launch %1 via Tsuki Game Launcher\n"
-                           "Exec=\"%2\" --launch %3\n"
+                           "Exec=\"%2\" --launch \"%3\"\n"
                            "Path=%4\n"
                            "Icon=%5\n"
                            "Terminal=false\n"
                            "Categories=Game;\n"
                            "StartupNotify=true\n")
-                .arg(g.title, appBin, g.id, g.workingDirectory, iconPath);
+                .arg(g.title, escapeDesktopArg(appBin), escapeDesktopArg(g.id), g.workingDirectory, iconPath);
 
         QString safeFile = g.title;
         safeFile.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_-]")),

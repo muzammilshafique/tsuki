@@ -1,8 +1,10 @@
 #include "../src/core/AppSettings.h"
 #include "../src/core/DatabaseManager.h"
+#include "../src/core/SecretStore.h"
 #include "../src/services/ControllerManager.h"
 #include "../src/services/DiagnosticsManager.h"
 #include "../src/services/DownloadManager.h"
+#include "../src/services/EpicCloudSaveService.h"
 #include "../src/services/EpicManifestParser.h"
 #include "../src/services/EpicService.h"
 #include "../src/services/GameManager.h"
@@ -10,6 +12,7 @@
 #include "../src/services/PrefixManager.h"
 #include "../src/services/RunnerManager.h"
 #include "../src/services/SteamGridDbService.h"
+#include "../src/services/UmuIdResolver.h"
 #include "../src/services/WinetricksManager.h"
 #include "../src/ui/UiController.h"
 #include <QCoreApplication>
@@ -307,6 +310,14 @@ private slots:
     prefix.path = tmpDir.filePath("prefixes/ER");
     prefix.arch = "win64";
 
+    const bool prevUmuDefault = settings.umuDefault();
+    const bool prevXboxDefault = settings.xboxEmulationDefault();
+    auto restoreStandalone = qScopeGuard([&]() {
+      settings.setUmuDefault(prevUmuDefault);
+      settings.setXboxEmulationDefault(prevXboxDefault);
+    });
+    settings.setUmuDefault(false);
+
     const LaunchPlan plan =
         pipeline.buildLaunchPlan(game, protonRunner, prefix);
     QVERIFY(plan.arguments.contains("waitforexitandrun"));
@@ -439,6 +450,9 @@ private slots:
 
     // Test per-game Xbox emulation setting independence and global
     // synchronization
+    const bool prevXbox = settings.xboxEmulationDefault();
+    auto restoreXbox = qScopeGuard([&]() { settings.setXboxEmulationDefault(prevXbox); });
+    settings.setXboxEmulationDefault(false);
     QString g1 = gm.addGame("Game 1", "/games/g1.exe");
     QString g2 = gm.addGame("Game 2", "/games/g2.exe");
     QCOMPARE(db.getGame(g1)->xboxEmulationState, 0);
@@ -2089,6 +2103,10 @@ private slots:
     prefix.path = tmpDir.filePath(QStringLiteral("pfx"));
     prefix.arch = QStringLiteral("win64");
 
+    const bool prevGsUmu = settings.umuDefault();
+    auto restoreGsUmu = qScopeGuard([&]() { settings.setUmuDefault(prevGsUmu); });
+    settings.setUmuDefault(false);
+
     const LaunchPlan gsPlan =
         pipeline.buildLaunchPlan(*winGameOpt, protonRunner, prefix);
     QVERIFY(gsPlan.usesGamescope);
@@ -3099,7 +3117,7 @@ private slots:
     QTest::qWait(30);
 
     const QVariantList tabMeta = settingsObj->property("tabMeta").toList();
-    QCOMPARE(tabMeta.size(), 6);
+    QCOMPARE(tabMeta.size(), 9);
     QCOMPARE(settingsObj->property("activeTab").toInt(), 0);
     QCOMPARE(settingsObj->property("railCollapsed").toBool(), false);
     settingsObj->setProperty("railCollapsed", true);
@@ -3124,7 +3142,7 @@ private slots:
     // verify zero layout/anchor loops AND zero truncated setting tile labels
     for (const QSizeF &sz : {QSizeF(1280, 820), QSizeF(960, 540)}) {
       settingsItem->setSize(sz);
-      for (int t = 0; t < 6; ++t) {
+      for (int t = 0; t < 9; ++t) {
         QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "selectTab",
                                           Q_ARG(QVariant, QVariant(t))));
         QCoreApplication::processEvents();
@@ -3170,7 +3188,7 @@ private slots:
     QCOMPARE(ghRepoBtn->property("text").toString(),
              QStringLiteral("Repository"));
 
-    // Bracket keys [ / ] cycle tabs smoothly (including wrap-around 0 -> 5)
+    // Bracket keys [ / ] cycle tabs smoothly (including wrap-around 0 -> 8)
     settingsItem->forceActiveFocus();
     QCoreApplication::processEvents();
     QTest::keyClick(&win, Qt::Key_BracketRight);
@@ -3181,22 +3199,22 @@ private slots:
     QCOMPARE(settingsObj->property("activeTab").toInt(), 0);
     QTest::keyClick(&win, Qt::Key_BracketLeft);
     QCoreApplication::processEvents();
-    QCOMPARE(settingsObj->property("activeTab").toInt(), 5);
+    QCOMPARE(settingsObj->property("activeTab").toInt(), 8);
     QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "selectTab",
                                       Q_ARG(QVariant, QVariant(0))));
     QCoreApplication::processEvents();
 
-    // Verify catalog indexing across all 6 tabs and preserved objectNames
+    // Verify catalog indexing across all 9 tabs and preserved objectNames
     QVERIFY(QMetaObject::invokeMethod(settingsObj.get(), "buildIndex"));
     const QVariantList catalog =
         settingsObj->property("settingsCatalog").toList();
-    QVERIFY(catalog.size() >= 15);
+    QVERIFY(catalog.size() >= 20);
     QSet<int> indexedTabs;
     for (const QVariant &entryVar : catalog) {
       indexedTabs.insert(
           entryVar.toMap().value(QStringLiteral("tabIdx")).toInt());
     }
-    QCOMPARE(indexedTabs.size(), 6);
+    QCOMPARE(indexedTabs.size(), 9);
 
     QVERIFY(settingsObj->findChild<QQuickItem *>(
                 QStringLiteral("gamescopeDefaultRow")) != nullptr);
@@ -4609,8 +4627,8 @@ private slots:
     homeItem->setSize(QSizeF(1280, 820));
     QCoreApplication::processEvents();
 
-    // Cycle through all 6 tab positions (library, favs, epic, prefixes, runners, diagnostics, back to library)
-    for (int step = 0; step < 6; ++step) {
+    // Cycle through all 7 tab positions (library, favs, epic, downloads, prefixes, runners, diagnostics, back to library)
+    for (int step = 0; step < 7; ++step) {
       QVERIFY(QMetaObject::invokeMethod(homeObj.get(), "cycleTab",
                                         Q_ARG(QVariant, QVariant(1))));
       QCoreApplication::processEvents();
@@ -4667,6 +4685,1030 @@ private slots:
 
     QVERIFY2(qmlErrors.isEmpty(),
              qPrintable(qmlErrors.join(QLatin1Char('\n'))));
+  }
+
+  void testAppImageShortcutAndDllOverrideOptIn() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    DatabaseManager db(tmpDir.filePath("quickwins.db"));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    ControllerManager ctrlMgr(&db, &settings);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
+    SteamGridDbService sgdb(&settings, &dl);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+
+    // 1. AppImage desktop shortcut uses APPIMAGE env var and quotes spaces
+    const QString fakeHome = tmpDir.filePath("fakehome");
+    QDir().mkpath(fakeHome + "/.local/share/applications");
+    const QByteArray oldHome = qgetenv("HOME");
+    const QByteArray oldXdgData = qgetenv("XDG_DATA_HOME");
+    const QByteArray oldAppImage = qgetenv("APPIMAGE");
+    const QString fakeAppImagePath =
+        tmpDir.filePath("My Apps/Tsuki-x86_64.AppImage");
+    QDir().mkpath(QFileInfo(fakeAppImagePath).absolutePath());
+    {
+      QFile f(fakeAppImagePath);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write("#!/bin/sh\n");
+    }
+    qputenv("HOME", fakeHome.toUtf8());
+    qputenv("XDG_DATA_HOME", (fakeHome + "/.local/share").toUtf8());
+    qputenv("APPIMAGE", fakeAppImagePath.toUtf8());
+    auto restoreEnv = qScopeGuard([&]() {
+      qputenv("HOME", oldHome);
+      if (oldXdgData.isEmpty()) qunsetenv("XDG_DATA_HOME");
+      else qputenv("XDG_DATA_HOME", oldXdgData);
+      if (oldAppImage.isEmpty()) qunsetenv("APPIMAGE");
+      else qputenv("APPIMAGE", oldAppImage);
+    });
+
+    const QString gid = gm.addNativeGame("Shortcut Test", "/bin/true");
+    QVERIFY(!gid.isEmpty());
+    QVERIFY(gm.createDesktopShortcut(gid, false));
+    const QString desktopPath =
+        fakeHome + "/.local/share/applications/tsuki-shortcut_test.desktop";
+    QFile df(desktopPath);
+    QVERIFY(df.open(QIODevice::ReadOnly));
+    const QString desktopContent = QString::fromUtf8(df.readAll());
+    QVERIFY2(desktopContent.contains(QStringLiteral("Exec=\"") + fakeAppImagePath +
+                                     QStringLiteral("\" --launch \"") + gid +
+                                     QStringLiteral("\"")),
+             qPrintable(desktopContent));
+
+    // 2. mscoree,mshtml= is NOT forced by default, opt-in when disableMonoGecko=true
+    const bool prevUmu = settings.umuDefault();
+    auto restoreUmu = qScopeGuard([&]() { settings.setUmuDefault(prevUmu); });
+    settings.setUmuDefault(false);
+
+    GameRecord game;
+    game.id = "g-mono";
+    game.title = "Unity Game";
+    game.executablePath = "/games/unity/game.exe";
+    game.dxvkState = 0;
+    game.vkd3dState = 0;
+
+    RunnerRecord wineRunner;
+    wineRunner.id = "r-wine";
+    wineRunner.name = "System Wine";
+    wineRunner.type = "wine";
+    wineRunner.binaryPath = "/usr/bin/wine";
+
+    PrefixRecord pfx;
+    pfx.id = "p-mono";
+    pfx.path = tmpDir.filePath("pfx-mono");
+    pfx.arch = "win64";
+
+    LaunchPlan defaultPlan = pipeline.buildLaunchPlan(game, wineRunner, pfx);
+    QVERIFY(!defaultPlan.environment.value("WINEDLLOVERRIDES")
+                 .contains("mscoree="));
+    QVERIFY(!defaultPlan.environment.value("WINEDLLOVERRIDES")
+                 .contains("mshtml="));
+
+    game.disableMonoGecko = true;
+    LaunchPlan disabledPlan = pipeline.buildLaunchPlan(game, wineRunner, pfx);
+    QVERIFY(disabledPlan.environment.value("WINEDLLOVERRIDES")
+                .contains("mscoree="));
+    QVERIFY(disabledPlan.environment.value("WINEDLLOVERRIDES")
+                .contains("mshtml="));
+
+    // Explicit user override of mscoree must not be clobbered
+    game.dllOverrides["mscoree"] = "n";
+    LaunchPlan explicitPlan = pipeline.buildLaunchPlan(game, wineRunner, pfx);
+    QVERIFY(explicitPlan.environment.value("WINEDLLOVERRIDES")
+                .contains("mscoree=n"));
+    QVERIFY(!explicitPlan.environment.value("WINEDLLOVERRIDES")
+                 .contains("mscoree=;"));
+    QVERIFY(explicitPlan.environment.value("WINEDLLOVERRIDES")
+                .contains("mshtml="));
+  }
+
+  void testCpuV3RunnerCategoriesAndSha512Verification() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+
+    // Expanded runner categories are recognized as Proton
+    RunnerRecord sarek;
+    sarek.type = QStringLiteral("proton-sarek");
+    QVERIFY(sarek.isProton());
+    RunnerRecord em;
+    em.type = QStringLiteral("proton-em");
+    QVERIFY(em.isProton());
+
+    // CPU x86-64-v3 detection runs cleanly
+    const bool v3 = RunnerManager::supportsX86_64V3();
+    Q_UNUSED(v3);
+
+    // SHA-512 checksum verification
+    const QString payloadPath = tmpDir.filePath("runner.tar.xz");
+    const QByteArray payload("tsuki-sha512-verification-payload-bytes");
+    {
+      QFile f(payloadPath);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write(payload);
+    }
+    const QString expectedHex = QString::fromLatin1(
+        QCryptographicHash::hash(payload, QCryptographicHash::Sha512).toHex());
+    QVERIFY(DownloadManager::verifyFileSha512(payloadPath, expectedHex));
+    QVERIFY(DownloadManager::verifyFileSha512(payloadPath, expectedHex.toUpper()));
+    QVERIFY(!DownloadManager::verifyFileSha512(
+        payloadPath, QString(128, QLatin1Char('0'))));
+  }
+
+  void testCollectionsExtendedFiltersAndHiddenGames() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    DatabaseManager db(tmpDir.filePath("collections.db"));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    ControllerManager ctrlMgr(&db, &settings);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
+    SteamGridDbService sgdb(&settings, &dl);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+
+    QVERIFY(gm.createCollection("RPG"));
+    QVERIFY(gm.createCollection("Co-op"));
+    QVERIFY(gm.categories().contains("RPG"));
+    QVERIFY(gm.categories().contains("Co-op"));
+
+    const QString gLocal = gm.addGame("Local RPG", "/games/local.exe");
+    const QString gNative = gm.addNativeGame("Native Shooter", "/bin/true");
+    const QString gEpic = gm.registerEpicGame(
+        "EpicApp1", "ns", "cat", "Epic Adventure", "/games/epic/game.exe",
+        "/games/epic");
+    QVERIFY(!gLocal.isEmpty() && !gNative.isEmpty() && !gEpic.isEmpty());
+
+    QVERIFY(gm.addGameToCollection(gLocal, "RPG"));
+    QVERIFY(gm.addGameToCollection(gEpic, "RPG"));
+    QVERIFY(gm.addGameToCollection(gNative, "Co-op"));
+
+    // Rename collection propagates to assigned games
+    QVERIFY(gm.renameCollection("RPG", "Role Playing"));
+    QVERIFY(gm.categories().contains("Role Playing"));
+    QVERIFY(!gm.categories().contains("RPG"));
+    QVERIFY(db.getGame(gLocal)->categories.contains("Role Playing"));
+
+    // Model filters: -1 All, 4 Native, 5 Epic, 6 Local, categoryFilter
+    gm.model()->setFilterType(-1);
+    QCOMPARE(gm.model()->rowCount(), 3);
+
+    gm.model()->setFilterType(4); // Native Linux
+    QCOMPARE(gm.model()->rowCount(), 1);
+    QCOMPARE(gm.model()->get(0).value("id").toString(), gNative);
+
+    gm.model()->setFilterType(5); // Epic Games
+    QCOMPARE(gm.model()->rowCount(), 1);
+    QCOMPARE(gm.model()->get(0).value("id").toString(), gEpic);
+
+    gm.model()->setFilterType(6); // Local Games
+    QCOMPARE(gm.model()->rowCount(), 2);
+
+    gm.model()->setFilterType(-1);
+    gm.model()->setCategoryFilter("Role Playing");
+    QCOMPARE(gm.model()->rowCount(), 2);
+    gm.model()->setCategoryFilter(QString());
+
+    // Hidden games excluded from default All (-1) and shown only in Hidden (7)
+    gm.toggleHidden(gLocal);
+    QVERIFY(db.getGame(gLocal)->isHidden);
+    gm.model()->setFilterType(-1);
+    QCOMPARE(gm.model()->rowCount(), 2);
+    gm.model()->setFilterType(7);
+    QCOMPARE(gm.model()->rowCount(), 1);
+    QCOMPARE(gm.model()->get(0).value("id").toString(), gLocal);
+
+    // Delete collection removes it from games cleanly
+    QVERIFY(gm.deleteCollection("Role Playing"));
+    QVERIFY(!db.getGame(gLocal)->categories.contains("Role Playing"));
+  }
+
+  void testSecretStoreFileFallbackRoundtrip() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    const QByteArray oldForce = qgetenv("TSUKI_FORCE_FILE_SECRETS");
+    qputenv("TSUKI_FORCE_FILE_SECRETS", "1");
+    auto restore = qScopeGuard([&]() {
+      if (oldForce.isEmpty()) qunsetenv("TSUKI_FORCE_FILE_SECRETS");
+      else qputenv("TSUKI_FORCE_FILE_SECRETS", oldForce);
+    });
+
+    const QString fallbackPath = tmpDir.filePath("secret_token.json");
+    const QString secret("{\"access_token\":\"secret-abc-123\"}");
+    QVERIFY(SecretStore::saveSecret("test_key", secret, fallbackPath));
+    QVERIFY(QFileInfo::exists(fallbackPath));
+    const QFile::Permissions perms = QFileInfo(fallbackPath).permissions();
+    QVERIFY(perms.testFlag(QFileDevice::ReadOwner));
+    QVERIFY(perms.testFlag(QFileDevice::WriteOwner));
+    QVERIFY(!perms.testFlag(QFileDevice::ReadOther));
+    QVERIFY(!perms.testFlag(QFileDevice::WriteOther));
+
+    QCOMPARE(SecretStore::loadSecret("test_key", fallbackPath), secret);
+    QVERIFY(SecretStore::deleteSecret("test_key", fallbackPath));
+    QVERIFY(SecretStore::loadSecret("test_key", fallbackPath).isEmpty());
+  }
+
+  void testUmuLaunchModeModernGamingTogglesAndGpuSelection() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    DatabaseManager db(tmpDir.filePath("umu_modern.db"));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    ControllerManager ctrlMgr(&db, &settings);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
+
+    const QString fakeUmu = tmpDir.filePath("umu-run");
+    {
+      QFile f(fakeUmu);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write("#!/bin/sh\nexit 0\n");
+      f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                       QFileDevice::ExeOwner);
+    }
+    pipeline.setUmuBinaryOverrideForTesting(fakeUmu);
+
+    GameRecord game;
+    game.id = "g-umu";
+    game.title = "Cyberpunk 2077";
+    game.source = QStringLiteral("epic");
+    game.epicAppName = QStringLiteral("Ginger");
+    game.executablePath = "/games/cp2077/Cyberpunk2077.exe";
+    game.workingDirectory = "/games/cp2077";
+    game.umuState = 1;
+    game.umuGameId = QStringLiteral("umu-1091500");
+    game.disableProtonfixes = true;
+    game.ntsyncState = 1;
+    game.waylandDriverState = 1;
+    game.hdrState = 1;
+    game.nvapiState = 1;
+    game.fsrState = 1;
+    game.fsrStrength = 3;
+    game.gamescopeState = 0;
+    game.gpuSelection = QStringLiteral("nvidia");
+
+    RunnerRecord proton;
+    proton.id = "r-proton-ge";
+    proton.name = "GE-Proton9-25";
+    proton.type = "proton-ge";
+    proton.path = "/opt/GE-Proton9-25";
+    proton.binaryPath = "/opt/GE-Proton9-25/proton";
+
+    PrefixRecord pfx;
+    pfx.id = "pfx-cp";
+    pfx.path = tmpDir.filePath("pfx-cp");
+    pfx.arch = "win64";
+
+    const QByteArray oldWayland = qgetenv("WAYLAND_DISPLAY");
+    const QByteArray oldDisplay = qgetenv("DISPLAY");
+    qputenv("WAYLAND_DISPLAY", "wayland-0");
+    qputenv("DISPLAY", ":0");
+    auto restoreDisp = qScopeGuard([&]() {
+      if (oldWayland.isEmpty()) qunsetenv("WAYLAND_DISPLAY");
+      else qputenv("WAYLAND_DISPLAY", oldWayland);
+      if (oldDisplay.isEmpty()) qunsetenv("DISPLAY");
+      else qputenv("DISPLAY", oldDisplay);
+    });
+
+    const LaunchPlan plan = pipeline.buildLaunchPlan(game, proton, pfx);
+    QVERIFY(plan.usesUmu);
+    QCOMPARE(plan.program, fakeUmu);
+    QCOMPARE(plan.umuGameId, QStringLiteral("umu-1091500"));
+    QCOMPARE(plan.environment.value("PROTONPATH"), proton.path);
+    QCOMPARE(plan.environment.value("GAMEID"), QStringLiteral("umu-1091500"));
+    QCOMPARE(plan.environment.value("STORE"), QStringLiteral("egs"));
+    QCOMPARE(plan.environment.value("PROTON_VERB"),
+             QStringLiteral("waitforexitandrun"));
+    QCOMPARE(plan.environment.value("PROTONFIXES_DISABLE"), QStringLiteral("1"));
+    QCOMPARE(plan.environment.value("PROTON_ENABLE_WAYLAND"),
+             QStringLiteral("1"));
+    QVERIFY(!plan.environment.contains("DISPLAY"));
+    QCOMPARE(plan.environment.value("PROTON_ENABLE_HDR"), QStringLiteral("1"));
+    QCOMPARE(plan.environment.value("DXVK_HDR"), QStringLiteral("1"));
+    QCOMPARE(plan.environment.value("PROTON_ENABLE_NVAPI"), QStringLiteral("1"));
+    QCOMPARE(plan.environment.value("DXVK_ENABLE_NVAPI"), QStringLiteral("1"));
+    QCOMPARE(plan.environment.value("WINE_FULLSCREEN_FSR"), QStringLiteral("1"));
+    QCOMPARE(plan.environment.value("WINE_FULLSCREEN_FSR_STRENGTH"),
+             QStringLiteral("3"));
+    QCOMPARE(plan.environment.value("__NV_PRIME_RENDER_OFFLOAD"),
+             QStringLiteral("1"));
+    QCOMPARE(plan.environment.value("__GLX_VENDOR_LIBRARY_NAME"),
+             QStringLiteral("nvidia"));
+
+    // Explicitly disabling UMU falls back cleanly to standalone Proton
+    game.umuState = 0;
+    const LaunchPlan standalone = pipeline.buildLaunchPlan(game, proton, pfx);
+    QVERIFY(!standalone.usesUmu);
+    QCOMPARE(standalone.program, proton.binaryPath);
+    QVERIFY(standalone.arguments.contains("waitforexitandrun"));
+
+    // DRI_PRIME integer selection
+    game.gpuSelection = QStringLiteral("1");
+    const LaunchPlan driPlan = pipeline.buildLaunchPlan(game, proton, pfx);
+    QCOMPARE(driPlan.environment.value("DRI_PRIME"), QStringLiteral("1"));
+  }
+
+  void testPrefixCacheCleanupAndGameRelocation() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    DatabaseManager db(tmpDir.filePath("storage.db"));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    ControllerManager ctrlMgr(&db, &settings);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
+    SteamGridDbService sgdb(&settings, &dl);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+
+    // 1. Prefix cache cleanup deletes shader caches & Windows temp while preserving saves
+    const QString pfxId = prefixMgr.createPrefix(
+        "CacheTest", tmpDir.filePath("prefixes"), "win64", "win10", "", false);
+    QVERIFY(!pfxId.isEmpty());
+    const auto pfx = prefixMgr.getPrefix(pfxId);
+    QVERIFY(pfx.has_value());
+
+    const QString dxvkCache = pfx->path + "/game.dxvk-cache";
+    const QString winTemp = pfx->path + "/drive_c/windows/temp/junk.tmp";
+    const QString userSave =
+        pfx->path + "/drive_c/users/steamuser/Documents/save.dat";
+    QDir().mkpath(QFileInfo(winTemp).absolutePath());
+    QDir().mkpath(QFileInfo(userSave).absolutePath());
+    for (const QString &p : {dxvkCache, winTemp, userSave}) {
+      QFile f(p);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write(QByteArray(4096, 'X'));
+    }
+
+    const qint64 freed = prefixMgr.cleanPrefixCaches(pfxId);
+    QVERIFY(freed >= 8192);
+    QVERIFY(!QFileInfo::exists(dxvkCache));
+    QVERIFY(!QFileInfo::exists(winTemp));
+    QVERIFY(QFileInfo::exists(userSave));
+
+    // 2. Game folder relocation moves directory and updates DB paths
+    const QString srcGameDir = tmpDir.filePath("driveA/MyCoolGame");
+    const QString dstParentDir = tmpDir.filePath("driveB");
+    QDir().mkpath(srcGameDir + "/bin");
+    QDir().mkpath(dstParentDir);
+    const QString srcExe = srcGameDir + "/bin/game.exe";
+    {
+      QFile f(srcExe);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write("MZ_BINARY");
+    }
+    const QString gid = gm.addGame("MyCoolGame", srcExe, srcGameDir);
+    QVERIFY(!gid.isEmpty());
+
+    QSignalSpy relocSpy(&gm, &GameManager::gameRelocationFinished);
+    gm.relocateGame(gid, dstParentDir);
+    QVERIFY(relocSpy.wait(5000));
+    QCOMPARE(relocSpy.at(0).at(1).toBool(), true);
+    const QString expectedNewDir = dstParentDir + "/MyCoolGame";
+    QVERIFY(QFileInfo::exists(expectedNewDir + "/bin/game.exe"));
+    QVERIFY(!QFileInfo::exists(srcGameDir));
+    const auto relocated = db.getGame(gid);
+    QVERIFY(relocated.has_value());
+    QCOMPARE(relocated->executablePath, expectedNewDir + "/bin/game.exe");
+    QCOMPARE(relocated->workingDirectory, expectedNewDir);
+  }
+
+  void testEpicManifestDiffInstallTagsAndPrereqTracking() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    DatabaseManager db(tmpDir.filePath("epic_diff.db"));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+
+    // Build two synthetic manifests via buildChunk + buildJsonManifest
+    const QByteArray unchangedBytes("UNCHANGED_FILE_DATA_123456");
+    const QByteArray oldBytes("OLD_VERSION_CONTENT");
+    const QByteArray newBytes("NEW_VERSION_CONTENT_UPDATED");
+    const QByteArray removedBytes("OBSOLETE_FILE_DATA");
+    const QByteArray addedBytes("BRAND_NEW_DLC_FILE");
+
+    const QByteArray cUnchanged = EpicManifestParser::buildChunk(
+        "11111111111111111111111111111111", unchangedBytes);
+    QVERIFY(!cUnchanged.isEmpty());
+
+    QList<EpicFileManifest> v1Files;
+    {
+      EpicFileManifest f1;
+      f1.filename = "core.pak";
+      f1.shaHash = QCryptographicHash::hash(unchangedBytes, QCryptographicHash::Sha1);
+      f1.fileSize = unchangedBytes.size();
+      v1Files.append(f1);
+
+      EpicFileManifest f2;
+      f2.filename = "game.exe";
+      f2.shaHash = QCryptographicHash::hash(oldBytes, QCryptographicHash::Sha1);
+      f2.fileSize = oldBytes.size();
+      v1Files.append(f2);
+
+      EpicFileManifest f3;
+      f3.filename = "obsolete.dll";
+      f3.shaHash = QCryptographicHash::hash(removedBytes, QCryptographicHash::Sha1);
+      f3.fileSize = removedBytes.size();
+      v1Files.append(f3);
+
+      EpicFileManifest f4;
+      f4.filename = "hd_textures.pak";
+      f4.shaHash = QCryptographicHash::hash(addedBytes, QCryptographicHash::Sha1);
+      f4.fileSize = addedBytes.size();
+      f4.installTags = {QStringLiteral("HD_Textures")};
+      v1Files.append(f4);
+    }
+
+    QList<EpicFileManifest> v2Files;
+    {
+      EpicFileManifest f1 = v1Files[0];
+      v2Files.append(f1);
+
+      EpicFileManifest f2;
+      f2.filename = "game.exe";
+      f2.shaHash = QCryptographicHash::hash(newBytes, QCryptographicHash::Sha1);
+      f2.fileSize = newBytes.size();
+      v2Files.append(f2);
+
+      EpicFileManifest f5;
+      f5.filename = "patch2.pak";
+      f5.shaHash = QCryptographicHash::hash(addedBytes, QCryptographicHash::Sha1);
+      f5.fileSize = addedBytes.size();
+      v2Files.append(f5);
+    }
+
+    const QByteArray v1Json =
+        EpicManifestParser::buildJsonManifest("AppDiff", "1.0", v1Files, {});
+    const QByteArray v2Json =
+        EpicManifestParser::buildJsonManifest("AppDiff", "2.0", v2Files, {});
+
+    EpicManifest m1, m2;
+    QString err;
+    QVERIFY2(EpicManifestParser::parse(v1Json, m1, &err), qPrintable(err));
+    QVERIFY2(EpicManifestParser::parse(v2Json, m2, &err), qPrintable(err));
+
+    // Install tags inspection & filtering
+    const auto tags = m1.computeInstallTags();
+    QCOMPARE(tags.size(), 1);
+    QCOMPARE(tags.first().tag, QStringLiteral("HD_Textures"));
+    QVERIFY(EpicManifest::fileMatchesTags(m1.files[0], {QStringLiteral("OtherTag")}));
+    QVERIFY(!EpicManifest::fileMatchesTags(m1.files[3], {QStringLiteral("OtherTag")}));
+    QVERIFY(EpicManifest::fileMatchesTags(m1.files[3], {QStringLiteral("HD_Textures")}));
+
+    // Manifest diffing: 1 unchanged (core.pak), 2 modified/added (game.exe + patch2.pak), 2 removed
+    const EpicManifestDiff diff = EpicManifestParser::diffManifests(m1, m2);
+    QCOMPARE(diff.unchangedFiles.size(), 1);
+    QCOMPARE(diff.modifiedOrNewFiles.size(), 2);
+    QCOMPARE(diff.removedFiles.size(), 2);
+    QVERIFY(diff.removedFiles.contains("obsolete.dll"));
+
+    // Prerequisite tracking per prefix
+    const QString pfxId = prefixMgr.createPrefix(
+        "PrereqPfx", tmpDir.filePath("prefixes"), "win64", "win10", "", false);
+    QVERIFY(!prefixMgr.arePrereqsInstalled(pfxId, {"vcredist-2022"}));
+    QVERIFY(prefixMgr.markPrereqsInstalled(pfxId, {"vcredist-2022", "directx"}));
+    QVERIFY(prefixMgr.arePrereqsInstalled(pfxId, {"vcredist-2022"}));
+  }
+
+  void testEpicCloudSavePathResolutionConflictsAndSnapshots() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    DatabaseManager db(tmpDir.filePath("cloud.db"));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    SteamGridDbService sgdb(&settings, &dl);
+    EpicService epicSvc(&db, &settings, &runnerMgr, &prefixMgr, &sgdb);
+    EpicCloudSaveService cloudSvc(&db, &settings, &prefixMgr, &epicSvc);
+
+    // 1. Placeholder path expansion inside Wine/Proton prefix
+    const QString pfxPath = tmpDir.filePath("pfx");
+    QDir().mkpath(pfxPath + "/pfx/drive_c/users/steamuser/AppData/Local");
+    const QString installDir = tmpDir.filePath("install");
+
+    const QString resolvedLocal = EpicCloudSaveService::resolveSaveFolderPath(
+        "{LocalAppData}/MyGame/{EpicID}/Saves", pfxPath, installDir, "acc123");
+    QVERIFY2(resolvedLocal.endsWith(
+                 "/pfx/drive_c/users/steamuser/AppData/Local/MyGame/acc123/Saves"),
+             qPrintable(resolvedLocal));
+
+    const QString resolvedInstall = EpicCloudSaveService::resolveSaveFolderPath(
+        "{InstallDir}/Saved", pfxPath, installDir, "acc123");
+    QCOMPARE(resolvedInstall, installDir + "/Saved");
+
+    // 2. All 4 SyncDecision outcomes
+    EpicCloudSaveService::LocalFileEntry lf;
+    lf.relativePath = "slot1.sav";
+    lf.sha1 = QCryptographicHash::hash("v1", QCryptographicHash::Sha1);
+    lf.size = 2;
+    lf.mtimeEpoch = 1000;
+    const QList<EpicCloudSaveService::LocalFileEntry> localList = {lf};
+
+    DatabaseManager::CloudSaveState prev;
+    prev.gameId = "g-cloud";
+    prev.lastSyncEpoch = 1000;
+    prev.lastManifestHash = "hash-1";
+    QVariantMap tracked;
+    tracked["slot1.sav"] = QVariantMap{
+        {"sha1", QString::fromLatin1(lf.sha1.toHex())},
+        {"mtime", 1000},
+        {"size", 2}};
+    prev.trackedFiles = tracked;
+
+    // Neither side changed -> UpToDate
+    QCOMPARE(EpicCloudSaveService::evaluateSyncState(
+                 localList, 1000, true, 1000, "hash-1", prev),
+             EpicCloudSaveService::SyncDecision::UpToDate);
+    // Only remote changed -> DownloadRecommended
+    QCOMPARE(EpicCloudSaveService::evaluateSyncState(
+                 localList, 1000, true, 2000, "hash-2", prev),
+             EpicCloudSaveService::SyncDecision::DownloadRecommended);
+    // Only local changed -> UploadRecommended
+    auto lfChanged = lf;
+    lfChanged.sha1 = QCryptographicHash::hash("v2", QCryptographicHash::Sha1);
+    QCOMPARE(EpicCloudSaveService::evaluateSyncState(
+                 {lfChanged}, 2000, true, 1000, "hash-1", prev),
+             EpicCloudSaveService::SyncDecision::UploadRecommended);
+    // Both sides changed -> Conflict
+    QCOMPARE(EpicCloudSaveService::evaluateSyncState(
+                 {lfChanged}, 2000, true, 2500, "hash-2", prev),
+             EpicCloudSaveService::SyncDecision::Conflict);
+
+    // 3. Safety snapshot creation, pruning & restoration
+    const QString saveDir = tmpDir.filePath("saves");
+    const QString backupsBase = tmpDir.filePath("backups");
+    QDir().mkpath(saveDir);
+    {
+      QFile f(saveDir + "/hero.sav");
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write("HERO_LEVEL_99");
+    }
+    const QString snap1 = EpicCloudSaveService::createLocalSafetySnapshot(
+        "g-cloud", saveDir, backupsBase, 2);
+    QVERIFY(!snap1.isEmpty());
+    QVERIFY(QFileInfo::exists(snap1));
+
+    // Register game to test restoreLocalSnapshot
+    GameRecord g;
+    g.id = "g-cloud";
+    g.title = "Cloud Test Game";
+    g.source = "epic";
+    g.epicAppName = "CloudApp";
+    g.executablePath = installDir + "/game.exe";
+    g.epicCloudSaveFolder = saveDir;
+    QVERIFY(db.saveGame(g));
+
+    QVERIFY(QFile::remove(saveDir + "/hero.sav"));
+    QVERIFY(!QFileInfo::exists(saveDir + "/hero.sav"));
+    QVERIFY(cloudSvc.restoreLocalSnapshot("g-cloud", snap1));
+    QVERIFY(QFileInfo::exists(saveDir + "/hero.sav"));
+  }
+
+  void testDownloadQueueSchedulingThrottlingAndGameplayAutoPause() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    AppSettings settings;
+    const int prevMaxGames = settings.maxConcurrentGameDownloads();
+    const int prevLimit = settings.downloadSpeedLimitKBps();
+    const bool prevAutoPause = settings.pauseDownloadsOnGameLaunch();
+    auto restore = qScopeGuard([&]() {
+      settings.setMaxConcurrentGameDownloads(prevMaxGames);
+      settings.setDownloadSpeedLimitKBps(prevLimit);
+      settings.setPauseDownloadsOnGameLaunch(prevAutoPause);
+    });
+
+    settings.setMaxConcurrentGameDownloads(1);
+    settings.setPauseDownloadsOnGameLaunch(true);
+    settings.setDownloadSpeedLimitKBps(100); // 100 KB/s
+
+    DownloadManager dl;
+    dl.setAppSettings(&settings);
+
+    int started1 = 0, paused1 = 0, resumed1 = 0;
+    int started2 = 0, paused2 = 0, resumed2 = 0;
+
+    DownloadManager::ExternalAdapter a1;
+    a1.startFn = [&]() { ++started1; };
+    a1.pauseFn = [&]() { ++paused1; };
+    a1.resumeFn = [&]() { ++resumed1; };
+    a1.cancelFn = [](bool) {};
+
+    DownloadManager::ExternalAdapter a2;
+    a2.startFn = [&]() { ++started2; };
+    a2.pauseFn = [&]() { ++paused2; };
+    a2.resumeFn = [&]() { ++resumed2; };
+    a2.cancelFn = [](bool) {};
+
+    QCOMPARE(dl.registerExternalTask("epic:g1", "Game One", "epic_game", "g1", "",
+                                     true, a1, true), true);
+    // Task 2 exceeds maxConcurrentGameDownloads=1 so it is registered as queued (returns false = not started immediately)
+    QCOMPARE(dl.registerExternalTask("epic:g2", "Game Two", "epic_game", "g2", "",
+                                     true, a2, true), false);
+
+    // Sequential game downloads: Game One started immediately, Game Two is queued
+    QCOMPARE(started1, 1);
+    QCOMPARE(started2, 0);
+    QCOMPARE(dl.activeDownloadCount(), 1);
+    QCOMPARE(dl.queuedDownloadCount(), 1);
+    QCOMPARE(dl.totalPendingCount(), 2);
+
+    // Gameplay auto-pause pauses Game One and resumes it on exit
+    dl.pauseForGameplay();
+    QVERIFY(dl.isPausedForGameplay());
+    QCOMPARE(paused1, 1);
+    dl.resumeAfterGameplay();
+    QVERIFY(!dl.isPausedForGameplay());
+    QCOMPARE(resumed1, 1);
+
+    // Prioritize Game Two swaps queue order and starts Game Two
+    dl.prioritizeDownload("epic:g2");
+    QCOMPARE(started2, 1);
+
+    // Finishing Game Two appends to completedDownloads history
+    dl.finishExternalTask("epic:g2", true, "Installed", "gid-2", "/games/g2");
+    QCOMPARE(dl.completedDownloads().size(), 1);
+    dl.clearCompletedHistory();
+    QCOMPARE(dl.completedDownloads().size(), 0);
+
+    // Bandwidth limiter calculations
+    QVERIFY(dl.recommendedReadBufferSize(1) >= 8192);
+    QVERIFY(dl.tryConsumeBandwidthBytes(1024));
+    // Requesting far more than burst returns > 0 ms wait
+    QVERIFY(!dl.tryConsumeBandwidthBytes(10 * 1024 * 1024));
+    QVERIFY(dl.msUntilBandwidthAvailable(10 * 1024 * 1024) > 0);
+  }
+
+  void testNewQmlViewsAndDialogsLoadCleanly() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    DatabaseManager db(tmpDir.filePath("qml_new.db"));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    DownloadManager dl;
+    dl.setAppSettings(&settings);
+    dl.setDatabaseManager(&db);
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    ControllerManager ctrlMgr(&db, &settings);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dl);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
+    SteamGridDbService sgdb(&settings, &dl);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+    EpicService epicSvc(&db, &settings, &runnerMgr, &prefixMgr, &sgdb);
+    EpicCloudSaveService cloudSvc(&db, &settings, &prefixMgr, &epicSvc);
+    UmuIdResolver umuResolver(&db);
+    UiController ui(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
+                    &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm, &epicSvc,
+                    &cloudSvc, &umuResolver);
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty("appSettings", &settings);
+    engine.rootContext()->setContextProperty("uiController", &ui);
+
+    QStringList qmlErrors;
+    QObject::connect(&engine, &QQmlEngine::warnings,
+                     [&](const QList<QQmlError> &warnings) {
+                       for (const auto &w : warnings) {
+                         qmlErrors << w.toString();
+                       }
+                     });
+
+    QQuickWindow win;
+    win.resize(1280, 820);
+    win.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+    // Load DownloadsView.qml
+    {
+      QQmlComponent comp(
+          &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/DownloadsView.qml")));
+      QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+      std::unique_ptr<QObject> obj(comp.create());
+      QVERIFY(obj != nullptr);
+      auto *item = qobject_cast<QQuickItem *>(obj.get());
+      QVERIFY(item != nullptr);
+      item->setParentItem(win.contentItem());
+      item->setSize(QSizeF(1000, 720));
+      QCoreApplication::processEvents();
+    }
+
+    // Load CloudSaveConflictDialog.qml & invoke openConflict
+    {
+      QQmlComponent comp(
+          &engine,
+          resolveQmlUrl(QStringLiteral("src/qml/components/CloudSaveConflictDialog.qml")));
+      QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+      std::unique_ptr<QObject> obj(comp.create());
+      QVERIFY(obj != nullptr);
+      obj->setProperty("parent", QVariant::fromValue(win.contentItem()));
+      QVariantMap details;
+      details["gameTitle"] = "Conflict Game";
+      details["localFileCount"] = 3;
+      details["localLatestEpoch"] = 1700000000;
+      details["remoteLatestEpoch"] = 1700003600;
+      QVERIFY(QMetaObject::invokeMethod(
+          obj.get(), "openConflict", Q_ARG(QVariant, QVariant("g-conflict")),
+          Q_ARG(QVariant, QVariant(details))));
+      QCoreApplication::processEvents();
+      QCOMPARE(obj->property("visible").toBool(), true);
+      QVERIFY(QMetaObject::invokeMethod(obj.get(), "resolve",
+                                        Q_ARG(QVariant, QVariant("cancel"))));
+      QTRY_COMPARE(obj->property("visible").toBool(), false);
+    }
+
+    // Load RunnersView, PrefixesView, EpicDownloadDialog, SettingsPage, EpicLibraryView, GameDetailPage, TopBar, MediaGrid
+    for (const QString &rel : {
+             QStringLiteral("src/qml/pages/RunnersView.qml"),
+             QStringLiteral("src/qml/pages/PrefixesView.qml"),
+             QStringLiteral("src/qml/pages/SettingsPage.qml"),
+             QStringLiteral("src/qml/pages/EpicLibraryView.qml"),
+             QStringLiteral("src/qml/pages/GameDetailPage.qml"),
+             QStringLiteral("src/qml/home/TopBar.qml"),
+             QStringLiteral("src/qml/home/MediaGrid.qml"),
+             QStringLiteral("src/qml/components/EpicDownloadDialog.qml")}) {
+      QQmlComponent comp(&engine, resolveQmlUrl(rel));
+      QVERIFY2(comp.isReady(),
+               qPrintable(rel + QStringLiteral(": ") + comp.errorString()));
+      std::unique_ptr<QObject> obj(comp.create());
+      QVERIFY2(obj != nullptr, qPrintable(rel));
+      QCoreApplication::processEvents();
+    }
+
+    QVERIFY2(qmlErrors.isEmpty(),
+             qPrintable(qmlErrors.join(QLatin1Char('\n'))));
+  }
+
+  void testPostFeedbackFixesAndRefinements() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    DatabaseManager db(tmpDir.filePath("feedback_fixes.db"));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    settings.setDatabaseManager(&db);
+    DownloadManager dl;
+    dl.setAppSettings(&settings);
+    dl.setDatabaseManager(&db);
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    ControllerManager ctrlMgr(&db, &settings);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dl);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
+    SteamGridDbService sgdb(&settings, &dl);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
+    EpicService epicSvc(&db, &settings, &runnerMgr, &prefixMgr, &sgdb);
+    epicSvc.setDownloadManager(&dl);
+    epicSvc.setGameManager(&gm);
+
+    // 1. Hardcoded non-game Epic blocklist (Discord, Spotify, Unreal Engine, etc.) + Epic hide/unhide
+    QVERIFY(EpicService::isBlockedNonGameEpicApp("Discord", "discord", "ns"));
+    QVERIFY(EpicService::isBlockedNonGameEpicApp("Discord Canary", "discord-canary", "ns"));
+    QVERIFY(EpicService::isBlockedNonGameEpicApp("Spotify", "spotify-app", "ns"));
+    QVERIFY(EpicService::isBlockedNonGameEpicApp("Unreal Engine", "UE_5.4", "ue"));
+    QVERIFY(!EpicService::isBlockedNonGameEpicApp("Red Dead Redemption 2", "heather", "ns"));
+    QVERIFY(!EpicService::isBlockedNonGameEpicApp("Hades", "hades-app", "ns"));
+
+    EpicLibraryItem discordItem;
+    discordItem.appName = "discord-app";
+    discordItem.namespaceId = "ns-discord";
+    discordItem.catalogItemId = "cat-discord";
+    discordItem.title = "Discord";
+
+    EpicLibraryItem hadesItem;
+    hadesItem.appName = "hades-app";
+    hadesItem.namespaceId = "ns-hades";
+    hadesItem.catalogItemId = "cat-hades";
+    hadesItem.title = "Hades";
+
+    EpicLibraryItem alanItem;
+    alanItem.appName = "alan-app";
+    alanItem.namespaceId = "ns-alan";
+    alanItem.catalogItemId = "cat-alan";
+    alanItem.title = "Alan Wake 2";
+
+    QVERIFY(db.saveEpicLibraryItems({discordItem, hadesItem, alanItem}));
+    auto *epicModel = epicSvc.libraryModel();
+    epicModel->reload();
+    // Discord must NEVER appear even though it was inserted into epic_library!
+    QCOMPARE(epicModel->rowCount(), 2);
+    QCOMPARE(epicModel->hiddenCount(), 0);
+    // showHidden=true includes hidden games alongside visible games (Discord still never appears)
+    epicModel->setShowHidden(true);
+    QCOMPARE(epicModel->rowCount(), 2);
+    epicModel->setShowHidden(false);
+
+    // User hiding an Epic game removes it from default view and includes it alongside normal games when showHidden=true
+    epicSvc.toggleHideEpicGame("hades-app");
+    QCOMPARE(epicModel->rowCount(), 1);
+    QCOMPARE(epicModel->hiddenCount(), 1);
+    epicModel->setShowHidden(true);
+    QCOMPARE(epicModel->rowCount(), 2);
+    bool foundHiddenHades = false;
+    bool foundVisibleAlan = false;
+    for (int i = 0; i < epicModel->rowCount(); ++i) {
+      const QVariantMap row = epicModel->get(i);
+      if (row.value("appName").toString() == QStringLiteral("hades-app") &&
+          row.value("isHidden").toBool()) {
+        foundHiddenHades = true;
+      }
+      if (row.value("appName").toString() == QStringLiteral("alan-app") &&
+          !row.value("isHidden").toBool()) {
+        foundVisibleAlan = true;
+      }
+    }
+    QVERIFY(foundHiddenHades && foundVisibleAlan);
+    epicSvc.toggleHideEpicGame("hades-app");
+    QCOMPARE(epicModel->hiddenCount(), 0);
+    epicModel->setShowHidden(false);
+    QCOMPARE(epicModel->rowCount(), 2);
+
+    // 2. Persistent Epic download restoration across app restarts + Runners tab isolation
+    const QString partialInstallDir = tmpDir.filePath("EpicGames/Hades");
+    QDir().mkpath(partialInstallDir);
+    QueuedDownloadRecord qRec;
+    qRec.id = "epic-dl-hades-app";
+    qRec.kind = "epic_install";
+    qRec.appName = "hades-app";
+    qRec.title = "Hades";
+    qRec.status = "paused";
+    qRec.sortOrder = 0;
+    QJsonObject payload;
+    payload["appName"] = "hades-app";
+    payload["namespaceId"] = "ns-hades";
+    payload["catalogItemId"] = "cat-hades";
+    payload["title"] = "Hades";
+    payload["installDir"] = partialInstallDir;
+    payload["prefixMode"] = "default-prefix";
+    payload["prefixArch"] = "win64";
+    payload["progress"] = 42.5;
+    payload["downloadedBytes"] = 425000000;
+    payload["totalDownloadBytes"] = 1000000000;
+    qRec.payloadJson = QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    QVERIFY(db.saveQueuedDownload(qRec));
+
+    epicSvc.restorePendingDownloads();
+    // Restored download must appear in DownloadManager in Paused state with preserved progress
+    QCOMPARE(dl.rowCount(), 1);
+    const QVariantMap restoredDl = dl.activeDownloads().first().toMap();
+    QCOMPARE(restoredDl.value("id").toString(), QStringLiteral("epic-dl-hades-app"));
+    QCOMPARE(restoredDl.value("isPaused").toBool(), true);
+    QCOMPARE(restoredDl.value("progress").toDouble(), 42.5);
+    // EpicService must also know it's an active paused download (so no EpicDownloadDialog re-prompt!)
+    const QVariantMap epicDlState = epicSvc.getDownloadState("hades-app");
+    QCOMPARE(epicDlState.value("isDownloading").toBool(), true);
+    QCOMPARE(epicDlState.value("isPaused").toBool(), true);
+    // Runners tab must NOT show game downloads!
+    QCOMPARE(dl.runnerDownloadCount(), 0);
+    QVERIFY(dl.runnerDownloads().isEmpty());
+
+    // 3. Multi-select Library filters (Linux Only, Windows Only, Epic Only, Favourite, Local)
+    auto addSampleGame = [&](const QString &id, const QString &title,
+                             bool isNative, const QString &source, bool fav) {
+      GameRecord g;
+      g.id = id;
+      g.title = title;
+      g.platform = isNative ? QStringLiteral("linux") : QStringLiteral("windows");
+      g.source = source;
+      if (source == QLatin1String("epic")) {
+        g.epicAppName = id + QStringLiteral("-app");
+      }
+      g.isFavorite = fav;
+      g.executablePath = tmpDir.filePath(id + (isNative ? ".sh" : ".exe"));
+      QVERIFY(db.saveGame(g));
+    };
+    addSampleGame("g-lin", "Linux Game", true, "local", false);
+    addSampleGame("g-win-loc-fav", "Win Local Fav", false, "local", true);
+    addSampleGame("g-win-epic", "Win Epic", false, "epic", false);
+    addSampleGame("g-win-epic-fav", "Win Epic Fav", false, "epic", true);
+
+    GameListModel listModel(&db, &runnerMgr, &pipeline);
+    QCOMPARE(listModel.rowCount(), 4);
+    listModel.toggleFilter("windows");
+    QCOMPARE(listModel.rowCount(), 3);
+    listModel.toggleFilter("epic");
+    QCOMPARE(listModel.rowCount(), 2);
+    listModel.toggleFilter("favourite");
+    QCOMPARE(listModel.rowCount(), 1);
+    QCOMPARE(listModel.get(0).value("id").toString(), QStringLiteral("g-win-epic-fav"));
+    listModel.clearFilters();
+    QCOMPARE(listModel.rowCount(), 4);
+    // OR within platform group (linux + windows)
+    listModel.toggleFilter("linux");
+    QCOMPARE(listModel.rowCount(), 1);
+    listModel.toggleFilter("windows");
+    QCOMPARE(listModel.rowCount(), 4);
+    listModel.clearFilters();
+
+    // 4. UMU launch plan sets STEAM_COMPAT_INSTALL_PATH and skips blocking steamrt update when runtime exists
+    const QString fakeProtonDir = tmpDir.filePath("GE-Proton10-Test");
+    QDir().mkpath(fakeProtonDir);
+    const QString fakeProtonBin = fakeProtonDir + "/proton";
+    {
+      QFile f(fakeProtonBin);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write("#!/bin/sh\nexit 0\n");
+      f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+    }
+    RunnerRecord testRunner;
+    testRunner.id = "ge-test";
+    testRunner.name = "GE-Proton10-Test";
+    testRunner.type = "proton-ge";
+    testRunner.path = fakeProtonDir;
+    testRunner.binaryPath = fakeProtonBin;
+    QVERIFY(db.saveRunner(testRunner));
+
+    PrefixRecord testPrefix;
+    testPrefix.id = "default-prefix";
+    testPrefix.name = "Default";
+    testPrefix.path = tmpDir.filePath("prefixes/default");
+    QDir().mkpath(testPrefix.path);
+    QVERIFY(db.savePrefix(testPrefix));
+
+    const QString fakeGameDir = tmpDir.filePath("Games/RDR");
+    QDir().mkpath(fakeGameDir);
+    const QString fakeGameExe = fakeGameDir + "/RDR.exe";
+    {
+      QFile f(fakeGameExe);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write("MZ");
+    }
+    GameRecord umuGame;
+    umuGame.id = "g-umu-rdr";
+    umuGame.title = "Red Dead Redemption";
+    umuGame.executablePath = fakeGameExe;
+    umuGame.workingDirectory = fakeGameDir;
+    umuGame.runnerId = "ge-test";
+    umuGame.prefixId = "default-prefix";
+    umuGame.umuState = 1;
+    QVERIFY(db.saveGame(umuGame));
+
+    const LaunchPlan plan = pipeline.buildLaunchPlan(umuGame, testRunner, testPrefix);
+    QCOMPARE(plan.environment.value(QStringLiteral("STEAM_COMPAT_INSTALL_PATH")),
+             fakeGameDir);
+    if (!RunnerManager::resolveUmuRunPath().isEmpty()) {
+      QVERIFY(plan.usesUmu);
+      QCOMPARE(plan.environment.value(QStringLiteral("PROTONPATH")), fakeProtonDir);
+      if (!RunnerManager::resolveSteamLinuxRuntimePath().isEmpty()) {
+        QCOMPARE(plan.environment.value(QStringLiteral("UMU_RUNTIME_UPDATE")),
+                 QStringLiteral("0"));
+      }
+    }
+
+    // 5. Verify EpicLibraryView Sign Out button fits inside Account pill & GameDetailPage has Epic & Online tab
+    UiController ui(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
+                    &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm, &epicSvc);
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty("appSettings", &settings);
+    engine.rootContext()->setContextProperty("uiController", &ui);
+
+    QQuickWindow win;
+    win.resize(1280, 820);
+    win.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+    {
+      QQmlComponent detailComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
+      QVERIFY2(detailComp.isReady(), qPrintable(detailComp.errorString()));
+      std::unique_ptr<QObject> dObj(detailComp.create());
+      QVERIFY(dObj != nullptr);
+      dObj->setProperty("gameId", QStringLiteral("g-win-epic"));
+      QVERIFY(QMetaObject::invokeMethod(dObj.get(), "reloadGame"));
+      QCoreApplication::processEvents();
+      const QVariantList tabs = dObj->property("tabList").toList();
+      bool foundEpicOnline = false;
+      for (const QVariant &t : tabs) {
+        const QVariantMap tm = t.toMap();
+        if (tm.value("stackIndex").toInt() == 5 &&
+            tm.value("label").toString() == QStringLiteral("Epic & Online")) {
+          foundEpicOnline = true;
+        }
+      }
+      QVERIFY2(foundEpicOnline, "GameDetailPage missing dedicated Epic & Online tab (stackIndex 5)");
+    }
   }
 };
 

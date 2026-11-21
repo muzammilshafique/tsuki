@@ -17,9 +17,12 @@ Page {
         { idx: 0, label: "Style",       symbol: "palette" },
         { idx: 1, label: "Library",     symbol: "grid_view" },
         { idx: 2, label: "Performance", symbol: "speed" },
-        { idx: 3, label: "Runners",     symbol: "folder_open" },
-        { idx: 4, label: "System",      symbol: "tune" },
-        { idx: 5, label: "About",       symbol: "info" }
+        { idx: 3, label: "Display",     symbol: "desktop_windows" },
+        { idx: 4, label: "Runners",     symbol: "folder_open" },
+        { idx: 5, label: "Runtimes",    symbol: "auto_awesome" },
+        { idx: 6, label: "Downloads",   symbol: "download" },
+        { idx: 7, label: "System",      symbol: "tune" },
+        { idx: 8, label: "About",       symbol: "info" }
     ]
 
     background: Rectangle {
@@ -1077,128 +1080,141 @@ Page {
                         }
                     }
 
-                    Item { Layout.preferredHeight: 4 }
+                    Item { Layout.preferredHeight: 2 }
 
-                    // Primary 5 Category Tabs + Divider + About Tab
-                    Repeater {
-                        model: settingsPage.tabMeta
-                        delegate: ColumnLayout {
-                            required property var modelData
-                            required property int index
-                            Layout.fillWidth: true
-                            spacing: 6
+                    // Scrollable Category Tabs + Divider + About Tab
+                    Flickable {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        contentWidth: width
+                        contentHeight: railTabsCol.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
 
-                            Rectangle {
-                                visible: index === 5
-                                Layout.fillWidth: true
-                                Layout.leftMargin: 8
-                                Layout.rightMargin: 8
-                                Layout.topMargin: 4
-                                Layout.bottomMargin: 4
-                                height: 1
-                                color: appSettings.sidebarDividerColor
-                                Behavior on color { ColorAnimation { duration: 150 } }
-                            }
+                        ColumnLayout {
+                            id: railTabsCol
+                            width: parent.width
+                            spacing: 4
 
-                            Item {
-                                id: railTabPill
-                                readonly property bool isSelected: settingsPage.activeTab === modelData.idx
-                                readonly property bool isFocusedTab: isSelected && navRail.isRailFocused
+                            Repeater {
+                                model: settingsPage.tabMeta
+                                delegate: ColumnLayout {
+                                    required property var modelData
+                                    required property int index
+                                    Layout.fillWidth: true
+                                    spacing: 4
 
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 44
-                                scale: tabTap.pressed ? 0.96 : 1.0
-                                Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
-
-                                // Hover fill (opacity-only: zero RGB/alpha flash)
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: 22
-                                    color: appSettings.sidebarHoverColor
-                                    opacity: (!railTabPill.isSelected && tabHover.hovered) ? 1.0 : 0.0
-                                    Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                                }
-
-                                // Selected M3 pill container (opacity-only: zero flash through #00000000)
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: 22
-                                    color: appSettings.secondaryContainer
-                                    opacity: railTabPill.isSelected ? 1.0 : 0.0
-                                    Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                                }
-
-                                // Keyboard/Gamepad focus outline
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: 22
-                                    color: "transparent"
-                                    border.color: appSettings.accentColor
-                                    border.width: 2
-                                    opacity: railTabPill.isFocusedTab ? 1.0 : 0.0
-                                    Behavior on opacity { NumberAnimation { duration: 110 } }
-                                }
-
-                                Item {
-                                    anchors.fill: parent
-                                    clip: true
-
-                                    Row {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 13
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 12
-
-                                        YIcon {
-                                            symbol: modelData.symbol
-                                            filled: railTabPill.isSelected
-                                            size: 20
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            color: railTabPill.isSelected
-                                                ? appSettings.onSecondaryContainer
-                                                : (tabHover.hovered ? navRail.sidebarPrimaryText : appSettings.sidebarTextSecColor)
-                                            Behavior on color { ColorAnimation { duration: 120 } }
-                                        }
-
-                                        Label {
-                                            text: modelData.label
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            font.family: "Rubik"
-                                            font.pixelSize: 14
-                                            font.weight: railTabPill.isSelected ? Font.DemiBold : Font.Medium
-                                            color: railTabPill.isSelected
-                                                ? appSettings.onSecondaryContainer
-                                                : (tabHover.hovered ? navRail.sidebarPrimaryText : appSettings.sidebarTextSecColor)
-                                            opacity: settingsPage.railCollapsed ? 0.0 : 1.0
-                                            visible: opacity > 0.01
-                                            renderType: Text.QtRendering
-                                            Behavior on opacity { NumberAnimation { duration: 140 } }
-                                            Behavior on color { ColorAnimation { duration: 120 } }
-                                        }
+                                    Rectangle {
+                                        visible: index === settingsPage.tabMeta.length - 1
+                                        Layout.fillWidth: true
+                                        Layout.leftMargin: 8
+                                        Layout.rightMargin: 8
+                                        Layout.topMargin: 3
+                                        Layout.bottomMargin: 3
+                                        height: 1
+                                        color: appSettings.sidebarDividerColor
+                                        Behavior on color { ColorAnimation { duration: 150 } }
                                     }
-                                }
 
-                                HoverHandler {
-                                    id: tabHover
-                                    cursorShape: Qt.PointingHandCursor
-                                }
-                                M3ToolTip {
-                                    visible: settingsPage.railCollapsed && tabHover.hovered
-                                    text: modelData.label
-                                }
+                                    Item {
+                                        id: railTabPill
+                                        readonly property bool isSelected: settingsPage.activeTab === modelData.idx
+                                        readonly property bool isFocusedTab: isSelected && navRail.isRailFocused
 
-                                TapHandler {
-                                    id: tabTap
-                                    onTapped: {
-                                        if (uiController) uiController.setKeyboardNavActive(false)
-                                        settingsPage.selectTab(modelData.idx)
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 38
+                                        scale: tabTap.pressed ? 0.96 : 1.0
+                                        Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+
+                                        // Hover fill (opacity-only: zero RGB/alpha flash)
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 19
+                                            color: appSettings.sidebarHoverColor
+                                            opacity: (!railTabPill.isSelected && tabHover.hovered) ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                                        }
+
+                                        // Selected M3 pill container (opacity-only: zero flash through #00000000)
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 19
+                                            color: appSettings.secondaryContainer
+                                            opacity: railTabPill.isSelected ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                                        }
+
+                                        // Keyboard/Gamepad focus outline
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 19
+                                            color: "transparent"
+                                            border.color: appSettings.accentColor
+                                            border.width: 2
+                                            opacity: railTabPill.isFocusedTab ? 1.0 : 0.0
+                                            Behavior on opacity { NumberAnimation { duration: 110 } }
+                                        }
+
+                                        Item {
+                                            anchors.fill: parent
+                                            clip: true
+
+                                            Row {
+                                                anchors.left: parent.left
+                                                anchors.leftMargin: 13
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                spacing: 12
+
+                                                YIcon {
+                                                    symbol: modelData.symbol
+                                                    filled: railTabPill.isSelected
+                                                    size: 19
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    color: railTabPill.isSelected
+                                                        ? appSettings.onSecondaryContainer
+                                                        : (tabHover.hovered ? navRail.sidebarPrimaryText : appSettings.sidebarTextSecColor)
+                                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                                }
+
+                                                Label {
+                                                    text: modelData.label
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    font.family: "Rubik"
+                                                    font.pixelSize: 13
+                                                    font.weight: railTabPill.isSelected ? Font.DemiBold : Font.Medium
+                                                    color: railTabPill.isSelected
+                                                        ? appSettings.onSecondaryContainer
+                                                        : (tabHover.hovered ? navRail.sidebarPrimaryText : appSettings.sidebarTextSecColor)
+                                                    opacity: settingsPage.railCollapsed ? 0.0 : 1.0
+                                                    visible: opacity > 0.01
+                                                    renderType: Text.QtRendering
+                                                    Behavior on opacity { NumberAnimation { duration: 140 } }
+                                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                                }
+                                            }
+                                        }
+
+                                        HoverHandler {
+                                            id: tabHover
+                                            cursorShape: Qt.PointingHandCursor
+                                        }
+                                        M3ToolTip {
+                                            visible: settingsPage.railCollapsed && tabHover.hovered
+                                            text: modelData.label
+                                        }
+
+                                        TapHandler {
+                                            id: tabTap
+                                            onTapped: {
+                                                if (uiController) uiController.setKeyboardNavActive(false)
+                                                settingsPage.selectTab(modelData.idx)
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-
-                    Item { Layout.fillHeight: true }
                 }
             }
 
@@ -1668,6 +1684,20 @@ Page {
                                                     onToggled: (c) => appSettings.fsyncDefault = c
                                                 }
                                             }
+
+                                            SettingTile {
+                                                label: "NTSync"
+                                                badgeText: Boolean(uiController && uiController.diagnosticsManager && !uiController.diagnosticsManager.ntsyncAvailable)
+                                                    ? "No /dev/ntsync" : ""
+                                                infoTip: "Linux 6.14+ kernel NT synchronization driver (/dev/ntsync)"
+                                                searchKeywords: "NTSync kernel synchronization wine proton"
+                                                tabIndex: 2
+                                                inlineControl: true
+                                                controlItem: Toggle {
+                                                    checked: appSettings.ntsyncDefault
+                                                    onToggled: (c) => appSettings.ntsyncDefault = c
+                                                }
+                                            }
                                         }
                                     }
 
@@ -1766,13 +1796,117 @@ Page {
                                     }
                                 }
 
-                                // ══ TAB 3: RUNNERS ════════════════════════
+                                // ══ TAB 3: DISPLAY & GPU ══════════════════
+                                ColumnLayout {
+                                    id: tabDisplay
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    visible: settingsPage.activeTab === 3
+                                    spacing: 14
+
+                                    SettingsSection {
+                                        sectionTitle: "Display & Upscaling"
+
+                                        GridLayout {
+                                            Layout.fillWidth: true
+                                            columns: settingsCol.useTwoCols ? 2 : 1
+                                            columnSpacing: 16
+                                            rowSpacing: 4
+
+                                            SettingTile {
+                                                label: "Wayland Driver"
+                                                infoTip: "Enable native Wine/Proton Wayland driver (PROTON_ENABLE_WAYLAND=1)"
+                                                searchKeywords: "Wayland native driver XWayland"
+                                                tabIndex: 3
+                                                inlineControl: true
+                                                controlItem: Toggle {
+                                                    checked: appSettings.waylandDriverDefault
+                                                    onToggled: (c) => appSettings.waylandDriverDefault = c
+                                                }
+                                            }
+
+                                            SettingTile {
+                                                label: "HDR Output"
+                                                infoTip: "Enable PROTON_ENABLE_HDR=1 and DXVK_HDR=1 by default"
+                                                searchKeywords: "HDR high dynamic range display"
+                                                tabIndex: 3
+                                                inlineControl: true
+                                                controlItem: Toggle {
+                                                    checked: appSettings.hdrDefault
+                                                    onToggled: (c) => appSettings.hdrDefault = c
+                                                }
+                                            }
+
+                                            SettingTile {
+                                                label: "NVAPI / DLSS"
+                                                infoTip: "Enable PROTON_ENABLE_NVAPI=1 and DXVK_ENABLE_NVAPI=1 for NVIDIA DLSS & Reflex"
+                                                searchKeywords: "NVIDIA NVAPI DLSS Reflex"
+                                                tabIndex: 3
+                                                inlineControl: true
+                                                controlItem: Toggle {
+                                                    checked: appSettings.nvapiDefault
+                                                    onToggled: (c) => appSettings.nvapiDefault = c
+                                                }
+                                            }
+
+                                            SettingTile {
+                                                label: "Fullscreen FSR"
+                                                infoTip: "Enable WINE_FULLSCREEN_FSR=1 upscaling when Gamescope is not active"
+                                                searchKeywords: "Wine Fullscreen FSR AMD upscaling"
+                                                tabIndex: 3
+                                                inlineControl: true
+                                                controlItem: Toggle {
+                                                    checked: appSettings.fsrDefault
+                                                    onToggled: (c) => appSettings.fsrDefault = c
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    SettingsSection {
+                                        sectionTitle: "Graphics Adapter"
+                                        showDivider: true
+
+                                        SettingTile {
+                                            label: "Default GPU"
+                                            infoTip: "Default GPU / hybrid PRIME target for game launches"
+                                            searchKeywords: "GPU PRIME NVIDIA AMD Intel discrete integrated"
+                                            tabIndex: 3
+                                            inlineControl: true
+                                            controlItem: StyledCombo {
+                                                Layout.preferredWidth: 260
+                                                readonly property var gpuList: (uiController && uiController.diagnosticsManager)
+                                                    ? uiController.diagnosticsManager.detectedGpus : []
+                                                comboModel: {
+                                                    let out = ["Auto"]
+                                                    for (let i = 0; i < gpuList.length; ++i) out.push(gpuList[i].name)
+                                                    return out
+                                                }
+                                                selectedIndex: {
+                                                    const cur = appSettings.defaultGpuSelection || ""
+                                                    if (!cur) return 0
+                                                    for (let i = 0; i < gpuList.length; ++i) {
+                                                        if (gpuList[i].id === cur || gpuList[i].name === cur) return i + 1
+                                                    }
+                                                    return 0
+                                                }
+                                                onSelected: (idx) => {
+                                                    if (idx <= 0) appSettings.defaultGpuSelection = ""
+                                                    else if (idx - 1 < gpuList.length) appSettings.defaultGpuSelection = gpuList[idx - 1].id
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ══ TAB 4: RUNNERS ════════════════════════
                                 ColumnLayout {
                                     id: tabRunners
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     anchors.top: parent.top
-                                    visible: settingsPage.activeTab === 3
+                                    visible: settingsPage.activeTab === 4
                                     spacing: 14
 
                                     SettingsSection {
@@ -1782,7 +1916,7 @@ Page {
                                             label: "Runner"
                                             infoTip: "Fallback Wine or Proton version assigned to newly added games"
                                             searchKeywords: "Global Default Compatibility Runner Wine Proton"
-                                            tabIndex: 3
+                                            tabIndex: 4
                                             inlineControl: false
                                             fillControlWidth: true
                                             controlItem: M3PillGroup {
@@ -1800,6 +1934,20 @@ Page {
                                                 onSelectionChanged: (val) => appSettings.defaultRunnerId = String(val)
                                             }
                                         }
+
+                                        SettingTile {
+                                            label: "Prefer x86-64-v3"
+                                            badgeText: Boolean(uiController && uiController.runnerManager && uiController.runnerManager.cpuSupportsX86_64V3)
+                                                ? "CPU Supported" : "Baseline CPU"
+                                            infoTip: "Download AVX2/x86-64-v3 optimized Proton-CachyOS archives when available"
+                                            searchKeywords: "x86-64-v3 AVX2 CPU CachyOS Proton builds"
+                                            tabIndex: 4
+                                            inlineControl: true
+                                            controlItem: Toggle {
+                                                checked: appSettings.preferX86_64V3Runners
+                                                onToggled: (c) => appSettings.preferX86_64V3Runners = c
+                                            }
+                                        }
                                     }
 
                                     SettingsSection {
@@ -1811,7 +1959,7 @@ Page {
                                             label: "Prefixes Folder"
                                             infoTip: "Base folder where newly created Wine prefixes are initialized"
                                             searchKeywords: "Wine Prefixes Directory folder path"
-                                            tabIndex: 3
+                                            tabIndex: 4
                                             inlineControl: false
                                             fillControlWidth: true
                                             controlItem: RowLayout {
@@ -1850,7 +1998,7 @@ Page {
                                             label: "Runners Folder"
                                             infoTip: "Folder where Proton-GE and Wine tarballs are extracted"
                                             searchKeywords: "Runner Downloads Directory folder path"
-                                            tabIndex: 3
+                                            tabIndex: 4
                                             inlineControl: false
                                             fillControlWidth: true
                                             controlItem: RowLayout {
@@ -1889,7 +2037,7 @@ Page {
                                             label: "Epic Games Folder"
                                             infoTip: "Default installation folder for downloaded Epic Games titles"
                                             searchKeywords: "Epic Games Install Directory folder path"
-                                            tabIndex: 3
+                                            tabIndex: 4
                                             inlineControl: false
                                             fillControlWidth: true
                                             controlItem: RowLayout {
@@ -1923,16 +2071,77 @@ Page {
                                             }
                                         }
                                     }
+                                }
+
+                                // ══ TAB 5: RUNTIMES (UMU, EOS & ANTI-CHEAT) ══
+                                ColumnLayout {
+                                    id: tabRuntimes
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    visible: settingsPage.activeTab === 5
+                                    spacing: 14
 
                                     SettingsSection {
-                                        sectionTitle: "Online & Anti-Cheat Runtimes"
+                                        sectionTitle: "UMU & Protonfixes"
+
+                                        SettingTile {
+                                            label: "UMU Default"
+                                            badgeText: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.umuAvailable)
+                                                ? "Not Installed" : ""
+                                            infoTip: "Run Proton through umu-run by default for automatic Protonfixes and Steam Runtime"
+                                            searchKeywords: "UMU launcher protonfixes steam runtime sniper default"
+                                            tabIndex: 5
+                                            inlineControl: true
+                                            controlItem: Toggle {
+                                                checked: appSettings.umuDefault
+                                                onToggled: (c) => appSettings.umuDefault = c
+                                            }
+                                        }
+
+                                        SettingTile {
+                                            label: "UMU Launcher"
+                                            infoTip: "Unified Linux wine/proton launcher with automatic Valve Protonfixes & Steam Runtime"
+                                            searchKeywords: "UMU launcher umu-run protonfixes sniper runtime install"
+                                            tabIndex: 5
+                                            inlineControl: true
+                                            controlItem: RowLayout {
+                                                spacing: 8
+                                                Label {
+                                                    text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingUmu)
+                                                        ? "Downloading…"
+                                                        : ((uiController && uiController.runnerManager && uiController.runnerManager.umuAvailable)
+                                                            ? (uiController.runnerManager.umuVersion || "Ready")
+                                                            : "Not Found")
+                                                    color: (uiController && uiController.runnerManager && uiController.runnerManager.umuAvailable) ? appSettings.accentColor : appSettings.textSecColor
+                                                    font.pixelSize: 12
+                                                    font.weight: Font.Medium
+                                                }
+                                                M3Button {
+                                                    text: (uiController && uiController.runnerManager && uiController.runnerManager.umuAvailable) ? "Reinstall" : "Install"
+                                                    enabled: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.isInstallingUmu)
+                                                    buttonType: "tonal"
+                                                    onClicked: if (uiController && uiController.runnerManager) uiController.runnerManager.installUmuLauncher()
+                                                }
+                                                M3Button {
+                                                    visible: Boolean(uiController && uiController.runnerManager && uiController.runnerManager.umuAvailable)
+                                                    text: "Remove"
+                                                    buttonType: "destructive"
+                                                    onClicked: if (uiController && uiController.runnerManager) uiController.runnerManager.removeUmuLauncher()
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    SettingsSection {
+                                        sectionTitle: "Online & Anti-Cheat"
                                         showDivider: true
 
                                         SettingTile {
                                             label: "EOS Overlay"
                                             infoTip: "Epic Online Services overlay for friends list, invites, and cross-play"
                                             searchKeywords: "Epic EOS Overlay Online Multiplayer Friends"
-                                            tabIndex: 3
+                                            tabIndex: 5
                                             inlineControl: true
                                             controlItem: RowLayout {
                                                 spacing: 8
@@ -1965,7 +2174,7 @@ Page {
                                             label: "EAC Runtime"
                                             infoTip: "Proton EasyAntiCheat runtime (detected from Steam/Heroic or installed directly)"
                                             searchKeywords: "EasyAntiCheat EAC Proton Runtime Online Multiplayer"
-                                            tabIndex: 3
+                                            tabIndex: 5
                                             inlineControl: true
                                             controlItem: RowLayout {
                                                 spacing: 8
@@ -1992,7 +2201,7 @@ Page {
                                             label: "BattlEye"
                                             infoTip: "Proton BattlEye runtime (detected from Steam/Heroic or installed directly)"
                                             searchKeywords: "BattlEye Proton Runtime AntiCheat Online Multiplayer"
-                                            tabIndex: 3
+                                            tabIndex: 5
                                             inlineControl: true
                                             controlItem: RowLayout {
                                                 spacing: 8
@@ -2017,13 +2226,99 @@ Page {
                                     }
                                 }
 
-                                // ══ TAB 4: SYSTEM ═════════════════════════
+                                // ══ TAB 6: DOWNLOADS ══════════════════════
+                                ColumnLayout {
+                                    id: tabDownloads
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    visible: settingsPage.activeTab === 6
+                                    spacing: 14
+
+                                    SettingsSection {
+                                        sectionTitle: "Bandwidth & Workers"
+
+                                        SettingTile {
+                                            label: "Speed Limit"
+                                            infoTip: "Global bandwidth cap applied across Epic Games, runner, and runtime downloads"
+                                            searchKeywords: "Download Speed Limit Bandwidth Throttle KBps MB/s"
+                                            tabIndex: 6
+                                            inlineControl: false
+                                            controlItem: M3PillGroup {
+                                                model: [
+                                                    { label: "Unlimited", val: 0 },
+                                                    { label: "2 MB/s",    val: 2048 },
+                                                    { label: "5 MB/s",    val: 5120 },
+                                                    { label: "15 MB/s",   val: 15360 },
+                                                    { label: "50 MB/s",   val: 51200 }
+                                                ]
+                                                selectedValue: appSettings.downloadSpeedLimitKBps
+                                                onSelectionChanged: (val) => appSettings.downloadSpeedLimitKBps = Number(val)
+                                            }
+                                        }
+
+                                        SettingTile {
+                                            label: "Chunk Workers"
+                                            infoTip: "Parallel HTTP chunk download workers used for Epic Games installs and updates"
+                                            searchKeywords: "Download Workers Parallel Connections Epic Chunks"
+                                            tabIndex: 6
+                                            inlineControl: false
+                                            controlItem: M3PillGroup {
+                                                model: [
+                                                    { label: "2",  val: 2 },
+                                                    { label: "4",  val: 4 },
+                                                    { label: "6",  val: 6 },
+                                                    { label: "8",  val: 8 },
+                                                    { label: "12", val: 12 }
+                                                ]
+                                                selectedValue: appSettings.maxConcurrentChunkWorkers
+                                                onSelectionChanged: (val) => appSettings.maxConcurrentChunkWorkers = Number(val)
+                                            }
+                                        }
+                                    }
+
+                                    SettingsSection {
+                                        sectionTitle: "Queue Behavior"
+                                        showDivider: true
+
+                                        SettingTile {
+                                            label: "Concurrent Games"
+                                            infoTip: "Maximum number of game installs downloading simultaneously (remaining are queued)"
+                                            searchKeywords: "Download Queue Concurrent Game Downloads Sequential"
+                                            tabIndex: 6
+                                            inlineControl: false
+                                            controlItem: M3PillGroup {
+                                                model: [
+                                                    { label: "1 (Sequential)", val: 1 },
+                                                    { label: "2",              val: 2 },
+                                                    { label: "3",              val: 3 }
+                                                ]
+                                                selectedValue: appSettings.maxConcurrentGameDownloads
+                                                onSelectionChanged: (val) => appSettings.maxConcurrentGameDownloads = Number(val)
+                                            }
+                                        }
+
+                                        SettingTile {
+                                            label: "Pause on Play"
+                                            infoTip: "Automatically pause active downloads when a game starts and resume when it exits"
+                                            searchKeywords: "Auto Pause Downloads While Gaming Gameplay Launch"
+                                            tabIndex: 6
+                                            inlineControl: true
+                                            controlItem: Toggle {
+                                                checked: appSettings.pauseDownloadsOnGameLaunch
+                                                onToggled: (c) => appSettings.pauseDownloadsOnGameLaunch = c
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ══ TAB 7: SYSTEM ═════════════════════════
                                 ColumnLayout {
                                     id: tabSystem
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     anchors.top: parent.top
-                                    visible: settingsPage.activeTab === 4
+                                    visible: settingsPage.activeTab === 7
                                     spacing: 14
 
                                     SettingsSection {
@@ -2038,7 +2333,7 @@ Page {
                                             SettingTile {
                                                 label: "Xbox Emulation"
                                                 infoTip: "Emulate virtual Xbox controller via Linux /dev/uinput for non-XInput pads"
-                                                tabIndex: 4
+                                                tabIndex: 7
                                                 inlineControl: true
                                                 controlItem: Toggle {
                                                     id: settingsXboxToggle
@@ -2056,7 +2351,7 @@ Page {
                                             SettingTile {
                                                 label: "Navigation HUD"
                                                 infoTip: "Show control hints bar during keyboard/gamepad navigation"
-                                                tabIndex: 4
+                                                tabIndex: 7
                                                 inlineControl: true
                                                 controlItem: Toggle {
                                                     id: settingsNavHudToggle
@@ -2075,7 +2370,7 @@ Page {
                                                 label: "Debug Logs"
                                                 infoTip: "Verbose +err,+warn Wine execution logs for diagnostics"
                                                 searchKeywords: "Wine Debug Logs"
-                                                tabIndex: 4
+                                                tabIndex: 7
                                                 inlineControl: true
                                                 controlItem: Toggle {
                                                     checked: appSettings.enableWineDebugLogs
@@ -2093,7 +2388,7 @@ Page {
                                             label: "SteamGridDB Key"
                                             infoTip: "Optional v2 Bearer key for artwork scraping (Steam CDN fallback runs automatically)"
                                             searchKeywords: "SteamGridDB API Key artwork"
-                                            tabIndex: 4
+                                            tabIndex: 7
                                             inlineControl: false
                                             fillControlWidth: true
                                             controlItem: M3TextField {
@@ -2108,13 +2403,13 @@ Page {
                                     }
                                 }
 
-                                // ══ TAB 5: ABOUT ══════════════════════════
+                                // ══ TAB 8: ABOUT ══════════════════════════
                                 ColumnLayout {
                                     id: tabAbout
                                     anchors.left: parent.left
                                     anchors.right: parent.right
                                     anchors.top: parent.top
-                                    visible: settingsPage.activeTab === 5
+                                    visible: settingsPage.activeTab === 8
                                     spacing: 14
 
                                     // Compact Hero Card
@@ -2199,7 +2494,7 @@ Page {
                                             badgeColor: appSettings.accentColor
                                             infoTip: "Creator and maintainer of Tsuki"
                                             searchKeywords: "Author GitHub repository source muzammilshafique link"
-                                            tabIndex: 5
+                                            tabIndex: 8
                                             inlineControl: true
                                             controlItem: RowLayout {
                                                 spacing: 8
@@ -2311,7 +2606,7 @@ Page {
                                                 required property var modelData
                                                 label: modelData.label
                                                 infoTip: modelData.path
-                                                tabIndex: 5
+                                                tabIndex: 8
                                                 inlineControl: true
                                                 controlItem: RowLayout {
                                                     spacing: 10

@@ -1,4 +1,5 @@
 #include "RunnerManager.h"
+#include "../core/SecretStore.h"
 #include <QDateTime>
 #include <QProcess>
 #include <QStandardPaths>
@@ -144,6 +145,8 @@ QString RunnerManager::runnerTagForId(const QString& runnerId) const {
     auto r = resolveRunner(runnerId);
     if (!r.has_value()) return QStringLiteral("WINE");
     if (r->type == QStringLiteral("proton-cachyos")) return QStringLiteral("CACHYOS");
+    if (r->type == QStringLiteral("proton-sarek")) return QStringLiteral("SAREK");
+    if (r->type == QStringLiteral("proton-em")) return QStringLiteral("PROTON-EM");
     if (r->type == QStringLiteral("proton-ge")) return QStringLiteral("PROTON-GE");
     if (r->type == QStringLiteral("proton")) return QStringLiteral("PROTON");
     if (r->type == QStringLiteral("wine-staging")) return QStringLiteral("STAGING");
@@ -377,6 +380,11 @@ void RunnerManager::inspectAndRegisterRunnerDir(const QString& dirPath, bool isS
         rec.path = dirPath;
         if (folderName.contains(QStringLiteral("CachyOS"), Qt::CaseInsensitive)) {
             rec.type = QStringLiteral("proton-cachyos");
+        } else if (folderName.contains(QStringLiteral("Sarek"), Qt::CaseInsensitive)) {
+            rec.type = QStringLiteral("proton-sarek");
+        } else if (folderName.contains(QStringLiteral("Proton-EM"), Qt::CaseInsensitive) ||
+                   folderName.contains(QStringLiteral("proton-em"), Qt::CaseInsensitive)) {
+            rec.type = QStringLiteral("proton-em");
         } else if (folderName.contains(QStringLiteral("GE"), Qt::CaseInsensitive)) {
             rec.type = QStringLiteral("proton-ge");
         } else {
@@ -445,20 +453,56 @@ void RunnerManager::populateFallbackReleases(const QString& category) {
             m_availableReleases.append(m);
         }
     } else if (category == QStringLiteral("proton-cachyos")) {
+        const bool useV3 = m_settings && m_settings->preferX86_64V3Runners();
+        const QString archSuffix = useV3 ? QStringLiteral("x86_64_v3") : QStringLiteral("x86_64");
+        const QList<QString> tags = {
+            QStringLiteral("cachyos-11.0-20261015-slr"),
+            QStringLiteral("cachyos-11.0-20261014-slr"),
+            QStringLiteral("cachyos-11.0-20261005-slr")
+        };
+        for (const QString& tag : tags) {
+            QVariantMap m;
+            m["tagName"] = tag;
+            m["name"] = QStringLiteral("proton-%1-%2").arg(tag, archSuffix);
+            m["category"] = QStringLiteral("proton-cachyos");
+            m["downloadUrl"] = QStringLiteral("https://github.com/CachyOS/proton-cachyos/releases/download/%1/proton-%1-%2.tar.xz").arg(tag, archSuffix);
+            m["fileName"] = QStringLiteral("proton-%1-%2.tar.xz").arg(tag, archSuffix);
+            m["sizeFormatted"] = QStringLiteral("~800 MB");
+            m["publishedAt"] = useV3 ? QStringLiteral("CachyOS Proton (x86_64_v3)") : QStringLiteral("CachyOS Proton Release");
+            m["isInstalled"] = isReleaseInstalled(tag, m["name"].toString());
+            m_availableReleases.append(m);
+        }
+    } else if (category == QStringLiteral("proton-sarek")) {
         const QList<QPair<QString, QString>> items = {
-            {QStringLiteral("cachyos-11.0-20261015-slr"), QStringLiteral("https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-11.0-20261015-slr/proton-cachyos-11.0-20261015-slr-x86_64.tar.xz")},
-            {QStringLiteral("cachyos-11.0-20261014-slr"), QStringLiteral("https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-11.0-20261014-slr/proton-cachyos-11.0-20261014-slr-x86_64.tar.xz")},
-            {QStringLiteral("cachyos-11.0-20261005-slr"), QStringLiteral("https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-11.0-20261005-slr/proton-cachyos-11.0-20261005-slr-x86_64.tar.xz")}
+            {QStringLiteral("Proton-Sarek10-29"), QStringLiteral("https://github.com/pythonlover02/Proton-Sarek/releases/download/Proton-Sarek10-29/Proton-Sarek10-29.tar.gz")},
+            {QStringLiteral("Proton-Sarek9-27"), QStringLiteral("https://github.com/pythonlover02/Proton-Sarek/releases/download/Proton-Sarek9-27/Proton-Sarek9-27.tar.gz")}
+        };
+        for (const auto& pair : items) {
+            QVariantMap m;
+            m["tagName"] = pair.first;
+            m["name"] = pair.first;
+            m["category"] = QStringLiteral("proton-sarek");
+            m["downloadUrl"] = pair.second;
+            m["fileName"] = pair.first + QStringLiteral(".tar.gz");
+            m["sizeFormatted"] = QStringLiteral("~420 MB");
+            m["publishedAt"] = QStringLiteral("Vulkan 1.1/1.2 Legacy GPU");
+            m["isInstalled"] = isReleaseInstalled(pair.first, pair.first);
+            m_availableReleases.append(m);
+        }
+    } else if (category == QStringLiteral("proton-em")) {
+        const QList<QPair<QString, QString>> items = {
+            {QStringLiteral("EM-10.0-30"), QStringLiteral("https://github.com/Etaash-mathamsetty/Proton/releases/download/EM-10.0-30/proton-EM-10.0-30.tar.xz")},
+            {QStringLiteral("EM-10.0-25"), QStringLiteral("https://github.com/Etaash-mathamsetty/Proton/releases/download/EM-10.0-25/proton-EM-10.0-25.tar.xz")}
         };
         for (const auto& pair : items) {
             QVariantMap m;
             m["tagName"] = pair.first;
             m["name"] = QStringLiteral("proton-%1").arg(pair.first);
-            m["category"] = QStringLiteral("proton-cachyos");
+            m["category"] = QStringLiteral("proton-em");
             m["downloadUrl"] = pair.second;
-            m["fileName"] = QStringLiteral("proton-%1-x86_64.tar.xz").arg(pair.first);
-            m["sizeFormatted"] = QStringLiteral("~800 MB");
-            m["publishedAt"] = QStringLiteral("CachyOS Proton Release");
+            m["fileName"] = QStringLiteral("proton-%1.tar.xz").arg(pair.first);
+            m["sizeFormatted"] = QStringLiteral("~460 MB");
+            m["publishedAt"] = QStringLiteral("Proton-EM (Wayland/HDR)");
             m["isInstalled"] = isReleaseInstalled(pair.first, m["name"].toString());
             m_availableReleases.append(m);
         }
@@ -533,6 +577,10 @@ void RunnerManager::fetchAvailableReleases(const QString& category, bool forceRe
         apiUrl = QStringLiteral("https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=15");
     } else if (category == QStringLiteral("proton-cachyos")) {
         apiUrl = QStringLiteral("https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=15");
+    } else if (category == QStringLiteral("proton-sarek")) {
+        apiUrl = QStringLiteral("https://api.github.com/repos/pythonlover02/Proton-Sarek/releases?per_page=15");
+    } else if (category == QStringLiteral("proton-em")) {
+        apiUrl = QStringLiteral("https://api.github.com/repos/Etaash-mathamsetty/Proton/releases?per_page=15");
     } else if (category == QStringLiteral("wine") || category == QStringLiteral("wine-staging")) {
         apiUrl = QStringLiteral("https://api.github.com/repos/Kron4ek/Wine-Builds/releases?per_page=12");
     } else if (category == QStringLiteral("dxvk")) {
@@ -563,6 +611,7 @@ void RunnerManager::fetchAvailableReleases(const QString& category, bool forceRe
         reply->deleteLater();
         if (!doc.isArray()) return;
 
+        const bool preferV3 = m_settings && m_settings->preferX86_64V3Runners();
         QVariantList fetched;
         const QJsonArray arr = doc.array();
         for (const QJsonValue& val : arr) {
@@ -570,6 +619,23 @@ void RunnerManager::fetchAvailableReleases(const QString& category, bool forceRe
             const QString tag = rel["tag_name"].toString();
             const QString pub = rel["published_at"].toString().left(10);
             const QJsonArray assets = rel["assets"].toArray();
+
+            // Index optional .sha512sum sidecar assets for verification
+            QHash<QString, QString> sha512ByBase;
+            QString releaseSha512Url;
+            for (const QJsonValue& av : assets) {
+                const QJsonObject ao = av.toObject();
+                const QString n = ao["name"].toString();
+                if (n.endsWith(QStringLiteral(".sha512sum"), Qt::CaseInsensitive)) {
+                    const QString u = ao["browser_download_url"].toString();
+                    sha512ByBase.insert(n.chopped(10), u);
+                    if (releaseSha512Url.isEmpty()) releaseSha512Url = u;
+                }
+            }
+
+            // Pick best matching tarball (for CachyOS, prefer x86_64_v3 when enabled, fallback to generic x86_64)
+            QJsonObject bestAsset;
+            int bestScore = -1;
             for (const QJsonValue& assetVal : assets) {
                 const QJsonObject asset = assetVal.toObject();
                 const QString fileName = asset["name"].toString();
@@ -581,10 +647,24 @@ void RunnerManager::fetchAvailableReleases(const QString& category, bool forceRe
                 if (fileName.contains(QStringLiteral("wow64")) || fileName.contains(QStringLiteral("x86.tar"))) {
                     continue;
                 }
+                int score = 10;
                 if (category == QStringLiteral("proton-cachyos")) {
                     if (fileName.contains(QStringLiteral("arm64"), Qt::CaseInsensitive)) continue;
                     if (!fileName.contains(QStringLiteral("x86_64"), Qt::CaseInsensitive)) continue;
-                    if (fileName.contains(QStringLiteral("x86_64_v3"), Qt::CaseInsensitive)) continue;
+                    const bool isV3 = fileName.contains(QStringLiteral("x86_64_v3"), Qt::CaseInsensitive);
+                    if (isV3) {
+                        if (!preferV3) continue;
+                        score = 20;
+                    } else {
+                        score = preferV3 ? 5 : 20;
+                    }
+                }
+                if (category == QStringLiteral("proton-sarek")) {
+                    if (fileName.contains(QStringLiteral("async"), Qt::CaseInsensitive)) {
+                        score = 8;
+                    } else {
+                        score = 15;
+                    }
                 }
                 if (category == QStringLiteral("wine-staging") && !fileName.contains(QStringLiteral("staging"))) {
                     continue;
@@ -592,18 +672,26 @@ void RunnerManager::fetchAvailableReleases(const QString& category, bool forceRe
                 if (category == QStringLiteral("wine") && fileName.contains(QStringLiteral("staging"))) {
                     continue;
                 }
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestAsset = asset;
+                }
+            }
 
+            if (bestScore >= 0) {
+                const QString fileName = bestAsset["name"].toString();
+                const QString baseName = fileName.chopped(fileName.endsWith(QStringLiteral(".tar.zst")) ? 8 : 7);
                 QVariantMap item;
                 item["tagName"] = tag;
-                item["name"] = fileName.chopped(fileName.endsWith(QStringLiteral(".tar.zst")) ? 8 : 7);
+                item["name"] = baseName;
                 item["category"] = category;
-                item["downloadUrl"] = asset["browser_download_url"].toString();
+                item["downloadUrl"] = bestAsset["browser_download_url"].toString();
                 item["fileName"] = fileName;
-                item["sizeFormatted"] = DownloadManager::formatBytes(asset["size"].toVariant().toLongLong());
+                item["sha512Url"] = sha512ByBase.value(baseName, sha512ByBase.value(fileName, releaseSha512Url));
+                item["sizeFormatted"] = DownloadManager::formatBytes(bestAsset["size"].toVariant().toLongLong());
                 item["publishedAt"] = pub;
-                item["isInstalled"] = isReleaseInstalled(tag, item["name"].toString());
+                item["isInstalled"] = isReleaseInstalled(tag, baseName);
                 fetched.append(item);
-                break;
             }
         }
 
@@ -621,22 +709,26 @@ void RunnerManager::fetchAvailableReleases(const QString& category, bool forceRe
 void RunnerManager::downloadRelease(const QString& category,
                                      const QString& tagName,
                                      const QString& downloadUrl,
-                                     const QString& fileName)
+                                     const QString& fileName,
+                                     const QString& sha512Url)
 {
     QString actualFileName = fileName;
     if (actualFileName.isEmpty()) {
         actualFileName = QUrl(downloadUrl).fileName();
         if (actualFileName.isEmpty()) {
-            actualFileName = tagName + (category == QStringLiteral("proton-cachyos") ? QStringLiteral(".tar.xz") : QStringLiteral(".tar.gz"));
+            actualFileName = tagName + ((category == QStringLiteral("proton-cachyos") || category == QStringLiteral("proton-em"))
+                                            ? QStringLiteral(".tar.xz")
+                                            : QStringLiteral(".tar.gz"));
         }
     }
-    downloadAndInstallRunner(tagName, category, downloadUrl, actualFileName);
+    downloadAndInstallRunner(tagName, category, downloadUrl, actualFileName, sha512Url);
 }
 
 void RunnerManager::downloadAndInstallRunner(const QString& tagName,
                                              const QString& category,
                                              const QString& downloadUrl,
-                                             const QString& fileName)
+                                             const QString& fileName,
+                                             const QString& sha512Url)
 {
     QString extractDir = m_settings->defaultRunnerLocation();
     if (category == QStringLiteral("dxvk")) {
@@ -648,32 +740,63 @@ void RunnerManager::downloadAndInstallRunner(const QString& tagName,
     const QString destArchive = AppSettings::cacheDir() + QStringLiteral("/") + fileName;
     const QString taskId = QStringLiteral("runner-dl-") + tagName;
 
-    emit runnerOperationStatus(QStringLiteral("Starting download of %1…").arg(tagName), false);
+    auto startActualDownload = [this, taskId, tagName, category, downloadUrl, destArchive, extractDir](const QString& expectedSha512) {
+        emit runnerOperationStatus(QStringLiteral("Starting download of %1…").arg(tagName), false);
+        m_dl->enqueueDownload(
+            taskId,
+            QStringLiteral("Runner: %1").arg(tagName),
+            QUrl(downloadUrl),
+            destArchive,
+            extractDir,
+            [this, tagName, category, extractDir](bool ok, const QString& msg) {
+                if (ok) {
+                    QDirIterator it(extractDir, {QStringLiteral("proton"), QStringLiteral("wine"), QStringLiteral("wineserver")},
+                                    QDir::Files, QDirIterator::Subdirectories);
+                    while (it.hasNext()) {
+                        it.next();
+                        QFile::setPermissions(it.filePath(),
+                                              QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner |
+                                              QFileDevice::ReadGroup | QFileDevice::ExeGroup |
+                                              QFileDevice::ReadOther | QFileDevice::ExeOther);
+                    }
+                    detectInstalledRunners();
+                    fetchAvailableReleases(category, false);
+                    emit runnerOperationStatus(QStringLiteral("Installed %1 successfully.").arg(tagName), false);
+                } else {
+                    emit runnerOperationStatus(QStringLiteral("Failed to install %1: %2").arg(tagName, msg), true);
+                }
+            },
+            expectedSha512,
+            QStringLiteral("runner"));
+    };
 
-    m_dl->enqueueDownload(taskId,
-                          QStringLiteral("Runner: %1").arg(tagName),
-                          QUrl(downloadUrl),
-                          destArchive,
-                          extractDir,
-                          [this, tagName, extractDir](bool ok, const QString& msg) {
-                              if (ok) {
-                                  // Enforce executable permissions on extracted binaries
-                                  QDirIterator it(extractDir, {QStringLiteral("proton"), QStringLiteral("wine"), QStringLiteral("wineserver")},
-                                                  QDir::Files, QDirIterator::Subdirectories);
-                                  while (it.hasNext()) {
-                                      it.next();
-                                      QFile::setPermissions(it.filePath(),
-                                                            QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner |
-                                                            QFileDevice::ReadGroup | QFileDevice::ExeGroup |
-                                                            QFileDevice::ReadOther | QFileDevice::ExeOther);
-                                  }
-                                  detectInstalledRunners();
-                                  fetchAvailableReleases(QStringLiteral("proton-ge"));
-                                  emit runnerOperationStatus(QStringLiteral("Installed %1 successfully.").arg(tagName), false);
-                              } else {
-                                  emit runnerOperationStatus(QStringLiteral("Failed to install %1: %2").arg(tagName, msg), true);
-                              }
-                          });
+    if (!sha512Url.trimmed().isEmpty()) {
+        QNetworkRequest sReq{QUrl(sha512Url.trimmed())};
+        sReq.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("TsukiLauncher/1.0"));
+        sReq.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+        QNetworkReply* sReply = m_nam.get(sReq);
+        connect(sReply, &QNetworkReply::finished, this, [sReply, fileName, startActualDownload]() {
+            QString expectedHex;
+            if (sReply->error() == QNetworkReply::NoError) {
+                const QString body = QString::fromUtf8(sReply->readAll());
+                const QStringList lines = body.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+                for (const QString& line : lines) {
+                    const QStringList parts = line.trimmed().split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+                    if (!parts.isEmpty() && parts.first().size() == 128) {
+                        if (parts.size() < 2 || parts.at(1).contains(fileName, Qt::CaseInsensitive) || lines.size() == 1) {
+                            expectedHex = parts.first().toLower();
+                            break;
+                        }
+                    }
+                }
+            }
+            sReply->deleteLater();
+            startActualDownload(expectedHex);
+        });
+        return;
+    }
+
+    startActualDownload(QString());
 }
 
 bool RunnerManager::uninstallRunner(const QString& runnerId) {
@@ -855,6 +978,155 @@ bool RunnerManager::removeAntiCheatRuntime(const QString& runtimeName) {
     if (ok) {
         emit antiCheatRuntimesChanged();
         emit runnerOperationStatus(QStringLiteral("Removed %1.").arg(runtimeName), false);
+    }
+    return ok;
+}
+
+bool RunnerManager::supportsX86_64V3() {
+    return SecretStore::detectCpuX86_64V3();
+}
+
+QString RunnerManager::resolveUmuRunPath() {
+    const QString tsukiUmu = AppSettings::toolsDir() + QStringLiteral("/umu/umu-run");
+    if (QFileInfo::exists(tsukiUmu)) return tsukiUmu;
+
+    const QString tsukiNested = AppSettings::toolsDir() + QStringLiteral("/umu/umu/umu-run");
+    if (QFileInfo::exists(tsukiNested)) return tsukiNested;
+
+    const QString sysUmu = QStandardPaths::findExecutable(QStringLiteral("umu-run"));
+    if (!sysUmu.isEmpty()) return sysUmu;
+
+    const QStringList externalCandidates = {
+        QDir::homePath() + QStringLiteral("/.config/heroic/tools/runtimes/umu/umu_run.py"),
+        QDir::homePath() + QStringLiteral("/.var/app/com.heroicgameslauncher.hgl/config/heroic/tools/runtimes/umu/umu_run.py"),
+        QDir::homePath() + QStringLiteral("/.local/share/lutris/runtime/umu/umu-run")
+    };
+    for (const QString& cand : externalCandidates) {
+        if (QFileInfo::exists(cand)) return cand;
+    }
+    return QString();
+}
+
+QString RunnerManager::resolveSteamLinuxRuntimePath() {
+    const QStringList candidates = {
+        QDir::homePath() + QStringLiteral("/.local/share/umu/steamrt3"),
+        QDir::homePath() + QStringLiteral("/.local/share/Steam/steamapps/common/SteamLinuxRuntime_sniper"),
+        QDir::homePath() + QStringLiteral("/.steam/steam/steamapps/common/SteamLinuxRuntime_sniper"),
+        QDir::homePath() + QStringLiteral("/.var/app/com.valvesoftware.Steam/data/Steam/steamapps/common/SteamLinuxRuntime_sniper")
+    };
+    for (const QString& c : candidates) {
+        if (QFileInfo::exists(c + QStringLiteral("/_v2-entry-point")) ||
+            QFileInfo::exists(c + QStringLiteral("/run"))) {
+            return c;
+        }
+    }
+    for (const QString& lib : collectSteamLibraryRoots()) {
+        const QString sniper = lib + QStringLiteral("/steamapps/common/SteamLinuxRuntime_sniper");
+        if (QFileInfo::exists(sniper + QStringLiteral("/_v2-entry-point"))) {
+            return sniper;
+        }
+    }
+    return QString();
+}
+
+QString RunnerManager::umuVersion() const {
+    const QString verFile = AppSettings::toolsDir() + QStringLiteral("/umu/.tsuki_umu_version");
+    QFile f(verFile);
+    if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return QString::fromUtf8(f.readAll()).trimmed();
+    }
+    const QString bin = resolveUmuRunPath();
+    if (bin.isEmpty()) return QString();
+    return bin.startsWith(AppSettings::toolsDir()) ? QStringLiteral("Tsuki Managed") : QStringLiteral("System / Shared");
+}
+
+void RunnerManager::installUmuLauncher() {
+    if (m_isInstallingUmu) return;
+    m_isInstallingUmu = true;
+    emit umuRuntimeChanged();
+
+    auto startUmuDownload = [this](const QString& tagName, const QString& url, const QString& fileName) {
+        const QString destDir = AppSettings::toolsDir() + QStringLiteral("/umu");
+        const QString archivePath = AppSettings::cacheDir() + QStringLiteral("/") + fileName;
+        QDir(destDir).removeRecursively();
+        QDir().mkpath(destDir);
+        emit runnerOperationStatus(QStringLiteral("Downloading umu-launcher (%1)…").arg(tagName), false);
+
+        m_dl->enqueueDownload(
+            QStringLiteral("runtime-umu-launcher"),
+            QStringLiteral("UMU Launcher (%1)").arg(tagName),
+            QUrl(url),
+            archivePath,
+            destDir,
+            [this, tagName, destDir](bool ok, const QString& msg) {
+                m_isInstallingUmu = false;
+                if (ok) {
+                    // Locate umu-run inside extracted folder and ensure executable bit + top-level symlink
+                    QString foundBin;
+                    QDirIterator it(destDir, {QStringLiteral("umu-run")}, QDir::Files, QDirIterator::Subdirectories);
+                    if (it.hasNext()) {
+                        foundBin = it.next();
+                        QFile::setPermissions(foundBin,
+                                              QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner |
+                                              QFileDevice::ReadGroup | QFileDevice::ExeGroup |
+                                              QFileDevice::ReadOther | QFileDevice::ExeOther);
+                        const QString topLink = destDir + QStringLiteral("/umu-run");
+                        if (foundBin != topLink && !QFileInfo::exists(topLink)) {
+                            QFile::link(foundBin, topLink);
+                        }
+                    }
+                    QFile vf(destDir + QStringLiteral("/.tsuki_umu_version"));
+                    if (vf.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+                        vf.write(tagName.toUtf8());
+                        vf.close();
+                    }
+                    emit umuRuntimeChanged();
+                    emit runnerOperationStatus(QStringLiteral("Installed umu-launcher %1.").arg(tagName), false);
+                } else {
+                    emit umuRuntimeChanged();
+                    emit runnerOperationStatus(QStringLiteral("Failed to install umu-launcher: %1").arg(msg), true);
+                }
+            },
+            QString(),
+            QStringLiteral("runtime"));
+    };
+
+    QNetworkRequest req{QUrl(QStringLiteral("https://api.github.com/repos/Open-Wine-Components/umu-launcher/releases/latest"))};
+    req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("TsukiLauncher/1.0"));
+    QNetworkReply* reply = m_nam.get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, startUmuDownload]() {
+        QString tag = QStringLiteral("1.2.6");
+        QString dlUrl = QStringLiteral("https://github.com/Open-Wine-Components/umu-launcher/releases/download/1.2.6/umu-launcher-1.2.6-zipapp.tar");
+        QString fileName = QStringLiteral("umu-launcher-1.2.6-zipapp.tar");
+
+        if (reply->error() == QNetworkReply::NoError && reply->isOpen()) {
+            const QJsonObject rel = QJsonDocument::fromJson(reply->readAll()).object();
+            const QString t = rel.value(QStringLiteral("tag_name")).toString().trimmed();
+            if (!t.isEmpty()) tag = t;
+            const QJsonArray assets = rel.value(QStringLiteral("assets")).toArray();
+            for (const QJsonValue& av : assets) {
+                const QJsonObject ao = av.toObject();
+                const QString n = ao.value(QStringLiteral("name")).toString();
+                if (n.contains(QStringLiteral("zipapp"), Qt::CaseInsensitive) &&
+                    (n.endsWith(QStringLiteral(".tar")) || n.endsWith(QStringLiteral(".tar.gz")) || n.endsWith(QStringLiteral(".tar.xz")))) {
+                    dlUrl = ao.value(QStringLiteral("browser_download_url")).toString();
+                    fileName = n;
+                    break;
+                }
+            }
+        }
+        reply->deleteLater();
+        startUmuDownload(tag, dlUrl, fileName);
+    });
+}
+
+bool RunnerManager::removeUmuLauncher() {
+    const QString destDir = AppSettings::toolsDir() + QStringLiteral("/umu");
+    if (!QDir(destDir).exists()) return false;
+    const bool ok = QDir(destDir).removeRecursively();
+    if (ok) {
+        emit umuRuntimeChanged();
+        emit runnerOperationStatus(QStringLiteral("Removed Tsuki-managed umu-launcher."), false);
     }
     return ok;
 }

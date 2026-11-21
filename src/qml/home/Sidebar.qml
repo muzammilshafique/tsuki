@@ -33,6 +33,7 @@ Rectangle {
             { name: "Library",     icon: "qrc:/tsuki_app/icons/nav/library.svg",     action: "filter",  val: -1, section: "library" },
             { name: "Favourites",  icon: "qrc:/tsuki_app/icons/nav/favourite.svg",   action: "filter",  val: 3,  section: "library" },
             { name: "Epic Games",  icon: "qrc:/tsuki_app/icons/nav/epic.svg",        action: "section", val: 0,  section: "epic" },
+            { name: "Downloads",   icon: "qrc:/tsuki_app/icons/actions/download.svg", filledIcon: "qrc:/tsuki_app/icons/actions/download.svg", action: "section", val: 0, section: "downloads" },
             { name: "divider",     icon: "",                                         action: "",        val: 0,  section: "" },
             { name: "Prefixes",    icon: "qrc:/tsuki_app/icons/nav/prefixes.svg",    action: "section", val: 0,  section: "prefixes" },
             { name: "Runners",     icon: "qrc:/tsuki_app/icons/nav/runner.svg",      action: "section", val: 0,  section: "runners" },
@@ -42,6 +43,7 @@ Rectangle {
     }
 
     readonly property bool isKeyboardNavActive: uiController.isKeyboardNavActive
+    readonly property int pendingDownloadsCount: (uiController && uiController.downloadManager) ? uiController.downloadManager.totalPendingCount : 0
 
     function activateFocusedItem(event) {
         if (event) event.accepted = true
@@ -67,18 +69,20 @@ Rectangle {
     Keys.onUpPressed: (event) => {
         event.accepted = true
         uiController.setKeyboardNavActive(true)
-        if (focusedNavIndex === navModel.length) focusedNavIndex = navModel.length - 1
-        else if (focusedNavIndex === 4) focusedNavIndex = 2
-        else if (focusedNavIndex > 0) focusedNavIndex--
-        else if (focusedNavIndex === 0) focusedNavIndex = -1
+        let next = focusedNavIndex - 1
+        while (next >= 0 && next < navModel.length && navModel[next].name === "divider") {
+            next--
+        }
+        if (next >= -1) focusedNavIndex = next
     }
     Keys.onDownPressed: (event) => {
         event.accepted = true
         uiController.setKeyboardNavActive(true)
-        if (focusedNavIndex === -1) focusedNavIndex = 0
-        else if (focusedNavIndex === 2) focusedNavIndex = 4
-        else if (focusedNavIndex === navModel.length - 1) focusedNavIndex = navModel.length
-        else if (focusedNavIndex < navModel.length) focusedNavIndex++
+        let next = focusedNavIndex + 1
+        while (next >= 0 && next < navModel.length && navModel[next].name === "divider") {
+            next++
+        }
+        if (next <= navModel.length) focusedNavIndex = next
     }
     Keys.onLeftPressed: (event) => {
         event.accepted = true
@@ -289,10 +293,32 @@ Rectangle {
                             width: 68
                             YIcon {
                                 anchors.centerIn: parent
-                                source: navDelegateItem.isActive ? modelData.icon.replace(".svg", "-filled.svg") : modelData.icon
+                                source: navDelegateItem.isActive
+                                    ? (modelData.filledIcon ? modelData.filledIcon : modelData.icon.replace(".svg", "-filled.svg"))
+                                    : modelData.icon
                                 color: navDelegateItem.isActive ? appSettings.accentColor : appSettings.sidebarTextSecColor
                                 size: 22
                                 visible: modelData.icon.length > 0
+                            }
+
+                            // Compact badge dot when collapsed on Downloads
+                            Rectangle {
+                                visible: sidebar.isCollapsed && modelData.section === "downloads" && sidebar.pendingDownloadsCount > 0
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.rightMargin: 15
+                                anchors.topMargin: 8
+                                width: 16
+                                height: 16
+                                radius: 8
+                                color: appSettings.accentColor
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: sidebar.pendingDownloadsCount > 9 ? "9+" : String(sidebar.pendingDownloadsCount)
+                                    color: appSettings.onPrimary
+                                    font.pixelSize: 9
+                                    font.weight: Font.Bold
+                                }
                             }
                         }
                         Label {
@@ -305,6 +331,27 @@ Rectangle {
                             opacity: sidebar.isCollapsed ? 0.0 : 1.0
                             visible: opacity > 0
                             Behavior on opacity { NumberAnimation { duration: 150 } }
+                        }
+
+                        // Expanded badge pill on Downloads nav item
+                        Rectangle {
+                            visible: !sidebar.isCollapsed && modelData.section === "downloads" && sidebar.pendingDownloadsCount > 0
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.right: parent.right
+                            anchors.rightMargin: 18
+                            height: 20
+                            implicitWidth: Math.max(20, dlBadgeLbl.implicitWidth + 10)
+                            width: implicitWidth
+                            radius: 10
+                            color: appSettings.accentColor
+                            Label {
+                                id: dlBadgeLbl
+                                anchors.centerIn: parent
+                                text: String(sidebar.pendingDownloadsCount)
+                                color: appSettings.onPrimary
+                                font.pixelSize: 11
+                                font.weight: Font.Bold
+                            }
                         }
                     }
                 }

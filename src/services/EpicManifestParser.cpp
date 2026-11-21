@@ -635,6 +635,22 @@ bool EpicManifestParser::parseJson(const QByteArray& rawBytes, EpicManifest& out
         if (fo.value(QStringLiteral("bIsCompressed")).toBool(false)) fm.metaFlags |= 0x02u;
         if (fo.value(QStringLiteral("bIsUnixExecutable")).toBool(false)) fm.metaFlags |= 0x04u;
 
+        const QString fileHashStr = fo.value(QStringLiteral("FileHash")).toString().trimmed();
+        if (fileHashStr.size() == 40) {
+            fm.shaHash = QByteArray::fromHex(fileHashStr.toLatin1());
+        } else if (fileHashStr.size() == 60) {
+            QByteArray sha;
+            sha.reserve(20);
+            bool allOk = true;
+            for (int hi = 0; hi < 60; hi += 3) {
+                bool ok = false;
+                const uint b = fileHashStr.mid(hi, 3).toUInt(&ok);
+                if (!ok || b > 255u) { allOk = false; break; }
+                sha.append(static_cast<char>(b));
+            }
+            if (allOk) fm.shaHash = sha;
+        }
+
         const QJsonArray tagsArr = fo.value(QStringLiteral("InstallTags")).toArray();
         for (const QJsonValue& tv : tagsArr) fm.installTags.append(tv.toString());
 
@@ -733,6 +749,255 @@ bool EpicManifestParser::decompressChunk(const QByteArray& rawChunkBytes,
     }
 
     return true;
+}
+
+bool EpicManifest::fileMatchesTags(const EpicFileManifest& fm, const QStringList& selectedTags) {
+    if (fm.installTags.isEmpty()) {
+        return true; // Base files are always required
+    }
+    if (selectedTags.isEmpty()) {
+        return true; // Empty selection means install everything (default backward-compatible behavior)
+    }
+    for (const QString& tag : fm.installTags) {
+        if (selectedTags.contains(tag, Qt::CaseInsensitive)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QList<EpicInstallTagInfo> EpicManifest::computeInstallTags() const {
+    QHash<QString, EpicInstallTagInfo> byTag;
+    QHash<QString, QSet<QString>> chunksPerTag;
+
+    for (const EpicFileManifest& fm : files) {
+        if (fm.installTags.isEmpty()) continue;
+        for (const QString& rawTag : fm.installTags) {
+            const QString tag = rawTag.trimmed();
+            if (tag.isEmpty()) continue;
+            EpicInstallTagInfo& info = byTag[tag];
+            info.tag = tag;
+            info.installSize += fm.fileSize;
+            info.fileCount += 1;
+            for (const EpicChunkPart& part : fm.chunkParts) {
+                chunksPerTag[tag].insert(part.chunkGuid);
+            }
+        }
+    }
+
+    QList<EpicInstallTagInfo> result;
+    for (auto it = byTag.begin(); it != byTag.end(); ++it) {
+        qint64 dlBytes = 0;
+        for (const QString& guid : chunksPerTag.value(it.key())) {
+            if (const EpicChunkInfo* ci = findChunk(guid)) {
+                dlBytes += qMax<qint64>(0, ci->fileSize);
+            }
+        }
+        it.value().downloadSize = dlBytes;
+        result.append(it.value());
+    }
+    std::sort(result.begin(), result.end(), [](const EpicInstallTagInfo& a, const EpicInstallTagInfo& b) {
+        return a.tag.compare(b.tag, Qt::CaseInsensitive) < 0;
+    });
+    return result;
+}
+
+EpicManifestDiff EpicManifestParser::diffManifests(const EpicManifest& oldManifest,
+                                                   const EpicManifest& newManifest,
+                                                   const QStringList& selectedTags) {
+    EpicManifestDiff diff;
+    QHash<QString, const EpicFileManifest*> oldByPath;
+    oldByPath.reserve(oldManifest.files.size());
+    for (const EpicFileManifest& of : oldManifest.files) {
+        oldByPath.insert(of.filename.toLower(), &of);
+    }
+
+    QSet<QString> newPathsLower;
+    for (const EpicFileManifest& nf : newManifest.files) {
+        if (!EpicManifest::fileMatchesTags(nf, selectedTags)) {
+            continue;
+        }
+        const QString lowerPath = nf.filename.toLower();
+        newPathsLower.insert(lowerPath);
+
+        const EpicFileManifest* oldFile = oldByPath.value(lowerPath, nullptr);
+        const bool sameHash = oldFile &&
+                              !nf.shaHash.isEmpty() &&
+                              !oldFile->shaHash.isEmpty() &&
+                              oldFile->shaHash == nf.shaHash &&
+                              oldFile->fileSize == nf.fileSize &&
+                              oldFile->symlinkTarget == nf.symlinkTarget;
+        if (sameHash) {
+            diff.unchangedFiles.append(nf);
+        } else {
+            diff.modifiedOrNewFiles.append(nf);
+            diff.deltaInstallBytes += nf.fileSize;
+            for (const EpicChunkPart& part : nf.chunkParts) {
+                diff.requiredChunkGuids.insert(part.chunkGuid);
+            }
+        }
+    }
+
+    for (const EpicFileManifest& of : oldManifest.files) {
+        if (!newPathsLower.contains(of.filename.toLower())) {
+            diff.removedFiles.append(of.filename);
+        }
+    }
+
+    for (const QString& guid : diff.requiredChunkGuids) {
+        if (const EpicChunkInfo* ci = newManifest.findChunk(guid)) {
+            diff.deltaDownloadBytes += qMax<qint64>(0, ci->fileSize);
+        }
+    }
+    return diff;
+}
+
+bool EpicManifestParser::zlibDeflate(const QByteArray& raw,
+                                     QByteArray& outCompressed,
+                                     QString* outError) {
+    outCompressed.clear();
+    z_stream zs{};
+    if (deflateInit(&zs, Z_DEFAULT_COMPRESSION) != Z_OK) {
+        if (outError) *outError = QStringLiteral("zlib deflateInit failed");
+        return false;
+    }
+
+    zs.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(raw.constData()));
+    zs.avail_in = static_cast<uInt>(raw.size());
+
+    char buffer[65536];
+    int ret = Z_OK;
+    do {
+        zs.next_out = reinterpret_cast<Bytef*>(buffer);
+        zs.avail_out = sizeof(buffer);
+        ret = deflate(&zs, Z_FINISH);
+        const qsizetype have = static_cast<qsizetype>(sizeof(buffer) - zs.avail_out);
+        if (have > 0) {
+            outCompressed.append(buffer, have);
+        }
+        if (ret != Z_OK && ret != Z_STREAM_END) {
+            deflateEnd(&zs);
+            if (outError) *outError = QStringLiteral("zlib deflate error (%1)").arg(ret);
+            return false;
+        }
+    } while (ret != Z_STREAM_END);
+
+    deflateEnd(&zs);
+    return true;
+}
+
+quint64 EpicManifestParser::computeRollingHash(const QByteArray& data) {
+    // 64-bit FNV-1a deterministic hash suitable for chunk filenames
+    quint64 h = 14695981039346656037ULL;
+    for (uchar b : data) {
+        h ^= static_cast<quint64>(b);
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+QByteArray EpicManifestParser::buildChunk(const QString& guidHex32,
+                                          const QByteArray& uncompressedData,
+                                          quint64* outHash,
+                                          QByteArray* outSha1) {
+    QByteArray compressed;
+    quint8 storedAs = 0x01u;
+    if (!zlibDeflate(uncompressedData, compressed) || compressed.size() >= uncompressedData.size()) {
+        compressed = uncompressedData;
+        storedAs = 0x00u;
+    }
+
+    const QByteArray sha1 = QCryptographicHash::hash(uncompressedData, QCryptographicHash::Sha1);
+    const quint64 rolling = computeRollingHash(uncompressedData);
+    if (outHash) *outHash = rolling;
+    if (outSha1) *outSha1 = sha1;
+
+    // Header v2: magic(4) + version(4) + headerSize(4) + compSize(4) + guid(16) + hash(8) + storedAs(1) + sha1(20) = 61 bytes
+    constexpr quint32 kHeaderSize = 61u;
+    QByteArray out;
+    out.reserve(static_cast<qsizetype>(kHeaderSize) + compressed.size());
+
+    auto appendLE32 = [&out](quint32 v) {
+        uchar b[4];
+        qToLittleEndian(v, b);
+        out.append(reinterpret_cast<const char*>(b), 4);
+    };
+    auto appendLE64 = [&out](quint64 v) {
+        uchar b[8];
+        qToLittleEndian(v, b);
+        out.append(reinterpret_cast<const char*>(b), 8);
+    };
+
+    appendLE32(kChunkMagic);
+    appendLE32(2u); // version 2 includes SHA-1
+    appendLE32(kHeaderSize);
+    appendLE32(static_cast<quint32>(compressed.size()));
+
+    // Write 16-byte FGuid (4 little-endian uint32s)
+    const QString padded = guidHex32.trimmed().toUpper().leftJustified(32, QLatin1Char('0'));
+    for (int i = 0; i < 4; ++i) {
+        bool ok = false;
+        const quint32 part = padded.mid(i * 8, 8).toUInt(&ok, 16);
+        appendLE32(part);
+    }
+    appendLE64(rolling);
+    out.append(static_cast<char>(storedAs));
+    out.append(sha1.leftJustified(20, '\0', true));
+    out.append(compressed);
+    return out;
+}
+
+QByteArray EpicManifestParser::buildJsonManifest(const QString& appName,
+                                                 const QString& buildVersion,
+                                                 const QList<EpicFileManifest>& files,
+                                                 const QList<EpicChunkInfo>& chunks) {
+    QJsonObject root;
+    root[QStringLiteral("ManifestFileVersion")] = QStringLiteral("000000000000000000000018");
+    root[QStringLiteral("bIsFileData")] = false;
+    root[QStringLiteral("AppID")] = QStringLiteral("0");
+    root[QStringLiteral("AppNameString")] = appName;
+    root[QStringLiteral("BuildVersionString")] = buildVersion;
+    root[QStringLiteral("LaunchExeString")] = QString();
+    root[QStringLiteral("LaunchCommand")] = QString();
+
+    QJsonObject hashObj;
+    QJsonObject shaObj;
+    QJsonObject groupObj;
+    QJsonObject sizeObj;
+    for (const EpicChunkInfo& c : chunks) {
+        hashObj[c.guid] = QStringLiteral("%1").arg(c.hash, 16, 16, QLatin1Char('0')).toUpper();
+        shaObj[c.guid] = QString::fromLatin1(c.shaHash.toHex()).toUpper();
+        groupObj[c.guid] = QString::number(c.groupNum);
+        sizeObj[c.guid] = QString::number(c.fileSize);
+    }
+    root[QStringLiteral("ChunkHashList")] = hashObj;
+    root[QStringLiteral("ChunkShaList")] = shaObj;
+    root[QStringLiteral("DataGroupList")] = groupObj;
+    root[QStringLiteral("ChunkFilesizeList")] = sizeObj;
+
+    QJsonArray filesArr;
+    for (const EpicFileManifest& fm : files) {
+        QJsonObject fo;
+        fo[QStringLiteral("Filename")] = fm.filename;
+        fo[QStringLiteral("FileHash")] = QString::fromLatin1(fm.shaHash.toHex()).toUpper();
+        if (!fm.installTags.isEmpty()) {
+            QJsonArray tagsArr;
+            for (const QString& t : fm.installTags) tagsArr.append(t);
+            fo[QStringLiteral("InstallTags")] = tagsArr;
+        }
+        QJsonArray partsArr;
+        for (const EpicChunkPart& p : fm.chunkParts) {
+            QJsonObject po;
+            po[QStringLiteral("Guid")] = p.chunkGuid;
+            po[QStringLiteral("Offset")] = static_cast<qint64>(p.offset);
+            po[QStringLiteral("Size")] = static_cast<qint64>(p.size);
+            partsArr.append(po);
+        }
+        fo[QStringLiteral("FileChunkParts")] = partsArr;
+        filesArr.append(fo);
+    }
+    root[QStringLiteral("FileManifestList")] = filesArr;
+    return QJsonDocument(root).toJson(QJsonDocument::Compact);
 }
 
 } // namespace Tsuki

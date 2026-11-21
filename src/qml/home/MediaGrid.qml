@@ -31,6 +31,19 @@ Item {
     property string _pendingRemoveTitle: ""
     property string _pendingRemovePrefixId: ""
 
+    property string _collectionEditGameId: ""
+    property string _collectionEditGameTitle: ""
+    property var _collectionEditAssigned: []
+
+    function openCollectionDialog(gameId, title) {
+        _collectionEditGameId = gameId || ""
+        _collectionEditGameTitle = title || ""
+        const gm = (uiController && uiController.gameManager && _collectionEditGameId.length > 0)
+            ? uiController.gameManager.getGameMap(_collectionEditGameId) : ({})
+        _collectionEditAssigned = gm.categories ? Array.from(gm.categories) : []
+        collectionPopup.open()
+    }
+
     function openRemoveGameDialog(gameId, title, prefixId) {
         _pendingRemoveGameId = gameId || ""
         _pendingRemoveTitle = title || ""
@@ -96,7 +109,7 @@ Item {
         keyNavigationEnabled: false
 
         Connections {
-            target: root.model
+            target: root.model || null
             function onModelReset() {
                 grid.currentIndex = 0
                 grid.positionViewAtBeginning()
@@ -165,7 +178,12 @@ Item {
             grid.isHoldingActionKey = false
             let currItem = grid.currentItem
             if (currItem && currItem.isMenuOpen) {
-                currItem.isMenuOpen = false
+                if (currItem.menuPage === 1) {
+                    currItem.menuPage = 0
+                    currItem.menuFocusedIndex = 2
+                } else {
+                    currItem.isMenuOpen = false
+                }
                 return
             }
             if (grid.count === 0) {
@@ -235,7 +253,12 @@ Item {
             grid.isHoldingActionKey = false
             let currItem = grid.currentItem
             if (currItem && currItem.isMenuOpen) {
-                currItem.isMenuOpen = false
+                if (currItem.menuPage === 1) {
+                    currItem.menuPage = 0
+                    currItem.menuFocusedIndex = 2
+                } else {
+                    currItem.isMenuOpen = false
+                }
             } else {
                 root.focusSidebarRequested()
             }
@@ -270,7 +293,12 @@ Item {
                 grid.isHoldingActionKey = false
                 let currItem = grid.currentItem
                 if (currItem && currItem.isMenuOpen) {
-                    currItem.isMenuOpen = false
+                    if (currItem.menuPage === 1) {
+                        currItem.menuPage = 0
+                        currItem.menuFocusedIndex = 2
+                    } else {
+                        currItem.isMenuOpen = false
+                    }
                 } else {
                     root.focusSidebarRequested()
                 }
@@ -336,19 +364,41 @@ Item {
             required property string prefixId
             required property bool   isPinned
             required property bool   isFavorite
+            required property bool   isHidden
             required property bool   isRunning
             required property bool   isNative
             required property bool   isEpic
+            required property bool   hasUpdate
 
             property bool isMenuOpen: false
+            property int menuPage: 0 // 0 = Main 4 actions, 1 = Add to submenu (Favourite / Collection / Back)
             property int menuFocusedIndex: 0
-            readonly property int menuItemCount: 4
+            readonly property var menuActions: {
+                if (cell.menuPage === 1) {
+                    return [
+                        { id: "favorite",    label: cell.isFavorite ? "Unfavourite" : "Favourite", icon: cell.isFavorite ? "qrc:/tsuki_app/icons/nav/favourite-filled.svg" : "qrc:/tsuki_app/icons/nav/favourite.svg", accent: "gold" },
+                        { id: "collections", label: "Collection",                                  icon: "qrc:/tsuki_app/icons/actions/folder.svg", accent: "default" },
+                        { id: "back",        label: "Back",                                        icon: "qrc:/tsuki_app/icons/actions/back.svg",   accent: "default" }
+                    ]
+                }
+                return [
+                    { id: "details", label: "Details",                                  icon: "qrc:/tsuki_app/icons/actions/edit.svg",  accent: "default" },
+                    { id: "pin",     label: cell.isPinned ? "Unpin" : "Pin to Top",     icon: "qrc:/tsuki_app/icons/actions/pin.svg",   accent: "default" },
+                    { id: "add_to",  label: "Add to",                                   icon: "qrc:/tsuki_app/icons/actions/add.svg",   accent: "default" },
+                    { id: "remove",  label: "Remove",                                   icon: "qrc:/tsuki_app/icons/actions/trash.svg", accent: "danger" }
+                ]
+            }
+            readonly property int menuItemCount: menuActions.length
 
             onIsMenuOpenChanged: {
-                if (!isMenuOpen) menuFocusedIndex = 0
+                if (!isMenuOpen) {
+                    menuPage = 0
+                    menuFocusedIndex = 0
+                }
             }
 
             function openContextMenuFromKeyboard() {
+                menuPage = 0
                 menuFocusedIndex = 0
                 isMenuOpen = true
             }
@@ -367,20 +417,29 @@ Item {
             }
 
             function executeAction(actionIdx) {
+                if (actionIdx < 0 || actionIdx >= cell.menuActions.length) return
+                const aid = cell.menuActions[actionIdx].id
+                if (aid === "add_to") {
+                    cell.menuPage = 1
+                    cell.menuFocusedIndex = 0
+                    return
+                }
+                if (aid === "back") {
+                    cell.menuPage = 0
+                    cell.menuFocusedIndex = 2
+                    return
+                }
                 cell.isMenuOpen = false
-                switch (actionIdx) {
-                    case 0: // Edit
-                        root.gameDetailsRequested(cell.gameId)
-                        break
-                    case 1: // Favourite
-                        uiController.gameManager.toggleFavorite(cell.gameId)
-                        break
-                    case 2: // Pin / Unpin
-                        uiController.gameManager.togglePin(cell.gameId)
-                        break
-                    case 3: // Remove Game
-                        root.openRemoveGameDialog(cell.gameId, cell.title, cell.prefixId)
-                        break
+                if (aid === "details") {
+                    root.gameDetailsRequested(cell.gameId)
+                } else if (aid === "pin") {
+                    uiController.gameManager.togglePin(cell.gameId)
+                } else if (aid === "favorite") {
+                    uiController.gameManager.toggleFavorite(cell.gameId)
+                } else if (aid === "collections") {
+                    root.openCollectionDialog(cell.gameId, cell.title)
+                } else if (aid === "remove") {
+                    root.openRemoveGameDialog(cell.gameId, cell.title, cell.prefixId)
                 }
             }
 
@@ -830,6 +889,25 @@ Item {
                     z: 14
                     visible: !cell.isMenuOpen
 
+                    // 0. Update Available Badge
+                    Rectangle {
+                        objectName: "updateCardBadge"
+                        visible: cell.hasUpdate
+                        height: 22
+                        width: updBadgeLbl.implicitWidth + 12
+                        radius: 11
+                        color: "#f59e0b"
+                        Label {
+                            id: updBadgeLbl
+                            anchors.centerIn: parent
+                            text: "UPDATE"
+                            color: "#0f0f11"
+                            font.pixelSize: 9
+                            font.weight: Font.Bold
+                            font.letterSpacing: 0.4
+                        }
+                    }
+
                     // 1. Persistent Epic Store Badge (toggleable in Settings)
                     Rectangle {
                         objectName: "epicCardBadge"
@@ -988,191 +1066,212 @@ Item {
                     y: 8 * (1.0 - actionOverlay.menuProgress)
                 }
 
-                // 1. Details / Edit Button
-                Rectangle {
-                    id: editBtn
-                    readonly property bool isBtnFocused: uiController.isKeyboardNavActive && Boolean(actionOverlay.cell && actionOverlay.cell.isMenuOpen && actionOverlay.cell.menuFocusedIndex === 0)
-                    readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && editMA.containsMouse) || isBtnFocused
-                    Layout.fillWidth: true
-                    height: 38
-                    radius: 19
-                    color: isBtnActive ? appSettings.accentColor : Qt.rgba(0.15, 0.15, 0.18, 0.88)
-                    border.color: isBtnFocused ? "#ffffff" : Qt.rgba(1, 1, 1, 0.15)
-                    border.width: isBtnFocused ? 2 : 1
-                    scale: editMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
-                    Behavior on scale { NumberAnimation { duration: 100 } }
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Behavior on border.color { ColorAnimation { duration: 120 } }
+                Repeater {
+                    model: actionOverlay.cell ? actionOverlay.cell.menuActions : []
+                    delegate: Rectangle {
+                        id: ctxBtn
+                        required property int index
+                        required property var modelData
+                        readonly property bool isBtnFocused: uiController.isKeyboardNavActive && Boolean(actionOverlay.cell && actionOverlay.cell.isMenuOpen && actionOverlay.cell.menuFocusedIndex === index)
+                        readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && ctxMA.containsMouse) || isBtnFocused
+                        readonly property bool isPinState: modelData.id === "pin" && Boolean(actionOverlay.cell && actionOverlay.cell.isPinned)
+                        readonly property bool isFavState: modelData.id === "favorite" && Boolean(actionOverlay.cell && actionOverlay.cell.isFavorite)
+                        readonly property color hoverFill: modelData.accent === "danger"
+                            ? "#ef4444"
+                            : (modelData.accent === "gold"
+                                ? "#fbbf24"
+                                : appSettings.accentColor)
+                        Layout.fillWidth: true
+                        height: 38
+                        radius: 19
+                        color: isBtnActive ? hoverFill : Qt.rgba(0.15, 0.15, 0.18, 0.88)
+                        border.color: isBtnFocused
+                            ? "#ffffff"
+                            : (isPinState
+                                ? appSettings.accentColor
+                                : (isFavState ? "#fbbf24" : Qt.rgba(1, 1, 1, 0.15)))
+                        border.width: isBtnFocused ? 2 : 1
+                        scale: ctxMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
+                        Behavior on scale { NumberAnimation { duration: 100 } }
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on border.color { ColorAnimation { duration: 120 } }
 
-                    RowLayout {
-                        anchors.centerIn: parent
-                        spacing: 8
-                        YIcon {
-                            size: 18
-                            source: "qrc:/tsuki_app/icons/actions/edit.svg"
-                            color: editBtn.isBtnActive ? (root.isDark ? "#0f0f11" : "#ffffff") : "#ffffff"
+                        RowLayout {
+                            anchors.centerIn: parent
+                            spacing: 8
+                            YIcon {
+                                size: 18
+                                source: ctxBtn.modelData.icon
+                                color: {
+                                    if (ctxBtn.isBtnActive) {
+                                        if (ctxBtn.modelData.accent === "danger") return "#ffffff"
+                                        if (ctxBtn.modelData.accent === "gold") return "#0f0f11"
+                                        return root.isDark ? "#0f0f11" : "#ffffff"
+                                    }
+                                    if (ctxBtn.modelData.accent === "danger") return "#ef4444"
+                                    if (ctxBtn.isFavState) return "#fbbf24"
+                                    if (ctxBtn.isPinState) return appSettings.accentColor
+                                    return "#ffffff"
+                                }
+                            }
+                            Label {
+                                text: ctxBtn.modelData.label
+                                color: {
+                                    if (ctxBtn.isBtnActive) {
+                                        if (ctxBtn.modelData.accent === "danger") return "#ffffff"
+                                        if (ctxBtn.modelData.accent === "gold") return "#0f0f11"
+                                        return root.isDark ? "#0f0f11" : "#ffffff"
+                                    }
+                                    return "#ffffff"
+                                }
+                                font.pixelSize: 14
+                                font.weight: Font.Normal
+                                renderType: Text.QtRendering
+                            }
                         }
-                        Label {
-                            text: "Details"
-                            color: editBtn.isBtnActive ? (root.isDark ? "#0f0f11" : "#ffffff") : "#ffffff"
-                            font.pixelSize: 14
-                            font.weight: Font.Normal
-                            renderType: Text.QtRendering
-                        }
-                    }
-                    MouseArea {
-                        id: editMA
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (actionOverlay.cell) {
-                                actionOverlay.cell.isMenuOpen = false
-                                actionOverlay.cell.executeAction(0)
+
+                        MouseArea {
+                            id: ctxMA
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (actionOverlay.cell) {
+                                    actionOverlay.cell.executeAction(ctxBtn.index)
+                                }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
 
-                // 2. Favourite / Unfavourite Button
-                Rectangle {
-                    id: favBtnCard
-                    readonly property bool isFav: Boolean(actionOverlay.cell && actionOverlay.cell.isFavorite)
-                    readonly property bool isBtnFocused: uiController.isKeyboardNavActive && Boolean(actionOverlay.cell && actionOverlay.cell.isMenuOpen && actionOverlay.cell.menuFocusedIndex === 1)
-                    readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && favMA.containsMouse) || isBtnFocused
-                    Layout.fillWidth: true
-                    height: 38
-                    radius: 19
-                    color: isBtnActive ? "#fbbf24" : Qt.rgba(0.15, 0.15, 0.18, 0.88)
-                    border.color: isBtnFocused ? "#ffffff" : (isFav ? "#fbbf24" : Qt.rgba(1, 1, 1, 0.15))
-                    border.width: isBtnFocused ? 2 : 1
-                    scale: favMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
-                    Behavior on scale { NumberAnimation { duration: 100 } }
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Behavior on border.color { ColorAnimation { duration: 120 } }
+    // Compact Collections Assignment Popup
+    Popup {
+        id: collectionPopup
+        modal: true
+        focus: true
+        width: 340
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        padding: 18
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-                    RowLayout {
-                        anchors.centerIn: parent
-                        spacing: 8
-                        YIcon {
-                            size: 18
-                            source: favBtnCard.isFav ? "qrc:/tsuki_app/icons/nav/favourite-filled.svg" : "qrc:/tsuki_app/icons/nav/favourite.svg"
-                            color: favBtnCard.isBtnActive ? "#0f0f11" : (favBtnCard.isFav ? "#fbbf24" : "#ffffff")
+        background: Rectangle {
+            color: appSettings.surfaceColor
+            radius: 18
+            border.color: appSettings.borderColor
+            border.width: 1
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 12
+
+            Label {
+                text: "Collections — " + root._collectionEditGameTitle
+                color: appSettings.textColor
+                font.pixelSize: 15
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 6
+
+                Repeater {
+                    model: (uiController && uiController.gameManager) ? uiController.gameManager.categories : []
+                    delegate: Rectangle {
+                        required property string modelData
+                        readonly property bool assigned: root._collectionEditAssigned.indexOf(modelData) !== -1
+                        Layout.fillWidth: true
+                        height: 36
+                        radius: 10
+                        color: assigned ? appSettings.secondaryContainer : appSettings.surfaceContainerLow
+                        border.color: assigned ? appSettings.accentColor : appSettings.borderColor
+                        border.width: 1
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            Label {
+                                Layout.fillWidth: true
+                                text: modelData
+                                color: assigned ? appSettings.onSecondaryContainer : appSettings.textColor
+                                font.pixelSize: 13
+                                font.weight: assigned ? Font.DemiBold : Font.Normal
+                            }
+                            YIcon {
+                                size: 16
+                                symbol: "check"
+                                color: appSettings.onSecondaryContainer
+                                visible: assigned
+                            }
                         }
-                        Label {
-                            text: favBtnCard.isFav ? "Unfavourite" : "Favourite"
-                            color: favBtnCard.isBtnActive ? "#0f0f11" : "#ffffff"
-                            font.pixelSize: 14
-                            font.weight: Font.Normal
-                            renderType: Text.QtRendering
-                        }
-                    }
-                    MouseArea {
-                        id: favMA
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (actionOverlay.cell) {
-                                actionOverlay.cell.isMenuOpen = false
-                                actionOverlay.cell.executeAction(1)
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (!uiController || !uiController.gameManager) return
+                                let arr = Array.from(root._collectionEditAssigned)
+                                const idx = arr.indexOf(modelData)
+                                if (idx >= 0) {
+                                    arr.splice(idx, 1)
+                                    uiController.gameManager.removeGameFromCollection(root._collectionEditGameId, modelData)
+                                } else {
+                                    arr.push(modelData)
+                                    uiController.gameManager.addGameToCollection(root._collectionEditGameId, modelData)
+                                }
+                                root._collectionEditAssigned = arr
                             }
                         }
                     }
                 }
+            }
 
-                // 3. Pin to Top / Unpin Button
-                Rectangle {
-                    id: pinBtn
-                    readonly property bool isPin: Boolean(actionOverlay.cell && actionOverlay.cell.isPinned)
-                    readonly property bool isBtnFocused: uiController.isKeyboardNavActive && Boolean(actionOverlay.cell && actionOverlay.cell.isMenuOpen && actionOverlay.cell.menuFocusedIndex === 2)
-                    readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && pinMA.containsMouse) || isBtnFocused
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                M3TextField {
+                    id: quickColField
                     Layout.fillWidth: true
-                    height: 38
-                    radius: 19
-                    color: isBtnActive ? appSettings.accentColor : Qt.rgba(0.15, 0.15, 0.18, 0.88)
-                    border.color: isBtnFocused ? "#ffffff" : (isPin ? appSettings.accentColor : Qt.rgba(1, 1, 1, 0.15))
-                    border.width: isBtnFocused ? 2 : 1
-                    scale: pinMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
-                    Behavior on scale { NumberAnimation { duration: 100 } }
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                    RowLayout {
-                        anchors.centerIn: parent
-                        spacing: 8
-                        YIcon {
-                            size: 18
-                            source: "qrc:/tsuki_app/icons/actions/pin.svg"
-                            color: pinBtn.isBtnActive ? (root.isDark ? "#0f0f11" : "#ffffff") : (pinBtn.isPin ? appSettings.accentColor : "#ffffff")
-                        }
-                        Label {
-                            text: pinBtn.isPin ? "Unpin" : "Pin to Top"
-                            color: pinBtn.isBtnActive ? (root.isDark ? "#0f0f11" : "#ffffff") : "#ffffff"
-                            font.pixelSize: 14
-                            font.weight: Font.Normal
-                            renderType: Text.QtRendering
-                        }
-                    }
-                    MouseArea {
-                        id: pinMA
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (actionOverlay.cell) {
-                                actionOverlay.cell.isMenuOpen = false
-                                actionOverlay.cell.executeAction(2)
-                            }
+                    placeholderText: "New collection name…"
+                    onCommit: (val) => {
+                        const nm = val.trim()
+                        if (nm.length > 0 && uiController && uiController.gameManager) {
+                            uiController.gameManager.addGameToCollection(root._collectionEditGameId, nm)
+                            let arr = Array.from(root._collectionEditAssigned)
+                            if (arr.indexOf(nm) === -1) arr.push(nm)
+                            root._collectionEditAssigned = arr
+                            quickColField.text = ""
                         }
                     }
                 }
-
-                // 4. Remove Button
-                Rectangle {
-                    id: removeBtnCard
-                    readonly property bool isBtnFocused: uiController.isKeyboardNavActive && Boolean(actionOverlay.cell && actionOverlay.cell.isMenuOpen && actionOverlay.cell.menuFocusedIndex === 3)
-                    readonly property bool isBtnActive: (!uiController.isKeyboardNavActive && removeMA.containsMouse) || isBtnFocused
-                    Layout.fillWidth: true
-                    height: 38
-                    radius: 19
-                    color: isBtnActive ? "#ef4444" : Qt.rgba(0.15, 0.15, 0.18, 0.88)
-                    border.color: isBtnFocused ? "#ffffff" : Qt.rgba(1, 1, 1, 0.15)
-                    border.width: isBtnFocused ? 2 : 1
-                    scale: removeMA.pressed ? 0.96 : (isBtnActive ? 1.04 : 1.0)
-                    Behavior on scale { NumberAnimation { duration: 100 } }
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                    RowLayout {
-                        anchors.centerIn: parent
-                        spacing: 8
-                        YIcon {
-                            size: 18
-                            source: "qrc:/tsuki_app/icons/actions/trash.svg"
-                            color: removeBtnCard.isBtnActive ? "#ffffff" : "#ef4444"
-                        }
-                        Label {
-                            text: "Remove"
-                            color: "#ffffff"
-                            font.pixelSize: 14
-                            font.weight: Font.Normal
-                            renderType: Text.QtRendering
-                        }
-                    }
-                    MouseArea {
-                        id: removeMA
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (actionOverlay.cell) {
-                                actionOverlay.cell.isMenuOpen = false
-                                actionOverlay.cell.executeAction(3)
-                            }
+                M3Button {
+                    text: "Add"
+                    buttonType: "tonal"
+                    onClicked: {
+                        const nm = quickColField.text.trim()
+                        if (nm.length > 0 && uiController && uiController.gameManager) {
+                            uiController.gameManager.addGameToCollection(root._collectionEditGameId, nm)
+                            let arr = Array.from(root._collectionEditAssigned)
+                            if (arr.indexOf(nm) === -1) arr.push(nm)
+                            root._collectionEditAssigned = arr
+                            quickColField.text = ""
                         }
                     }
                 }
+            }
+
+            M3Button {
+                Layout.alignment: Qt.AlignRight
+                text: "Done"
+                buttonType: "filled"
+                onClicked: collectionPopup.close()
             }
         }
     }
