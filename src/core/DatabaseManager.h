@@ -35,6 +35,11 @@ public:
                                   const QString& coverPath,
                                   const QString& bannerPath,
                                   const QString& logoPath);
+    bool clearEpicLibraryArtworkFields(const QString& appName,
+                                       bool clearCover,
+                                       bool clearBanner,
+                                       bool clearLogo);
+    bool clearEpicLibraryArtworkPaths();
     bool updateEpicLibrarySizes(const QString& appName, qint64 downloadSize, qint64 installSize, const QString& buildVersion);
     bool setEpicLibraryItemHidden(const QString& appName, bool hidden);
     bool clearEpicLibrary();

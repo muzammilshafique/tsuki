@@ -11,6 +11,7 @@ Item {
     property bool isPassword: false
     property bool showClearButton: true
     property bool twoStageFocus: false
+    property real fieldRadius: 14
     readonly property bool isEditing: inputField.activeFocus
     readonly property bool kbFocused: root.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
     signal editingFinished()
@@ -61,7 +62,7 @@ Item {
     Rectangle {
         id: container
         anchors.fill: parent
-        radius: 14
+        radius: root.fieldRadius
         color: containerHover.hovered && !(inputField.activeFocus || root.kbFocused)
             ? appSettings.surfaceContainerHighest
             : appSettings.surfaceContainerHigh

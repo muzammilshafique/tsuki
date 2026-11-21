@@ -8,6 +8,7 @@
 #include <QObject>
 #include <QNetworkAccessManager>
 #include <QVariantList>
+#include <optional>
 
 namespace Tsuki {
 
@@ -87,6 +88,7 @@ public:
                                               const QString& sha512Url = QString());
     Q_INVOKABLE bool removeRunner(const QString& runnerId, bool deleteFiles = false);
     Q_INVOKABLE bool uninstallRunner(const QString& runnerId);
+    Q_INVOKABLE bool canDeleteRunner(const QString& runnerId) const;
     Q_INVOKABLE bool updateRunnerSettings(const QString& runnerId, const QVariantMap& settings);
     Q_INVOKABLE QVariantMap getRunnerMap(const QString& runnerId) const;
 

@@ -36,6 +36,11 @@
   </categories>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.2.3" date="2026-11-22">
+      <description>
+        <p>Epic cloud saves, UMU launcher support, storage cleaning tools, Epic artwork disk persistence and lazy grid loading, runner deletion controls, smoother dialog &amp; sidebar grid transitions, and UI polish.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-11-19">
       <description>
         <p>Epic Games library support, SVG icon assets, Material 3 UI refinements, and multi-distro Linux packaging (.pkg.tar.zst, .deb, .rpm, AppImage).</p>

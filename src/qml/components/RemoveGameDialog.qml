@@ -55,7 +55,7 @@ Popup {
 
     background: Rectangle {
         color: appSettings.surfaceColor
-        radius: 20
+        radius: 12
         border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.10)
         border.width: 1
         layer.enabled: root.visible
@@ -167,7 +167,7 @@ Popup {
             Rectangle {
                 visible: root.isEpicGame
                 Layout.fillWidth: true
-                radius: 12
+                radius: 10
                 color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
                 border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
                 implicitHeight: epicFilesRow.implicitHeight + 20
@@ -217,7 +217,7 @@ Popup {
             Rectangle {
                 visible: root.hasDedicatedPrefix
                 Layout.fillWidth: true
-                radius: 12
+                radius: 10
                 color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
                 border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
                 implicitHeight: prefixRow.implicitHeight + 20

@@ -610,6 +610,13 @@ struct RunnerRecord {
                binaryPath.endsWith(QStringLiteral("/proton"));
     }
 
+    bool isSteam() const {
+        return id.startsWith(QStringLiteral("steam-")) ||
+               path.contains(QStringLiteral("/steamapps/common/"), Qt::CaseInsensitive) ||
+               path.contains(QStringLiteral("/compatibilitytools.d/"), Qt::CaseInsensitive) ||
+               path.endsWith(QStringLiteral("/compatibilitytools.d"), Qt::CaseInsensitive);
+    }
+
     QVariantMap toVariantMap() const {
         QVariantMap m;
         m["id"] = id;
@@ -619,6 +626,7 @@ struct RunnerRecord {
         m["path"] = path;
         m["binaryPath"] = binaryPath;
         m["isSystem"] = isSystem;
+        m["isSteam"] = isSteam();
         m["isProton"] = isProton();
         m["settings"] = settings;
         m["existsOnDisk"] = QFileInfo::exists(binaryPath);

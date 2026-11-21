@@ -25,7 +25,7 @@
 #include <QTimer>
 
 #ifndef TSUKI_VERSION
-#define TSUKI_VERSION "0.2.0"
+#define TSUKI_VERSION "0.2.3"
 #endif
 
 int main(int argc, char *argv[]) {

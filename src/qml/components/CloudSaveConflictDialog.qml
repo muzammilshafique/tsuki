@@ -60,7 +60,7 @@ Popup {
 
     background: Rectangle {
         color: appSettings.surfaceColor
-        radius: 20
+        radius: 12
         border.color: appSettings.borderColor
         border.width: 1
         layer.enabled: root.visible
@@ -157,7 +157,7 @@ Popup {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     implicitHeight: localCardCol.implicitHeight + 24
-                    radius: 14
+                    radius: 10
                     color: appSettings.surfaceContainerLow
                     border.color: appSettings.borderColor
                     border.width: 1
@@ -195,7 +195,7 @@ Popup {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     implicitHeight: cloudCardCol.implicitHeight + 24
-                    radius: 14
+                    radius: 10
                     color: appSettings.surfaceContainerLow
                     border.color: appSettings.borderColor
                     border.width: 1
@@ -232,7 +232,7 @@ Popup {
             Rectangle {
                 Layout.fillWidth: true
                 implicitHeight: safeLbl.implicitHeight + 16
-                radius: 10
+                radius: 8
                 color: Qt.rgba(34/255, 197/255, 94/255, 0.12)
                 border.color: Qt.rgba(34/255, 197/255, 94/255, 0.35)
                 border.width: 1

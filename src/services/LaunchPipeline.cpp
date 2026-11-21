@@ -224,6 +224,15 @@ void LaunchPipeline::applyGpuEnvironment(QProcessEnvironment& env, const GameRec
         return;
     }
 
+    // Explicit numeric DRI_PRIME index (e.g. "0", "1"): apply directly rather than
+    // fuzzy-matching digits against PCI hex IDs in detected GPU names.
+    bool isPrimeIndex = false;
+    const int primeIdx = sel.toInt(&isPrimeIndex);
+    if (isPrimeIndex && primeIdx >= 0) {
+        env.insert(QStringLiteral("DRI_PRIME"), QString::number(primeIdx));
+        return;
+    }
+
     std::optional<DiagnosticsManager::GpuInfo> gpuOpt;
     if (m_diagMgr) {
         gpuOpt = m_diagMgr->findGpu(sel);
@@ -242,13 +251,11 @@ void LaunchPipeline::applyGpuEnvironment(QProcessEnvironment& env, const GameRec
             env.insert(QStringLiteral("DRI_PRIME"), QString::number(gpuOpt->driPrimeIndex));
         }
     } else {
-        // Fallback: treat explicit string as DXVK/VKD3D filter device name or DRI_PRIME value
+        // Fallback: treat explicit string as DXVK/VKD3D filter device name or vendor hint
         if (sel.startsWith(QStringLiteral("nvidia"), Qt::CaseInsensitive)) {
             env.insert(QStringLiteral("__NV_PRIME_RENDER_OFFLOAD"), QStringLiteral("1"));
             env.insert(QStringLiteral("__GLX_VENDOR_LIBRARY_NAME"), QStringLiteral("nvidia"));
             env.insert(QStringLiteral("__VK_LAYER_NV_optimus"), QStringLiteral("NVIDIA_only"));
-        } else if (sel == QLatin1String("0") || sel == QLatin1String("1")) {
-            env.insert(QStringLiteral("DRI_PRIME"), sel);
         } else if (!isNative) {
             env.insert(QStringLiteral("DXVK_FILTER_DEVICE_NAME"), sel);
             env.insert(QStringLiteral("VKD3D_FILTER_DEVICE_NAME"), sel);
@@ -508,9 +515,6 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
             env.insert(QStringLiteral("GAMEID"), plan.umuGameId);
             env.insert(QStringLiteral("STORE"), UmuIdResolver::storeForGame(game));
             env.insert(QStringLiteral("PROTON_VERB"), QStringLiteral("waitforexitandrun"));
-            if (!plan.workingDirectory.isEmpty()) {
-                env.insert(QStringLiteral("STEAM_COMPAT_INSTALL_PATH"), plan.workingDirectory);
-            }
             // Skip blocking network runtime self-updates on launch when Steam Linux Runtime 3.0 is already installed
             if (!RunnerManager::resolveSteamLinuxRuntimePath().isEmpty() &&
                 !env.contains(QStringLiteral("UMU_RUNTIME_UPDATE"))) {
@@ -519,6 +523,9 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
             if (game.disableProtonfixes) {
                 env.insert(QStringLiteral("PROTONFIXES_DISABLE"), QStringLiteral("1"));
             }
+        }
+        if (!plan.workingDirectory.isEmpty()) {
+            env.insert(QStringLiteral("STEAM_COMPAT_INSTALL_PATH"), plan.workingDirectory);
         }
         env.insert(QStringLiteral("STEAM_COMPAT_DATA_PATH"), prefix.path);
         QString steamClientPath = QDir::homePath() + QStringLiteral("/.local/share/Steam");
@@ -536,15 +543,15 @@ LaunchPlan LaunchPipeline::buildLaunchPlan(const GameRecord& game,
         }
     }
 
-    // Proton Anti-Cheat Runtimes (EAC & BattlEye)
-    if (game.enableEacRuntime) {
+    // Proton Anti-Cheat Runtimes (EAC & BattlEye — Epic Games only)
+    if (game.isEpic() && game.enableEacRuntime) {
         const QString eacDir = RunnerManager::resolveEacRuntimePath();
         if (!eacDir.isEmpty()) {
             env.insert(QStringLiteral("PROTON_EAC_RUNTIME"),
                        RunnerManager::ensureSpaceSafeRuntimePath(eacDir, QStringLiteral("steam_eac_runtime")));
         }
     }
-    if (game.enableBattlEyeRuntime) {
+    if (game.isEpic() && game.enableBattlEyeRuntime) {
         const QString beDir = RunnerManager::resolveBattlEyeRuntimePath();
         if (!beDir.isEmpty()) {
             env.insert(QStringLiteral("PROTON_BATTLEYE_RUNTIME"),
@@ -916,7 +923,7 @@ bool LaunchPipeline::startLaunchProcess(const GameRecord& game,
 
     m_diagMgr->startNewGameLog(gameId, header);
 
-    if (!isNative) {
+    if (!isNative && game.isEpic()) {
         if (game.enableEosOverlay && (!m_epicService || !m_epicService->isEosOverlayInstalled())) {
             m_diagMgr->appendGameLog(gameId, QStringLiteral("[Tsuki] Warning: EOS Overlay is enabled for this game, but EOS Overlay is not installed.\n"));
         }

@@ -69,30 +69,23 @@ Page {
     readonly property bool isNative: root.gameData.isNative === true
 
     readonly property var tabList: {
-        if (root.isNative) {
-            let nativeTabs = [
-                { label: "General & Paths", stackIndex: 0 }
-            ]
-            if (root.isEpicEntry) {
-                nativeTabs.push({ label: "Epic & Online", stackIndex: 5 })
-            }
-            nativeTabs.push({ label: "Performance & Controller", stackIndex: 2 })
-            nativeTabs.push({ label: "Artwork & Media", stackIndex: 3 })
-            nativeTabs.push({ label: "Execution Logs", stackIndex: 4 })
-            return nativeTabs
-        }
-        return [
-            { label: "General & Paths", stackIndex: 0 },
-            { label: "Wine & DXVK", stackIndex: 1 },
-            { label: root.isEpicEntry ? "Epic & Online" : "Online & Anti-Cheat", stackIndex: 5 },
-            { label: "Performance & Controller", stackIndex: 2 },
-            { label: "Artwork & Media", stackIndex: 3 },
-            { label: "Execution Logs", stackIndex: 4 }
+        let tabs = [
+            { label: "General & Paths", stackIndex: 0 }
         ]
+        if (!root.isNative) {
+            tabs.push({ label: "Wine & DXVK", stackIndex: 1 })
+        }
+        if (root.isEpicEntry) {
+            tabs.push({ label: "Epic & Online", stackIndex: 5 })
+        }
+        tabs.push({ label: "Performance & Controller", stackIndex: 2 })
+        tabs.push({ label: "Artwork & Media", stackIndex: 3 })
+        tabs.push({ label: "Execution Logs", stackIndex: 4 })
+        return tabs
     }
 
     onGameDataChanged: {
-        if (root.isNative && (root.activeTab === 1 || (root.activeTab === 5 && !root.isEpicEntry))) {
+        if ((root.isNative && root.activeTab === 1) || (!root.isEpicEntry && root.activeTab === 5)) {
             root.activeTab = 0
         }
     }
@@ -212,8 +205,6 @@ Page {
             }
             if (root.isEpicEntry && !root.isUninstalledEpic && !root.isNative) {
                 rows.push([eosOverlayToggle])
-            }
-            if (!root.isNative) {
                 rows.push([eacRuntimeToggle])
                 rows.push([battleyeRuntimeToggle])
             }
@@ -396,10 +387,10 @@ Page {
                 eosOverlayToggle.checked = Boolean(root.gameData.enableEosOverlay)
             }
             if (typeof eacRuntimeToggle !== "undefined" && eacRuntimeToggle) {
-                eacRuntimeToggle.checked = Boolean(root.gameData.enableEacRuntime)
+                eacRuntimeToggle.checked = Boolean(root.isEpicEntry && root.gameData.enableEacRuntime)
             }
             if (typeof battleyeRuntimeToggle !== "undefined" && battleyeRuntimeToggle) {
-                battleyeRuntimeToggle.checked = Boolean(root.gameData.enableBattlEyeRuntime)
+                battleyeRuntimeToggle.checked = Boolean(root.isEpicEntry && root.gameData.enableBattlEyeRuntime)
             }
             if (typeof cloudEnabledToggle !== "undefined" && cloudEnabledToggle) {
                 cloudEnabledToggle.checked = Boolean(root.gameData.epicCloudSavesEnabled)
@@ -454,6 +445,9 @@ Page {
         if (root.isUninstalledEpic && uiController && uiController.epicService) {
             uiController.epicService.fetchInstallInfo(root.epicAppName)
         }
+        if (root.isEpicEntry && root.epicAppName.length > 0 && uiController && uiController.epicService) {
+            uiController.epicService.requestDetailArtwork(root.epicAppName)
+        }
         focusPrimaryBtnTimer.restart()
     }
     Component.onDestruction: saveAllChanges()
@@ -481,6 +475,11 @@ Page {
     Connections {
         target: (uiController && uiController.epicService) ? uiController.epicService : null
         function onDownloadStateChanged(appName) {
+            if (appName === root.epicAppName) {
+                root.epicData = uiController.epicService.getEpicGameMap(root.epicAppName)
+            }
+        }
+        function onArtworkUpdated(appName) {
             if (appName === root.epicAppName) {
                 root.epicData = uiController.epicService.getEpicGameMap(root.epicAppName)
             }
@@ -681,10 +680,10 @@ Page {
             cpuAffinity: (typeof affinityField !== "undefined" && affinityField) ? affinityField.text.trim() : (root.gameData.cpuAffinity || ""),
             processPriority: (typeof priorityField !== "undefined" && priorityField) ? (Number(priorityField.text) || 0) : (root.gameData.processPriority || 0),
             xboxEmulationState: xboxEmuVal,
-            epicOfflineMode: (typeof epicOnlineAuthToggle !== "undefined" && epicOnlineAuthToggle) ? !epicOnlineAuthToggle.checked : Boolean(root.gameData.epicOfflineMode),
-            enableEosOverlay: (typeof eosOverlayToggle !== "undefined" && eosOverlayToggle) ? eosOverlayToggle.checked : Boolean(root.gameData.enableEosOverlay),
-            enableEacRuntime: (typeof eacRuntimeToggle !== "undefined" && eacRuntimeToggle) ? eacRuntimeToggle.checked : Boolean(root.gameData.enableEacRuntime),
-            enableBattlEyeRuntime: (typeof battleyeRuntimeToggle !== "undefined" && battleyeRuntimeToggle) ? battleyeRuntimeToggle.checked : Boolean(root.gameData.enableBattlEyeRuntime),
+            epicOfflineMode: (root.isEpicEntry && typeof epicOnlineAuthToggle !== "undefined" && epicOnlineAuthToggle) ? !epicOnlineAuthToggle.checked : Boolean(root.gameData.epicOfflineMode),
+            enableEosOverlay: (root.isEpicEntry && typeof eosOverlayToggle !== "undefined" && eosOverlayToggle) ? eosOverlayToggle.checked : false,
+            enableEacRuntime: (root.isEpicEntry && typeof eacRuntimeToggle !== "undefined" && eacRuntimeToggle) ? eacRuntimeToggle.checked : false,
+            enableBattlEyeRuntime: (root.isEpicEntry && typeof battleyeRuntimeToggle !== "undefined" && battleyeRuntimeToggle) ? battleyeRuntimeToggle.checked : false,
             preLaunchScript: (typeof preScriptField !== "undefined" && preScriptField) ? preScriptField.text.trim() : (root.gameData.preLaunchScript || ""),
             postExitScript: (typeof postScriptField !== "undefined" && postScriptField) ? postScriptField.text.trim() : (root.gameData.postExitScript || ""),
             environmentVariables: envMap,
@@ -1020,14 +1019,43 @@ Page {
                                             bottomLeftRadius: 22
                                             topRightRadius: actionsDropdownBtn.visible ? 4 : 22
                                             bottomRightRadius: actionsDropdownBtn.visible ? 4 : 22
-                                            clip: true
 
                                             color: primaryActionBtn.down
                                                 ? Qt.darker(primaryActionBtn.effectiveColor, 1.12)
                                                 : (primaryActionBtn.isBtnHovered ? Qt.lighter(primaryActionBtn.effectiveColor, 1.08) : primaryActionBtn.effectiveColor)
                                             Behavior on color { ColorAnimation { duration: 150 } }
+                                        }
 
-                                            // M3 Ripple effect inside clipped playBg
+                                        // Offscreen alpha mask matching split/full pill corners so click ripple never shows sharp corners
+                                        Rectangle {
+                                            id: playBgMask
+                                            anchors.fill: parent
+                                            topLeftRadius: playBg.topLeftRadius
+                                            bottomLeftRadius: playBg.bottomLeftRadius
+                                            topRightRadius: playBg.topRightRadius
+                                            bottomRightRadius: playBg.bottomRightRadius
+                                            color: "white"
+                                            antialiasing: true
+                                            visible: false
+                                            layer.enabled: playRippleLayer.hasRipple
+                                            layer.smooth: true
+                                        }
+
+                                        Item {
+                                            id: playRippleLayer
+                                            anchors.fill: parent
+                                            clip: true
+                                            readonly property bool hasRipple: playRipple.opacity > 0.001
+                                            layer.enabled: hasRipple
+                                            layer.smooth: true
+                                            layer.effect: MultiEffect {
+                                                autoPaddingEnabled: false
+                                                maskEnabled: true
+                                                maskSource: playBgMask
+                                                maskThresholdMin: 0.5
+                                                maskSpreadAtMin: 1.0
+                                            }
+
                                             Rectangle {
                                                 id: playRipple
                                                 property real centerX: 0
@@ -1157,10 +1185,12 @@ Page {
                                             playRippleAnim.restart()
                                             primaryActionBtn.down = true
                                         }
-                                        onReleased: {
+                                        onReleased: (mouse) => {
                                             primaryActionBtn.down = false
                                             playRippleFade.restart()
-                                            primaryActionBtn.clicked()
+                                            if (mouse.x >= 0 && mouse.x <= width && mouse.y >= 0 && mouse.y <= height) {
+                                                primaryActionBtn.clicked()
+                                            }
                                         }
                                         onCanceled: {
                                             primaryActionBtn.down = false
@@ -1998,6 +2028,7 @@ Page {
 
                 StackLayout {
                     id: tabStack
+                    objectName: "detailTabStack"
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.top
@@ -2560,7 +2591,6 @@ Page {
                         id: tab1Wine
                         Layout.fillWidth: true
                         width: tabStack.width
-                        visible: !root.isNative
                         spacing: 16
 
                         // Card 1: Direct3D Translators
@@ -3759,11 +3789,11 @@ Page {
                         objectName: "detailOnlineTab"
                         Layout.fillWidth: true
                         width: tabStack.width
-                        visible: !root.isNative || root.isEpicEntry
                         spacing: 16
 
                         // Card 1: Online Authentication, EOS Overlay & Anti-Cheat Runtimes
                         Rectangle {
+                            visible: root.isEpicEntry
                             Layout.fillWidth: true
                             implicitHeight: onlineCardCol.implicitHeight + 48
                             radius: 24
@@ -3860,7 +3890,7 @@ Page {
 
                                 // Proton EasyAntiCheat Runtime Toggle
                                 RowLayout {
-                                    visible: !root.isUninstalledEpic && !root.isNative
+                                    visible: root.isEpicEntry && !root.isUninstalledEpic && !root.isNative
                                     Layout.fillWidth: true
                                     spacing: 12
 
@@ -3897,14 +3927,15 @@ Page {
                                     Toggle {
                                         id: eacRuntimeToggle
                                         objectName: "eacRuntimeToggle"
-                                        checked: Boolean(root.gameData.enableEacRuntime)
+                                        enabled: root.isEpicEntry && !root.isUninstalledEpic && !root.isNative
+                                        checked: Boolean(root.isEpicEntry && root.gameData.enableEacRuntime)
                                         onToggled: root.saveAllChanges()
                                     }
                                 }
 
                                 // Proton BattlEye Runtime Toggle
                                 RowLayout {
-                                    visible: !root.isUninstalledEpic && !root.isNative
+                                    visible: root.isEpicEntry && !root.isUninstalledEpic && !root.isNative
                                     Layout.fillWidth: true
                                     spacing: 12
 
@@ -3941,7 +3972,8 @@ Page {
                                     Toggle {
                                         id: battleyeRuntimeToggle
                                         objectName: "battleyeRuntimeToggle"
-                                        checked: Boolean(root.gameData.enableBattlEyeRuntime)
+                                        enabled: root.isEpicEntry && !root.isUninstalledEpic && !root.isNative
+                                        checked: Boolean(root.isEpicEntry && root.gameData.enableBattlEyeRuntime)
                                         onToggled: root.saveAllChanges()
                                     }
                                 }

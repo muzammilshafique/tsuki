@@ -231,6 +231,7 @@ Page {
                     anchors.rightMargin: 32
                     anchors.topMargin: 16
                     anchors.bottomMargin: 24
+                    columnReferenceWidth: Math.max(1, page.width - 220 - 64)
                     model: uiController.searchModel
                     onGameDetailsRequested: (gameId) => page.gameDetailsRequested(gameId, "")
                     onWinetricksRequested: (prefixId, title) => page.openWinetricks(prefixId, title)
@@ -246,6 +247,9 @@ Page {
                     visible: active
                     source: active ? Qt.resolvedUrl("../pages/EpicLibraryView.qml") : ""
                     onLoaded: {
+                        if (item) {
+                            item.columnReferenceWidth = Qt.binding(function() { return Math.max(1, page.width - 220 - 64) })
+                        }
                         if (page._pendingFocusSection === "epic" && item) {
                             page._pendingFocusSection = ""
                             Qt.callLater(function() { if (epicLoader.item) epicLoader.item.forceFocus() })

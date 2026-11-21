@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DEFAULT_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/VERSION" 2>/dev/null || git -C "${ROOT_DIR}" describe --tags --abbrev=0 2>/dev/null || echo '0.2.0')"
+DEFAULT_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/VERSION" 2>/dev/null || git -C "${ROOT_DIR}" describe --tags --abbrev=0 2>/dev/null || echo '0.2.3')"
 RAW_VERSION="${VERSION:-${DEFAULT_VERSION}}"
 RAW_VERSION="${RAW_VERSION#v}"
 PKGVER="${RAW_VERSION//-/.}"

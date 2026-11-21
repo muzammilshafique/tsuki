@@ -12,13 +12,43 @@ Page {
     property int activeTab: 0
     property bool railCollapsed: false
     property bool suppressNextTabScrollReset: false
+    property var storageStats: ({
+        cacheBytes: 0,
+        cacheFiles: 0,
+        cacheFormatted: "0 B",
+        logsBytes: 0,
+        logsFiles: 0,
+        logsFormatted: "0 B",
+        oldArtworkBytes: 0,
+        oldArtworkFiles: 0,
+        oldArtworkFormatted: "0 B",
+        epicArtworkBytes: 0,
+        epicArtworkFiles: 0,
+        epicArtworkFormatted: "0 B",
+        cleanAllBytes: 0,
+        cleanAllFiles: 0,
+        cleanAllFormatted: "0 B"
+    })
+
+    function refreshStorageStats() {
+        if (uiController && uiController.getStorageCleaningStats) {
+            storageStats = uiController.getStorageCleaningStats()
+        }
+    }
+
+    Connections {
+        target: uiController ? uiController : null
+        function onStorageStatsChanged() {
+            settingsPage.refreshStorageStats()
+        }
+    }
 
     readonly property var tabMeta: [
         { idx: 0, label: "Style",       symbol: "palette" },
         { idx: 1, label: "Library",     symbol: "grid_view" },
         { idx: 2, label: "Performance", symbol: "speed" },
         { idx: 3, label: "Display",     symbol: "desktop_windows" },
-        { idx: 4, label: "Runners",     symbol: "folder_open" },
+        { idx: 4, label: "Runners",     symbol: "runner" },
         { idx: 5, label: "Runtimes",    symbol: "auto_awesome" },
         { idx: 6, label: "Downloads",   symbol: "download" },
         { idx: 7, label: "System",      symbol: "tune" },
@@ -379,6 +409,7 @@ Page {
             }
         }
         suppressNextTabScrollReset = false
+        if (activeTab === 7) refreshStorageStats()
     }
 
     Timer {
@@ -534,7 +565,10 @@ Page {
         }
     }
 
-    Component.onCompleted: initPageTimer.restart()
+    Component.onCompleted: {
+        refreshStorageStats()
+        initPageTimer.restart()
+    }
 
     NumberAnimation {
         id: rowScrollAnim
@@ -1948,6 +1982,20 @@ Page {
                                                 onToggled: (c) => appSettings.preferX86_64V3Runners = c
                                             }
                                         }
+
+                                        SettingTile {
+                                            label: "Delete Steam Runners"
+                                            infoTip: "Allow deleting Steam Proton installations and compatibilitytools.d tools from disk in Runners view"
+                                            searchKeywords: "Delete Remove Steam Proton Compatibility Tools Runners"
+                                            tabIndex: 4
+                                            inlineControl: true
+                                            controlItem: Toggle {
+                                                id: allowDeleteSteamRunnersToggle
+                                                objectName: "allowDeleteSteamRunnersToggle"
+                                                checked: appSettings.allowDeleteSteamRunners
+                                                onToggled: (c) => appSettings.allowDeleteSteamRunners = c
+                                            }
+                                        }
                                     }
 
                                     SettingsSection {
@@ -2385,6 +2433,20 @@ Page {
                                         showDivider: true
 
                                         SettingTile {
+                                            label: "Epic Auto Artwork"
+                                            infoTip: "Automatically replace downloaded Epic game cover, banner, and logo with SteamGridDB / Steam Store artwork"
+                                            searchKeywords: "SteamDB SteamGridDB Auto Fetch Artwork Epic Download Cover Banner Logo"
+                                            tabIndex: 7
+                                            inlineControl: true
+                                            controlItem: Toggle {
+                                                id: autoFetchEpicArtworkToggle
+                                                objectName: "autoFetchEpicArtworkToggle"
+                                                checked: appSettings.autoFetchEpicArtwork
+                                                onToggled: (c) => appSettings.autoFetchEpicArtwork = c
+                                            }
+                                        }
+
+                                        SettingTile {
                                             label: "SteamGridDB Key"
                                             infoTip: "Optional v2 Bearer key for artwork scraping (Steam CDN fallback runs automatically)"
                                             searchKeywords: "SteamGridDB API Key artwork"
@@ -2398,6 +2460,172 @@ Page {
                                                 isPassword: true
                                                 text: appSettings.steamGridDbApiKey
                                                 onCommit: (val) => appSettings.steamGridDbApiKey = val
+                                            }
+                                        }
+                                    }
+
+                                    SettingsSection {
+                                        sectionTitle: "Storage Cleaning"
+                                        showDivider: true
+
+                                        SettingTile {
+                                            label: "Download Cache"
+                                            infoTip: "Remove downloaded runner/runtime archives, Qt cache, and unused Epic manifest cache"
+                                            searchKeywords: "Storage Clean Cache Files Temp Manifests"
+                                            tabIndex: 7
+                                            inlineControl: true
+                                            controlItem: RowLayout {
+                                                spacing: 10
+                                                Label {
+                                                    text: String(settingsPage.storageStats.cacheFormatted || "0 B") + " · " + Number(settingsPage.storageStats.cacheFiles || 0) + " file(s)"
+                                                    color: appSettings.textSecColor
+                                                    font.family: "JetBrains Mono NF"
+                                                    font.pixelSize: 12
+                                                }
+                                                M3Button {
+                                                    id: clearCacheBtn
+                                                    objectName: "clearCacheStorageBtn"
+                                                    text: "Clear"
+                                                    buttonType: "tonal"
+                                                    implicitHeight: 32
+                                                    onClicked: {
+                                                        if (uiController && uiController.clearCacheStorage) {
+                                                            uiController.clearCacheStorage()
+                                                            clearCacheBtn.isSuccess = true
+                                                            cacheSuccessTimer.restart()
+                                                        }
+                                                    }
+                                                    Timer { id: cacheSuccessTimer; interval: 1600; onTriggered: clearCacheBtn.isSuccess = false }
+                                                }
+                                            }
+                                        }
+
+                                        SettingTile {
+                                            label: "Execution Logs"
+                                            infoTip: "Delete saved Wine/Proton and native game execution log files for non-running games"
+                                            searchKeywords: "Storage Clean Logs Diagnostics Files"
+                                            tabIndex: 7
+                                            inlineControl: true
+                                            controlItem: RowLayout {
+                                                spacing: 10
+                                                Label {
+                                                    text: String(settingsPage.storageStats.logsFormatted || "0 B") + " · " + Number(settingsPage.storageStats.logsFiles || 0) + " file(s)"
+                                                    color: appSettings.textSecColor
+                                                    font.family: "JetBrains Mono NF"
+                                                    font.pixelSize: 12
+                                                }
+                                                M3Button {
+                                                    id: clearLogsBtn
+                                                    objectName: "clearLogsStorageBtn"
+                                                    text: "Clear"
+                                                    buttonType: "tonal"
+                                                    implicitHeight: 32
+                                                    onClicked: {
+                                                        if (uiController && uiController.clearLogsStorage) {
+                                                            uiController.clearLogsStorage()
+                                                            clearLogsBtn.isSuccess = true
+                                                            logsSuccessTimer.restart()
+                                                        }
+                                                    }
+                                                    Timer { id: logsSuccessTimer; interval: 1600; onTriggered: clearLogsBtn.isSuccess = false }
+                                                }
+                                            }
+                                        }
+
+                                        SettingTile {
+                                            label: "Old Artwork"
+                                            infoTip: "Delete orphaned artwork folders from removed games and superseded fallback images while keeping active library artwork"
+                                            searchKeywords: "Storage Clean Old Unused Orphaned Artwork Covers Banners"
+                                            tabIndex: 7
+                                            inlineControl: true
+                                            controlItem: RowLayout {
+                                                spacing: 10
+                                                Label {
+                                                    text: String(settingsPage.storageStats.oldArtworkFormatted || "0 B") + " · " + Number(settingsPage.storageStats.oldArtworkFiles || 0) + " file(s)"
+                                                    color: appSettings.textSecColor
+                                                    font.family: "JetBrains Mono NF"
+                                                    font.pixelSize: 12
+                                                }
+                                                M3Button {
+                                                    id: clearOldArtBtn
+                                                    objectName: "clearOldArtworkBtn"
+                                                    text: "Clear"
+                                                    buttonType: "tonal"
+                                                    implicitHeight: 32
+                                                    onClicked: {
+                                                        if (uiController && uiController.clearOldArtworkStorage) {
+                                                            uiController.clearOldArtworkStorage()
+                                                            clearOldArtBtn.isSuccess = true
+                                                            oldArtSuccessTimer.restart()
+                                                        }
+                                                    }
+                                                    Timer { id: oldArtSuccessTimer; interval: 1600; onTriggered: clearOldArtBtn.isSuccess = false }
+                                                }
+                                            }
+                                        }
+
+                                        SettingTile {
+                                            label: "Epic Art Cache"
+                                            infoTip: "Clear all cached Epic Games Store catalog thumbnails (re-downloaded on next Epic library sync; installed game covers are preserved)"
+                                            searchKeywords: "Storage Clean Epic Library Thumbnail Artwork Cache"
+                                            tabIndex: 7
+                                            inlineControl: true
+                                            controlItem: RowLayout {
+                                                spacing: 10
+                                                Label {
+                                                    text: String(settingsPage.storageStats.epicArtworkFormatted || "0 B") + " · " + Number(settingsPage.storageStats.epicArtworkFiles || 0) + " file(s)"
+                                                    color: appSettings.textSecColor
+                                                    font.family: "JetBrains Mono NF"
+                                                    font.pixelSize: 12
+                                                }
+                                                M3Button {
+                                                    id: clearEpicArtBtn
+                                                    objectName: "clearEpicArtworkBtn"
+                                                    text: "Clear"
+                                                    buttonType: "tonal"
+                                                    implicitHeight: 32
+                                                    onClicked: {
+                                                        if (uiController && uiController.clearEpicArtworkCache) {
+                                                            uiController.clearEpicArtworkCache()
+                                                            clearEpicArtBtn.isSuccess = true
+                                                            epicArtSuccessTimer.restart()
+                                                        }
+                                                    }
+                                                    Timer { id: epicArtSuccessTimer; interval: 1600; onTriggered: clearEpicArtBtn.isSuccess = false }
+                                                }
+                                            }
+                                        }
+
+                                        SettingTile {
+                                            label: "Clean All"
+                                            infoTip: "Clear all download cache, inactive game logs, and old unused artwork in one click"
+                                            searchKeywords: "Storage Clean All Cache Logs Old Artwork Free Space"
+                                            tabIndex: 7
+                                            inlineControl: true
+                                            controlItem: RowLayout {
+                                                spacing: 10
+                                                Label {
+                                                    text: String(settingsPage.storageStats.cleanAllFormatted || "0 B") + " reclaimable"
+                                                    color: appSettings.textSecColor
+                                                    font.family: "JetBrains Mono NF"
+                                                    font.pixelSize: 12
+                                                }
+                                                M3Button {
+                                                    id: cleanAllStorageBtn
+                                                    objectName: "cleanAllStorageBtn"
+                                                    text: "Clean All"
+                                                    iconSymbol: "delete"
+                                                    buttonType: "destructive"
+                                                    implicitHeight: 32
+                                                    onClicked: {
+                                                        if (uiController && uiController.clearAllCleanableStorage) {
+                                                            uiController.clearAllCleanableStorage()
+                                                            cleanAllStorageBtn.isSuccess = true
+                                                            cleanAllSuccessTimer.restart()
+                                                        }
+                                                    }
+                                                    Timer { id: cleanAllSuccessTimer; interval: 1600; onTriggered: cleanAllStorageBtn.isSuccess = false }
+                                                }
                                             }
                                         }
                                     }
@@ -2462,7 +2690,7 @@ Page {
                                                             id: verLbl
                                                             objectName: "aboutVersionLabel"
                                                             anchors.centerIn: parent
-                                                            text: "v" + (Qt.application.version || "0.2.0")
+                                                            text: "v" + (Qt.application.version || "0.2.3")
                                                             color: appSettings.onSecondaryContainer
                                                             font.family: "JetBrains Mono NF"
                                                             font.pixelSize: 11
@@ -2765,7 +2993,7 @@ Page {
 
         background: Rectangle {
             color: appSettings.surfaceColor
-            radius: 16
+            radius: 12
             border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
             border.width: 1
             layer.enabled: tagColorsModal.visible

@@ -8,6 +8,7 @@
 #include <QVariantList>
 #include <QVariantMap>
 #include <QMap>
+#include <optional>
 
 namespace Tsuki {
 
@@ -72,6 +73,7 @@ public:
     Q_INVOKABLE QString getGameLogText(const QString& gameId) const;
     Q_INVOKABLE bool exportGameLog(const QString& gameId, const QString& destinationPath) const;
     Q_INVOKABLE void clearGameLog(const QString& gameId);
+    int clearInactiveGameLogs(const QSet<QString>& runningGameIds, qint64* freedBytesOut = nullptr);
 
 signals:
     void systemChecksChanged();

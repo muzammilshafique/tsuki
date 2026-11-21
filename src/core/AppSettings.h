@@ -142,6 +142,8 @@ class AppSettings : public QObject {
                  setDefaultGpuSelection NOTIFY performanceDefaultsChanged)
   Q_PROPERTY(bool preferX86_64V3Runners READ preferX86_64V3Runners WRITE
                  setPreferX86_64V3Runners NOTIFY runnerDefaultsChanged)
+  Q_PROPERTY(bool allowDeleteSteamRunners READ allowDeleteSteamRunners WRITE
+                 setAllowDeleteSteamRunners NOTIFY runnerDefaultsChanged)
   Q_PROPERTY(QString defaultDxvkHud READ defaultDxvkHud WRITE setDefaultDxvkHud
                  NOTIFY performanceDefaultsChanged)
   Q_PROPERTY(int downloadSpeedLimitKBps READ downloadSpeedLimitKBps WRITE
@@ -158,6 +160,8 @@ class AppSettings : public QObject {
                  setXboxEmulationDefault NOTIFY controllerDefaultsChanged)
   Q_PROPERTY(QString steamGridDbApiKey READ steamGridDbApiKey WRITE
                  setSteamGridDbApiKey NOTIFY apiSettingsChanged)
+  Q_PROPERTY(bool autoFetchEpicArtwork READ autoFetchEpicArtwork WRITE
+                 setAutoFetchEpicArtwork NOTIFY apiSettingsChanged)
   Q_PROPERTY(QString logLevel READ logLevel WRITE setLogLevel NOTIFY
                  loggingSettingsChanged)
   Q_PROPERTY(bool enableWineDebugLogs READ enableWineDebugLogs WRITE
@@ -322,6 +326,8 @@ public:
   void setDefaultGpuSelection(const QString &gpu);
   bool preferX86_64V3Runners() const { return m_preferX86_64V3Runners; }
   void setPreferX86_64V3Runners(bool v);
+  bool allowDeleteSteamRunners() const { return m_allowDeleteSteamRunners; }
+  void setAllowDeleteSteamRunners(bool v);
   QString defaultDxvkHud() const { return m_defaultDxvkHud; }
   void setDefaultDxvkHud(const QString &hud);
 
@@ -341,6 +347,8 @@ public:
 
   QString steamGridDbApiKey() const { return m_steamGridDbApiKey; }
   void setSteamGridDbApiKey(const QString &key);
+  bool autoFetchEpicArtwork() const { return m_autoFetchEpicArtwork; }
+  void setAutoFetchEpicArtwork(bool v);
 
   QString logLevel() const { return m_logLevel; }
   void setLogLevel(const QString &level);
@@ -408,6 +416,7 @@ private:
   int m_defaultFsrStrength = 2;
   QString m_defaultGpuSelection;
   bool m_preferX86_64V3Runners = false;
+  bool m_allowDeleteSteamRunners = false;
   QString m_defaultDxvkHud = QStringLiteral("none");
 
   int m_downloadSpeedLimitKBps = 0;
@@ -418,6 +427,7 @@ private:
   bool m_xboxEmulationDefault = false;
 
   QString m_steamGridDbApiKey;
+  bool m_autoFetchEpicArtwork = true;
   QString m_logLevel = QStringLiteral("info");
   bool m_enableWineDebugLogs = false;
   DatabaseManager *m_db = nullptr;

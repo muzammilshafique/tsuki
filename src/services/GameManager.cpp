@@ -804,7 +804,7 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
         emit gameOperationStatus(
             QStringLiteral("Installed '%1' to Library.").arg(rec.title), false);
 
-        if (!hasCover || !hasBanner) {
+        if (m_settings && m_settings->autoFetchEpicArtwork()) {
           refreshArtworkFromSteamGridDb(rec.id);
         }
         return rec.id;
@@ -1190,6 +1190,14 @@ QString GameManager::guessTitleFromExecutable(const QString &exePath) const {
 
         const bool ok = m_db->removeGame(gameId);
         if (ok) {
+          const QString artDir = AppSettings::artworkDir() + QStringLiteral("/") + gameId;
+          if (QDir(artDir).exists()) {
+            QDir(artDir).removeRecursively();
+          }
+          const QString logFile = AppSettings::logsDir() + QStringLiteral("/") + gameId + QStringLiteral(".log");
+          if (QFileInfo::exists(logFile)) {
+            QFile::remove(logFile);
+          }
           m_model->reload();
           emit gamesChanged();
           emit gameOperationStatus(

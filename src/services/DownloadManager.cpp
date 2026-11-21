@@ -298,6 +298,17 @@ bool DownloadManager::isMediaDownloading(const QString& id) const {
     return m_tasks.contains(id);
 }
 
+QSet<QString> DownloadManager::activeDestinationFiles() const {
+    QSet<QString> files;
+    for (const DownloadTask* t : m_taskList) {
+        if (!t || t->destinationFile.isEmpty()) continue;
+        const QString cleanDest = QDir::cleanPath(t->destinationFile);
+        files.insert(cleanDest);
+        files.insert(cleanDest + QStringLiteral(".part"));
+    }
+    return files;
+}
+
 int DownloadManager::speedLimitKBps() const {
     return m_settings ? qMax(0, m_settings->downloadSpeedLimitKBps()) : 0;
 }

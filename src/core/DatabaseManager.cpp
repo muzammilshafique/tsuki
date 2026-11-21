@@ -855,6 +855,28 @@ bool DatabaseManager::updateEpicLibraryArtwork(const QString& appName,
     return q.exec();
 }
 
+bool DatabaseManager::clearEpicLibraryArtworkFields(const QString& appName,
+                                                      bool clearCover,
+                                                      bool clearBanner,
+                                                      bool clearLogo) {
+    if (appName.isEmpty() || (!clearCover && !clearBanner && !clearLogo)) return true;
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    QStringList sets;
+    if (clearCover) sets.append(QStringLiteral("cover_path = ''"));
+    if (clearBanner) sets.append(QStringLiteral("banner_path = ''"));
+    if (clearLogo) sets.append(QStringLiteral("logo_path = ''"));
+    q.prepare(QStringLiteral("UPDATE epic_library SET %1 WHERE app_name = :app_name").arg(sets.join(QStringLiteral(", "))));
+    q.bindValue(QStringLiteral(":app_name"), appName);
+    return q.exec();
+}
+
+bool DatabaseManager::clearEpicLibraryArtworkPaths() {
+    QMutexLocker locker(&m_mutex);
+    QSqlQuery q(db());
+    return q.exec(QStringLiteral("UPDATE epic_library SET cover_path = '', banner_path = '', logo_path = ''"));
+}
+
 bool DatabaseManager::updateEpicLibrarySizes(const QString& appName, qint64 downloadSize, qint64 installSize, const QString& buildVersion) {
     QMutexLocker locker(&m_mutex);
     QSqlQuery q(db());

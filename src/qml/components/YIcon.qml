@@ -34,6 +34,7 @@ Item {
         "person":              "person.svg",
         "play_arrow":          "play_arrow.svg",
         "refresh":             "refresh.svg",
+        "runner":              "nav/runner.svg",
         "shortcut":            "forward.svg",
         "sort":                "sort.svg",
         "speed":               "speed.svg",
@@ -53,6 +54,7 @@ Item {
         "info":         "info-filled.svg",
         "palette":      "palette-filled.svg",
         "play_arrow":   "play.svg",
+        "runner":       "nav/runner-filled.svg",
         "speed":        "speed-filled.svg",
         "stop":         "stop.svg"
     })
@@ -62,7 +64,10 @@ Item {
         const file = (isFilled && _filledSymbolIcons[sym])
             ? _filledSymbolIcons[sym]
             : _symbolIcons[sym]
-        return file ? ("qrc:/tsuki_app/icons/actions/" + file) : ""
+        if (!file) return ""
+        return file.indexOf("/") !== -1
+            ? ("qrc:/tsuki_app/icons/" + file)
+            : ("qrc:/tsuki_app/icons/actions/" + file)
     }
 
     readonly property string resolvedSource: root.symbol !== ""

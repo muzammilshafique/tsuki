@@ -15,12 +15,15 @@
 #include "../src/services/UmuIdResolver.h"
 #include "../src/services/WinetricksManager.h"
 #include "../src/ui/UiController.h"
+#include <QBuffer>
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QFontInfo>
 #include <QGuiApplication>
+#include <QImage>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QQmlComponent>
@@ -30,22 +33,24 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QScopeGuard>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QStandardPaths>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QUrl>
 #include <QWheelEvent>
+#include <QtEndian>
 #include <QtTest>
 #include <SDL2/SDL.h>
-#include <zlib.h>
-#include <QCryptographicHash>
-#include <QtEndian>
 #include <cerrno>
 #include <csignal>
 #include <linux/input-event-codes.h>
 #include <linux/uinput.h>
+#include <zlib.h>
 
 using namespace Tsuki;
 
@@ -451,7 +456,8 @@ private slots:
     // Test per-game Xbox emulation setting independence and global
     // synchronization
     const bool prevXbox = settings.xboxEmulationDefault();
-    auto restoreXbox = qScopeGuard([&]() { settings.setXboxEmulationDefault(prevXbox); });
+    auto restoreXbox =
+        qScopeGuard([&]() { settings.setXboxEmulationDefault(prevXbox); });
     settings.setXboxEmulationDefault(false);
     QString g1 = gm.addGame("Game 1", "/games/g1.exe");
     QString g2 = gm.addGame("Game 2", "/games/g2.exe");
@@ -2104,7 +2110,8 @@ private slots:
     prefix.arch = QStringLiteral("win64");
 
     const bool prevGsUmu = settings.umuDefault();
-    auto restoreGsUmu = qScopeGuard([&]() { settings.setUmuDefault(prevGsUmu); });
+    auto restoreGsUmu =
+        qScopeGuard([&]() { settings.setUmuDefault(prevGsUmu); });
     settings.setUmuDefault(false);
 
     const LaunchPlan gsPlan =
@@ -2711,6 +2718,7 @@ private slots:
                             "person",
                             "play_arrow",
                             "refresh",
+                            "runner",
                             "shortcut",
                             "sort",
                             "speed",
@@ -3607,17 +3615,17 @@ private slots:
 
     // 1. FManifestMeta
     QByteArray metaFields;
-    writeI32(metaFields, 18);                 // featureLevel -> ChunksV4
-    metaFields.append(char(0));               // isFileData
-    writeU32(metaFields, 99u);                // appId
-    writeFString(metaFields, "Celeste");      // appName
-    writeFString(metaFields, "1.4.0.0");      // buildVersion
-    writeFString(metaFields, "Celeste.exe");  // launchExe
-    writeFString(metaFields, "-windowed");    // launchCommand
-    writeU32(metaFields, 0u);                 // prereqIds count
-    writeFString(metaFields, "");             // prereqName
-    writeFString(metaFields, "");             // prereqPath
-    writeFString(metaFields, "");             // prereqArgs
+    writeI32(metaFields, 18);                // featureLevel -> ChunksV4
+    metaFields.append(char(0));              // isFileData
+    writeU32(metaFields, 99u);               // appId
+    writeFString(metaFields, "Celeste");     // appName
+    writeFString(metaFields, "1.4.0.0");     // buildVersion
+    writeFString(metaFields, "Celeste.exe"); // launchExe
+    writeFString(metaFields, "-windowed");   // launchCommand
+    writeU32(metaFields, 0u);                // prereqIds count
+    writeFString(metaFields, "");            // prereqName
+    writeFString(metaFields, "");            // prereqPath
+    writeFString(metaFields, "");            // prereqArgs
 
     QByteArray metaSection;
     writeU32(metaSection, static_cast<quint32>(5 + metaFields.size()));
@@ -3700,21 +3708,25 @@ private slots:
     QCOMPARE(parsed.totalInstallSize, static_cast<qint64>(chunkPayload.size()));
     QCOMPARE(parsed.totalDownloadSize, static_cast<qint64>(64));
     QCOMPARE(parsed.chunks.first().relativeChunkPath(parsed.chunksSubdir()),
-             QStringLiteral("ChunksV4/03/0102030405060708_112233445566778899AABBCBDDEEFF00.chunk"));
+             QStringLiteral(
+                 "ChunksV4/03/"
+                 "0102030405060708_112233445566778899AABBCBDDEEFF00.chunk"));
 
     // Build synthetic 0xB1FE3AA2 chunk and decompress + verify SHA-1
     uLongf cChunkBound = compressBound(static_cast<uLong>(chunkPayload.size()));
     QByteArray compChunk(static_cast<int>(cChunkBound), '\0');
-    QCOMPARE(compress2(reinterpret_cast<Bytef *>(compChunk.data()), &cChunkBound,
-                       reinterpret_cast<const Bytef *>(chunkPayload.constData()),
-                       static_cast<uLong>(chunkPayload.size()), Z_DEFAULT_COMPRESSION),
-             Z_OK);
+    QCOMPARE(
+        compress2(reinterpret_cast<Bytef *>(compChunk.data()), &cChunkBound,
+                  reinterpret_cast<const Bytef *>(chunkPayload.constData()),
+                  static_cast<uLong>(chunkPayload.size()),
+                  Z_DEFAULT_COMPRESSION),
+        Z_OK);
     compChunk.resize(static_cast<int>(cChunkBound));
 
     QByteArray rawChunk;
     writeU32(rawChunk, 0xB1FE3AA2u);
-    writeU32(rawChunk, 2u);   // header version 2
-    writeU32(rawChunk, 61u);  // header size (41 + 20)
+    writeU32(rawChunk, 2u);  // header version 2
+    writeU32(rawChunk, 61u); // header size (41 + 20)
     writeU32(rawChunk, static_cast<quint32>(compChunk.size()));
     rawChunk.append(fguidBytes);
     writeU64(rawChunk, 0x0102030405060708ULL);
@@ -3744,7 +3756,8 @@ private slots:
         "\"LaunchCommand\":\"-nointro\","
         "\"FileManifestList\":[{\"Filename\":\"AlanWake.exe\","
         "\"bIsUnixExecutable\":true,"
-        "\"FileChunkParts\":[{\"Guid\":\"AABBCCDD\",\"Offset\":\"0\",\"Size\":\"1024\"}]}],"
+        "\"FileChunkParts\":[{\"Guid\":\"AABBCCDD\",\"Offset\":\"0\",\"Size\":"
+        "\"1024\"}]}],"
         "\"ChunkHashList\":{\"AABBCCDD\":\"00000000000000FF\"},"
         "\"DataGroupList\":{\"AABBCCDD\":\"02\"},"
         "\"ChunkFilesizeList\":{\"AABBCCDD\":\"512\"}}";
@@ -3761,14 +3774,14 @@ private slots:
     // 1. Auth code extraction variants
     QCOMPARE(EpicService::extractAuthCode(QStringLiteral("abc123def456")),
              QStringLiteral("abc123def456"));
-    QCOMPARE(
-        EpicService::extractAuthCode(QStringLiteral(
-            "{\"redirectUrl\":\"https://localhost/cb?code=fromurl\",\"authorizationCode\":\"jsoncode789\",\"sid\":null}")),
-        QStringLiteral("jsoncode789"));
-    QCOMPARE(
-        EpicService::extractAuthCode(QStringLiteral(
-            "https://www.epicgames.com/id/api/redirect?code=urlcode456")),
-        QStringLiteral("urlcode456"));
+    QCOMPARE(EpicService::extractAuthCode(
+                 QStringLiteral("{\"redirectUrl\":\"https://localhost/"
+                                "cb?code=fromurl\",\"authorizationCode\":"
+                                "\"jsoncode789\",\"sid\":null}")),
+             QStringLiteral("jsoncode789"));
+    QCOMPARE(EpicService::extractAuthCode(QStringLiteral(
+                 "https://www.epicgames.com/id/api/redirect?code=urlcode456")),
+             QStringLiteral("urlcode456"));
     QCOMPARE(EpicService::extractAuthCode(QStringLiteral("  \"quoted99\"  ")),
              QStringLiteral("quoted99"));
 
@@ -3807,11 +3820,15 @@ private slots:
     epicSvc.libraryModel()->reload();
 
     QCOMPARE(epicSvc.libraryModel()->rowCount(), 1);
-    QCOMPARE(epicSvc.libraryModel()->get(0).value(QStringLiteral("isInstalled")).toBool(),
+    QCOMPARE(epicSvc.libraryModel()
+                 ->get(0)
+                 .value(QStringLiteral("isInstalled"))
+                 .toBool(),
              false);
 
-    // Regression: constructing EpicService against a DB with >= 2 cached Epic items
-    // triggers std::sort -> getDownloadState() in constructor; must not access uninitialized m_downloads.
+    // Regression: constructing EpicService against a DB with >= 2 cached Epic
+    // items triggers std::sort -> getDownloadState() in constructor; must not
+    // access uninitialized m_downloads.
     EpicLibraryItem item2;
     item2.appName = QStringLiteral("LimboApp");
     item2.namespaceId = QStringLiteral("ns2");
@@ -3849,9 +3866,15 @@ private slots:
              QStringLiteral("default-prefix"));
     QCOMPARE(gm.model()->get(0).value(QStringLiteral("runnerId")).toString(),
              QString());
-    QCOMPARE(epicSvc.libraryModel()->get(0).value(QStringLiteral("isInstalled")).toBool(),
+    QCOMPARE(epicSvc.libraryModel()
+                 ->get(0)
+                 .value(QStringLiteral("isInstalled"))
+                 .toBool(),
              true);
-    QCOMPARE(epicSvc.libraryModel()->get(0).value(QStringLiteral("installedGameId")).toString(),
+    QCOMPARE(epicSvc.libraryModel()
+                 ->get(0)
+                 .value(QStringLiteral("installedGameId"))
+                 .toString(),
              gameId);
 
     // Verify Epic launch args generation
@@ -3877,15 +3900,20 @@ private slots:
     QVERIFY(defPfx.has_value());
     const LaunchPlan plan =
         pipeline.buildLaunchPlan(*loadedGame, protonRunner, *defPfx, epicArgs);
-    QVERIFY(plan.arguments.contains(QStringLiteral("-AUTH_PASSWORD=excode123")));
+    QVERIFY(
+        plan.arguments.contains(QStringLiteral("-AUTH_PASSWORD=excode123")));
     QVERIFY(plan.arguments.contains(QStringLiteral("-windowed")));
 
-    // Remove Epic game WITH deleteGameFiles = true -> deletes folder on disk, keeps in Epic account cache
+    // Remove Epic game WITH deleteGameFiles = true -> deletes folder on disk,
+    // keeps in Epic account cache
     QVERIFY(gm.removeGame(gameId, false, true));
     QVERIFY(!QDir(installDir).exists());
     QCOMPARE(gm.model()->rowCount(), 0);
     QCOMPARE(epicSvc.libraryModel()->rowCount(), 1);
-    QCOMPARE(epicSvc.libraryModel()->get(0).value(QStringLiteral("isInstalled")).toBool(),
+    QCOMPARE(epicSvc.libraryModel()
+                 ->get(0)
+                 .value(QStringLiteral("isInstalled"))
+                 .toBool(),
              false);
   }
 
@@ -4024,9 +4052,9 @@ private slots:
     epicViewObj.reset();
 
     // 4. EpicDownloadDialog defaults to Default prefix and Default runner
-    QQmlComponent dlDlgComp(
-        &engine,
-        resolveQmlUrl(QStringLiteral("src/qml/components/EpicDownloadDialog.qml")));
+    QQmlComponent dlDlgComp(&engine,
+                            resolveQmlUrl(QStringLiteral(
+                                "src/qml/components/EpicDownloadDialog.qml")));
     QVERIFY2(dlDlgComp.isReady(), qPrintable(dlDlgComp.errorString()));
     std::unique_ptr<QObject> dlDlgObj(dlDlgComp.create());
     QVERIFY(dlDlgObj != nullptr);
@@ -4040,20 +4068,22 @@ private slots:
     const auto pfxList = prefixMgr.prefixesVariant();
     const int selPfxIdx = dlDlgObj->property("existingPrefixIndex").toInt();
     QVERIFY(selPfxIdx >= 0 && selPfxIdx < pfxList.size());
-    QCOMPARE(pfxList.at(selPfxIdx).toMap().value(QStringLiteral("id")).toString(),
-             QStringLiteral("default-prefix"));
+    QCOMPARE(
+        pfxList.at(selPfxIdx).toMap().value(QStringLiteral("id")).toString(),
+        QStringLiteral("default-prefix"));
     dlDlgObj.reset();
 
-    // 5. GameDetailPage uninstalled Epic mode -> Download button & Overview card
-    QQmlComponent detailComp(
-        &engine,
-        resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
+    // 5. GameDetailPage uninstalled Epic mode -> Download button & Overview
+    // card
+    QQmlComponent detailComp(&engine, resolveQmlUrl(QStringLiteral(
+                                          "src/qml/pages/GameDetailPage.qml")));
     QVERIFY2(detailComp.isReady(), qPrintable(detailComp.errorString()));
     std::unique_ptr<QObject> detailObj(detailComp.createWithInitialProperties(
         {{QStringLiteral("gameId"), QString()},
          {QStringLiteral("epicAppName"), QStringLiteral("HadesApp")}}));
     QVERIFY(detailObj != nullptr);
-    qobject_cast<QQuickItem *>(detailObj.get())->setParentItem(win.contentItem());
+    qobject_cast<QQuickItem *>(detailObj.get())
+        ->setParentItem(win.contentItem());
     qobject_cast<QQuickItem *>(detailObj.get())->setSize(QSizeF(1280, 820));
     QCoreApplication::processEvents();
     QCOMPARE(detailObj->property("isUninstalledEpic").toBool(), true);
@@ -4062,8 +4092,8 @@ private slots:
     QVERIFY(primaryBtn != nullptr);
     QCOMPARE(primaryBtn->property("text").toString(),
              QStringLiteral("Download"));
-    auto *overviewCard = detailObj->findChild<QQuickItem *>(
-        QStringLiteral("epicOverviewCard"));
+    auto *overviewCard =
+        detailObj->findChild<QQuickItem *>(QStringLiteral("epicOverviewCard"));
     QVERIFY(overviewCard != nullptr);
     QCOMPARE(overviewCard->isVisible(), true);
     detailObj.reset();
@@ -4076,9 +4106,9 @@ private slots:
     QVERIFY(f.open(QIODevice::WriteOnly));
     f.write("MZ\x90\x00");
     f.close();
-    const QString hadesGameId = gm.registerEpicGame(
-        item.appName, item.namespaceId, item.catalogItemId, item.title, hadesExe,
-        hadesDir);
+    const QString hadesGameId =
+        gm.registerEpicGame(item.appName, item.namespaceId, item.catalogItemId,
+                            item.title, hadesExe, hadesDir);
     QVERIFY(!hadesGameId.isEmpty());
 
     QQmlComponent gridComp(
@@ -4092,11 +4122,13 @@ private slots:
     QCoreApplication::processEvents();
     auto findVisualChild = [](QQuickItem *rootItem,
                               const QString &objName) -> QQuickItem * {
-      if (!rootItem) return nullptr;
+      if (!rootItem)
+        return nullptr;
       QList<QQuickItem *> stack{rootItem};
       while (!stack.isEmpty()) {
         QQuickItem *cur = stack.takeLast();
-        if (cur->objectName() == objName) return cur;
+        if (cur->objectName() == objName)
+          return cur;
         for (QQuickItem *ch : cur->childItems()) {
           stack.append(ch);
         }
@@ -4115,16 +4147,15 @@ private slots:
     gridObj.reset();
 
     // 7. RemoveGameDialog removes installed Epic game files from disk
-    QQmlComponent remComp(
-        &engine,
-        resolveQmlUrl(QStringLiteral("src/qml/components/RemoveGameDialog.qml")));
+    QQmlComponent remComp(&engine,
+                          resolveQmlUrl(QStringLiteral(
+                              "src/qml/components/RemoveGameDialog.qml")));
     QVERIFY2(remComp.isReady(), qPrintable(remComp.errorString()));
     std::unique_ptr<QObject> remObj(remComp.create());
     QVERIFY(remObj != nullptr);
     remObj->setProperty("parent", QVariant::fromValue(win.contentItem()));
     QVERIFY(QMetaObject::invokeMethod(
-        remObj.get(), "openDialog",
-        Q_ARG(QVariant, QVariant(hadesGameId)),
+        remObj.get(), "openDialog", Q_ARG(QVariant, QVariant(hadesGameId)),
         Q_ARG(QVariant, QVariant(QStringLiteral("Hades"))),
         Q_ARG(QVariant, QVariant(QStringLiteral("default-prefix")))));
     QCoreApplication::processEvents();
@@ -4178,7 +4209,8 @@ private slots:
     // Create Heroic-style pre-downloaded game tree
     const QString heroicDir =
         tmpDir.filePath(QStringLiteral("Heroic/GhostwireTokyo"));
-    const QString subBin = heroicDir + QStringLiteral("/Snowfall/Binaries/Win64");
+    const QString subBin =
+        heroicDir + QStringLiteral("/Snowfall/Binaries/Win64");
     QVERIFY(QDir().mkpath(subBin));
     const QString shippingExe =
         subBin + QStringLiteral("/GhostwireTokyo-Win64-Shipping.exe");
@@ -4207,7 +4239,8 @@ private slots:
                 .toString()
                 .endsWith(QStringLiteral("GhostwireTokyo-Win64-Shipping.exe")));
 
-    // 1. Copy mode keeps source untouched and registers in targetBase/Ghostwire Tokyo
+    // 1. Copy mode keeps source untouched and registers in targetBase/Ghostwire
+    // Tokyo
     QSignalSpy finSpy(&epicSvc, &EpicService::downloadFinished);
     epicSvc.importGame(gw.appName, heroicDir, QStringLiteral("copy"),
                        targetBase, QString(), QStringLiteral("default-prefix"));
@@ -4215,14 +4248,16 @@ private slots:
     const QString copiedGameId = finSpy.takeFirst().at(1).toString();
     QVERIFY(!copiedGameId.isEmpty());
     QVERIFY(QDir(heroicDir).exists());
-    const QString expectedCopyDir = targetBase + QStringLiteral("/Ghostwire Tokyo");
+    const QString expectedCopyDir =
+        targetBase + QStringLiteral("/Ghostwire Tokyo");
     QVERIFY(QFileInfo::exists(
         expectedCopyDir +
-        QStringLiteral("/Snowfall/Binaries/Win64/GhostwireTokyo-Win64-Shipping.exe")));
+        QStringLiteral(
+            "/Snowfall/Binaries/Win64/GhostwireTokyo-Win64-Shipping.exe")));
     QCOMPARE(db.getGame(copiedGameId)->epicInPlaceImported, false);
 
-    // Verify RemoveGameDialog defaults deleteEpicFilesToggle=true on copied game,
-    // and unchecking preserves disk files
+    // Verify RemoveGameDialog defaults deleteEpicFilesToggle=true on copied
+    // game, and unchecking preserves disk files
     QQuickWindow win;
     win.resize(1280, 820);
     win.show();
@@ -4236,15 +4271,14 @@ private slots:
     engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
                                              &uiCtrl);
 
-    QQmlComponent remComp(
-        &engine,
-        resolveQmlUrl(QStringLiteral("src/qml/components/RemoveGameDialog.qml")));
+    QQmlComponent remComp(&engine,
+                          resolveQmlUrl(QStringLiteral(
+                              "src/qml/components/RemoveGameDialog.qml")));
     QVERIFY2(remComp.isReady(), qPrintable(remComp.errorString()));
     std::unique_ptr<QObject> remObj(remComp.create());
     remObj->setProperty("parent", QVariant::fromValue(win.contentItem()));
     QVERIFY(QMetaObject::invokeMethod(
-        remObj.get(), "openDialog",
-        Q_ARG(QVariant, QVariant(copiedGameId)),
+        remObj.get(), "openDialog", Q_ARG(QVariant, QVariant(copiedGameId)),
         Q_ARG(QVariant, QVariant(QStringLiteral("Ghostwire Tokyo"))),
         Q_ARG(QVariant, QVariant(QStringLiteral("default-prefix")))));
     QCoreApplication::processEvents();
@@ -4273,7 +4307,8 @@ private slots:
     QCOMPARE(db.getGame(movedId)->epicInPlaceImported, false);
     QVERIFY(gm.removeGame(movedId, false, false));
 
-    // 3. Keep-in-place mode registers folder directly, and RemoveGameDialog defaults toggle OFF
+    // 3. Keep-in-place mode registers folder directly, and RemoveGameDialog
+    // defaults toggle OFF
     epicSvc.importGame(gw.appName, expectedCopyDir, QStringLiteral("in_place"));
     QTRY_COMPARE_WITH_TIMEOUT(finSpy.count(), 1, 5000);
     const QString inPlaceId = finSpy.takeFirst().at(1).toString();
@@ -4282,8 +4317,7 @@ private slots:
     QCOMPARE(db.getGame(inPlaceId)->epicInstallDir, expectedCopyDir);
 
     QVERIFY(QMetaObject::invokeMethod(
-        remObj.get(), "openDialog",
-        Q_ARG(QVariant, QVariant(inPlaceId)),
+        remObj.get(), "openDialog", Q_ARG(QVariant, QVariant(inPlaceId)),
         Q_ARG(QVariant, QVariant(QStringLiteral("Ghostwire Tokyo"))),
         Q_ARG(QVariant, QVariant(QStringLiteral("default-prefix")))));
     QCoreApplication::processEvents();
@@ -4293,16 +4327,17 @@ private slots:
     QVERIFY(QDir(expectedCopyDir).exists());
     remObj.reset();
 
-    // 4. QML UI: GameDetailPage shows dropdown next to Download & EpicImportDialog defaults to Copy
-    QQmlComponent detailComp(
-        &engine,
-        resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
+    // 4. QML UI: GameDetailPage shows dropdown next to Download &
+    // EpicImportDialog defaults to Copy
+    QQmlComponent detailComp(&engine, resolveQmlUrl(QStringLiteral(
+                                          "src/qml/pages/GameDetailPage.qml")));
     QVERIFY2(detailComp.isReady(), qPrintable(detailComp.errorString()));
     std::unique_ptr<QObject> detailObj(detailComp.createWithInitialProperties(
         {{QStringLiteral("gameId"), QString()},
          {QStringLiteral("epicAppName"), QStringLiteral("GhostwireApp")}}));
     QVERIFY(detailObj != nullptr);
-    qobject_cast<QQuickItem *>(detailObj.get())->setParentItem(win.contentItem());
+    qobject_cast<QQuickItem *>(detailObj.get())
+        ->setParentItem(win.contentItem());
     qobject_cast<QQuickItem *>(detailObj.get())->setSize(QSizeF(1280, 820));
     QCoreApplication::processEvents();
     auto *dropBtn = detailObj->findChild<QQuickItem *>(
@@ -4311,9 +4346,9 @@ private slots:
     QCOMPARE(dropBtn->isVisible(), true);
     detailObj.reset();
 
-    QQmlComponent impComp(
-        &engine,
-        resolveQmlUrl(QStringLiteral("src/qml/components/EpicImportDialog.qml")));
+    QQmlComponent impComp(&engine,
+                          resolveQmlUrl(QStringLiteral(
+                              "src/qml/components/EpicImportDialog.qml")));
     QVERIFY2(impComp.isReady(), qPrintable(impComp.errorString()));
     std::unique_ptr<QObject> impObj(impComp.create());
     QVERIFY(impObj != nullptr);
@@ -4322,7 +4357,8 @@ private slots:
         impObj.get(), "openForApp",
         Q_ARG(QVariant, QVariant(QStringLiteral("GhostwireApp")))));
     QCoreApplication::processEvents();
-    QCOMPARE(impObj->property("transferMode").toString(), QStringLiteral("copy"));
+    QCOMPARE(impObj->property("transferMode").toString(),
+             QStringLiteral("copy"));
     QCOMPARE(impObj->property("runnerIndex").toInt(), 0);
     QCOMPARE(impObj->property("useDedicatedPrefix").toBool(), false);
     impObj.reset();
@@ -4363,13 +4399,17 @@ private slots:
     {
       QFile regFile(fakePrefix + QStringLiteral("/user.reg"));
       QVERIFY(regFile.open(QIODevice::WriteOnly | QIODevice::Text));
-      regFile.write("WINE REGISTRY Version 2\n\n[Software\\\\Wine\\\\AppDefaults]\n\"Version\"=\"win10\"\n");
+      regFile.write(
+          "WINE REGISTRY Version "
+          "2\n\n[Software\\\\Wine\\\\AppDefaults]\n\"Version\"=\"win10\"\n");
       regFile.close();
     }
-    const QString overlayDir = AppSettings::toolsDir() + QStringLiteral("/eos_overlay");
+    const QString overlayDir =
+        AppSettings::toolsDir() + QStringLiteral("/eos_overlay");
     QVERIFY(QDir().mkpath(overlayDir));
     {
-      QFile marker(overlayDir + QStringLiteral("/EOSOverlayRenderer-Win64-Shipping.exe"));
+      QFile marker(overlayDir +
+                   QStringLiteral("/EOSOverlayRenderer-Win64-Shipping.exe"));
       QVERIFY(marker.open(QIODevice::WriteOnly));
       marker.write("MZ");
       marker.close();
@@ -4381,37 +4421,49 @@ private slots:
       vf.close();
     }
 
-    QVERIFY(PrefixManager::configureEosOverlayRegistry(fakePrefix, overlayDir, true));
+    QVERIFY(PrefixManager::configureEosOverlayRegistry(fakePrefix, overlayDir,
+                                                       true));
     {
       QFile regFile(fakePrefix + QStringLiteral("/user.reg"));
       QVERIFY(regFile.open(QIODevice::ReadOnly | QIODevice::Text));
       const QString content = QString::fromUtf8(regFile.readAll());
-      QVERIFY(content.contains(QStringLiteral("[Software\\\\Wine\\\\AppDefaults]")));
-      QVERIFY(content.contains(QStringLiteral("[Software\\\\Epic Games\\\\EOS]")));
-      QVERIFY(content.contains(QStringLiteral("\"OverlayPath\"=\"Z:") + overlayDir + QLatin1Char('"')));
+      QVERIFY(content.contains(
+          QStringLiteral("[Software\\\\Wine\\\\AppDefaults]")));
+      QVERIFY(
+          content.contains(QStringLiteral("[Software\\\\Epic Games\\\\EOS]")));
+      QVERIFY(content.contains(QStringLiteral("\"OverlayPath\"=\"Z:") +
+                               overlayDir + QLatin1Char('"')));
     }
-    QVERIFY(PrefixManager::configureEosOverlayRegistry(fakePrefix, QString(), false));
+    QVERIFY(PrefixManager::configureEosOverlayRegistry(fakePrefix, QString(),
+                                                       false));
     {
       QFile regFile(fakePrefix + QStringLiteral("/user.reg"));
       QVERIFY(regFile.open(QIODevice::ReadOnly | QIODevice::Text));
       const QString content = QString::fromUtf8(regFile.readAll());
-      QVERIFY(content.contains(QStringLiteral("[Software\\\\Wine\\\\AppDefaults]")));
+      QVERIFY(content.contains(
+          QStringLiteral("[Software\\\\Wine\\\\AppDefaults]")));
       QVERIFY(!content.contains(QStringLiteral("OverlayPath")));
     }
 
-    // 3. Space-safe symlink + EAC/BattlEye runtime resolution + LaunchPipeline injection
-    const QString spacedDir = tmpDir.filePath(QStringLiteral("Steam/Proton EasyAntiCheat Runtime"));
+    // 3. Space-safe symlink + EAC/BattlEye runtime resolution + LaunchPipeline
+    // injection
+    const QString spacedDir =
+        tmpDir.filePath(QStringLiteral("Steam/Proton EasyAntiCheat Runtime"));
     QVERIFY(QDir().mkpath(spacedDir));
-    const QString safeLink = RunnerManager::ensureSpaceSafeRuntimePath(spacedDir, QStringLiteral("test_eac_link"));
+    const QString safeLink = RunnerManager::ensureSpaceSafeRuntimePath(
+        spacedDir, QStringLiteral("test_eac_link"));
     QVERIFY(!safeLink.contains(QLatin1Char(' ')));
     QVERIFY(QFileInfo(safeLink).isSymLink());
 
-    const QString eacDir = AppSettings::toolsDir() + QStringLiteral("/runtimes/eac_runtime");
-    const QString beDir = AppSettings::toolsDir() + QStringLiteral("/runtimes/battleye_runtime");
+    const QString eacDir =
+        AppSettings::toolsDir() + QStringLiteral("/runtimes/eac_runtime");
+    const QString beDir =
+        AppSettings::toolsDir() + QStringLiteral("/runtimes/battleye_runtime");
     QVERIFY(QDir().mkpath(eacDir + QStringLiteral("/v2/lib64")));
     QVERIFY(QDir().mkpath(beDir + QStringLiteral("/v2/lib64")));
     QCOMPARE(RunnerManager::resolveEacRuntimePath(), QDir::cleanPath(eacDir));
-    QCOMPARE(RunnerManager::resolveBattlEyeRuntimePath(), QDir::cleanPath(beDir));
+    QCOMPARE(RunnerManager::resolveBattlEyeRuntimePath(),
+             QDir::cleanPath(beDir));
 
     DatabaseManager db(tmpDir.filePath(QStringLiteral("mp_test.db")));
     QVERIFY(db.initialize());
@@ -4424,7 +4476,8 @@ private slots:
     ControllerManager ctrlMgr(&db, &settings);
     SteamGridDbService sgdb(&settings, &dl);
     DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
-    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    LaunchPipeline pipeline(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
     EpicService epicSvc(&db, &settings, &runnerMgr, &prefixMgr, &sgdb);
     pipeline.setEpicService(&epicSvc);
     GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
@@ -4466,7 +4519,8 @@ private slots:
     pfx.id = QStringLiteral("default-prefix");
     pfx.name = QStringLiteral("Default");
     pfx.path = fakePrefix;
-    const LaunchPlan plan = pipeline.buildLaunchPlan(*loadedOpt, protonRunner, pfx);
+    const LaunchPlan plan =
+        pipeline.buildLaunchPlan(*loadedOpt, protonRunner, pfx);
     QCOMPARE(plan.environment.value(QStringLiteral("PROTON_EAC_RUNTIME")),
              QDir::cleanPath(eacDir));
     QCOMPARE(plan.environment.value(QStringLiteral("PROTON_BATTLEYE_RUNTIME")),
@@ -4486,15 +4540,15 @@ private slots:
     engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
                                              &uiCtrl);
 
-    QQmlComponent detailComp(
-        &engine,
-        resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
+    QQmlComponent detailComp(&engine, resolveQmlUrl(QStringLiteral(
+                                          "src/qml/pages/GameDetailPage.qml")));
     QVERIFY2(detailComp.isReady(), qPrintable(detailComp.errorString()));
     std::unique_ptr<QObject> detailObj(detailComp.createWithInitialProperties(
         {{QStringLiteral("gameId"), gameId},
          {QStringLiteral("epicAppName"), QStringLiteral("GWApp")}}));
     QVERIFY(detailObj != nullptr);
-    qobject_cast<QQuickItem *>(detailObj.get())->setParentItem(win.contentItem());
+    qobject_cast<QQuickItem *>(detailObj.get())
+        ->setParentItem(win.contentItem());
     qobject_cast<QQuickItem *>(detailObj.get())->setSize(QSizeF(1280, 820));
     QCoreApplication::processEvents();
 
@@ -4537,7 +4591,8 @@ private slots:
     UiController uiCtrl(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
                         &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm, &epicSvc);
 
-    // Seed one local game so MediaGrid instantiates a RoundedCover card delegate
+    // Seed one local game so MediaGrid instantiates a RoundedCover card
+    // delegate
     const QString exePath = tmpDir.filePath(QStringLiteral("demo.sh"));
     QFile exeFile(exePath);
     QVERIFY(exeFile.open(QIODevice::WriteOnly));
@@ -4580,29 +4635,30 @@ private slots:
 
     QCOMPARE(mainObj->property("isWinetricksOpen").toBool(), false);
     // Secondary views must not be instantiated at startup
-    QVERIFY(mainObj->findChild<QQuickItem *>(QStringLiteral("epicLibraryView")) ==
-            nullptr);
+    QVERIFY(mainObj->findChild<QQuickItem *>(
+                QStringLiteral("epicLibraryView")) == nullptr);
 
-    // 2. Opening Winetricks lazy-loads the single global modal and sets HomePage externalModalOpen
+    // 2. Opening Winetricks lazy-loads the single global modal and sets
+    // HomePage externalModalOpen
     QVERIFY(QMetaObject::invokeMethod(
         mainObj.get(), "openWinetricks",
         Q_ARG(QVariant, QVariant(QStringLiteral("default-prefix"))),
         Q_ARG(QVariant, QVariant(QStringLiteral("Default")))));
     QTRY_COMPARE(mainObj->property("isWinetricksOpen").toBool(), true);
 
-    // 3. URL-based StackView push for SettingsPage and GameDetailPage works cleanly
+    // 3. URL-based StackView push for SettingsPage and GameDetailPage works
+    // cleanly
     QVERIFY(QMetaObject::invokeMethod(mainObj.get(), "openSettingsPage"));
     QCoreApplication::processEvents();
     QVERIFY(mainObj->findChild<QQuickItem *>(QStringLiteral("settingsPage")) !=
             nullptr);
 
-    QVERIFY(QMetaObject::invokeMethod(
-        mainObj.get(), "openGameDetailPage",
-        Q_ARG(QVariant, QVariant(gameId)),
-        Q_ARG(QVariant, QVariant(QString()))));
+    QVERIFY(QMetaObject::invokeMethod(mainObj.get(), "openGameDetailPage",
+                                      Q_ARG(QVariant, QVariant(gameId)),
+                                      Q_ARG(QVariant, QVariant(QString()))));
     QCoreApplication::processEvents();
-    QVERIFY(mainObj->findChild<QQuickItem *>(QStringLiteral("gameDetailPage")) !=
-            nullptr);
+    QVERIFY(mainObj->findChild<QQuickItem *>(
+                QStringLiteral("gameDetailPage")) != nullptr);
 
     if (auto *win = qobject_cast<QQuickWindow *>(mainObj.get())) {
       win->close();
@@ -4627,7 +4683,8 @@ private slots:
     homeItem->setSize(QSizeF(1280, 820));
     QCoreApplication::processEvents();
 
-    // Cycle through all 7 tab positions (library, favs, epic, downloads, prefixes, runners, diagnostics, back to library)
+    // Cycle through all 7 tab positions (library, favs, epic, downloads,
+    // prefixes, runners, diagnostics, back to library)
     for (int step = 0; step < 7; ++step) {
       QVERIFY(QMetaObject::invokeMethod(homeObj.get(), "cycleTab",
                                         Q_ARG(QVariant, QVariant(1))));
@@ -4635,8 +4692,8 @@ private slots:
     }
     QCOMPARE(homeObj->property("activeSection").toString(),
              QStringLiteral("library"));
-    QTRY_VERIFY(homeObj->findChild<QQuickItem *>(QStringLiteral("epicLibraryView")) ==
-                nullptr);
+    QTRY_VERIFY(homeObj->findChild<QQuickItem *>(
+                    QStringLiteral("epicLibraryView")) == nullptr);
 
     // externalModalOpen blocks HomePage.isAnyModalOpen()
     homeObj->setProperty("externalModalOpen", true);
@@ -4658,7 +4715,8 @@ private slots:
     homeObj.reset();
     QCoreApplication::processEvents();
 
-    // 5. RoundedCover compiles & loads cleanly inside MediaGrid with lazy actionOverlay
+    // 5. RoundedCover compiles & loads cleanly inside MediaGrid with lazy
+    // actionOverlay
     QQmlComponent gridComp(
         &engine, resolveQmlUrl(QStringLiteral("src/qml/home/MediaGrid.qml")));
     QVERIFY2(gridComp.isReady(), qPrintable(gridComp.errorString()));
@@ -4675,7 +4733,8 @@ private slots:
     QVERIFY(gv != nullptr);
     auto *currDelegate = gv->property("currentItem").value<QQuickItem *>();
     QVERIFY(currDelegate != nullptr);
-    QVERIFY(QMetaObject::invokeMethod(currDelegate, "openContextMenuFromKeyboard"));
+    QVERIFY(
+        QMetaObject::invokeMethod(currDelegate, "openContextMenuFromKeyboard"));
     QCoreApplication::processEvents();
     QCOMPARE(currDelegate->property("isMenuOpen").toBool(), true);
     currDelegate->setProperty("isMenuOpen", false);
@@ -4722,10 +4781,14 @@ private slots:
     qputenv("APPIMAGE", fakeAppImagePath.toUtf8());
     auto restoreEnv = qScopeGuard([&]() {
       qputenv("HOME", oldHome);
-      if (oldXdgData.isEmpty()) qunsetenv("XDG_DATA_HOME");
-      else qputenv("XDG_DATA_HOME", oldXdgData);
-      if (oldAppImage.isEmpty()) qunsetenv("APPIMAGE");
-      else qputenv("APPIMAGE", oldAppImage);
+      if (oldXdgData.isEmpty())
+        qunsetenv("XDG_DATA_HOME");
+      else
+        qputenv("XDG_DATA_HOME", oldXdgData);
+      if (oldAppImage.isEmpty())
+        qunsetenv("APPIMAGE");
+      else
+        qputenv("APPIMAGE", oldAppImage);
     });
 
     const QString gid = gm.addNativeGame("Shortcut Test", "/bin/true");
@@ -4736,12 +4799,13 @@ private slots:
     QFile df(desktopPath);
     QVERIFY(df.open(QIODevice::ReadOnly));
     const QString desktopContent = QString::fromUtf8(df.readAll());
-    QVERIFY2(desktopContent.contains(QStringLiteral("Exec=\"") + fakeAppImagePath +
-                                     QStringLiteral("\" --launch \"") + gid +
-                                     QStringLiteral("\"")),
+    QVERIFY2(desktopContent.contains(
+                 QStringLiteral("Exec=\"") + fakeAppImagePath +
+                 QStringLiteral("\" --launch \"") + gid + QStringLiteral("\"")),
              qPrintable(desktopContent));
 
-    // 2. mscoree,mshtml= is NOT forced by default, opt-in when disableMonoGecko=true
+    // 2. mscoree,mshtml= is NOT forced by default, opt-in when
+    // disableMonoGecko=true
     const bool prevUmu = settings.umuDefault();
     auto restoreUmu = qScopeGuard([&]() { settings.setUmuDefault(prevUmu); });
     settings.setUmuDefault(false);
@@ -4767,15 +4831,15 @@ private slots:
     LaunchPlan defaultPlan = pipeline.buildLaunchPlan(game, wineRunner, pfx);
     QVERIFY(!defaultPlan.environment.value("WINEDLLOVERRIDES")
                  .contains("mscoree="));
-    QVERIFY(!defaultPlan.environment.value("WINEDLLOVERRIDES")
-                 .contains("mshtml="));
+    QVERIFY(
+        !defaultPlan.environment.value("WINEDLLOVERRIDES").contains("mshtml="));
 
     game.disableMonoGecko = true;
     LaunchPlan disabledPlan = pipeline.buildLaunchPlan(game, wineRunner, pfx);
     QVERIFY(disabledPlan.environment.value("WINEDLLOVERRIDES")
                 .contains("mscoree="));
-    QVERIFY(disabledPlan.environment.value("WINEDLLOVERRIDES")
-                .contains("mshtml="));
+    QVERIFY(
+        disabledPlan.environment.value("WINEDLLOVERRIDES").contains("mshtml="));
 
     // Explicit user override of mscoree must not be clobbered
     game.dllOverrides["mscoree"] = "n";
@@ -4784,8 +4848,8 @@ private slots:
                 .contains("mscoree=n"));
     QVERIFY(!explicitPlan.environment.value("WINEDLLOVERRIDES")
                  .contains("mscoree=;"));
-    QVERIFY(explicitPlan.environment.value("WINEDLLOVERRIDES")
-                .contains("mshtml="));
+    QVERIFY(
+        explicitPlan.environment.value("WINEDLLOVERRIDES").contains("mshtml="));
   }
 
   void testCpuV3RunnerCategoriesAndSha512Verification() {
@@ -4815,9 +4879,10 @@ private slots:
     const QString expectedHex = QString::fromLatin1(
         QCryptographicHash::hash(payload, QCryptographicHash::Sha512).toHex());
     QVERIFY(DownloadManager::verifyFileSha512(payloadPath, expectedHex));
-    QVERIFY(DownloadManager::verifyFileSha512(payloadPath, expectedHex.toUpper()));
-    QVERIFY(!DownloadManager::verifyFileSha512(
-        payloadPath, QString(128, QLatin1Char('0'))));
+    QVERIFY(
+        DownloadManager::verifyFileSha512(payloadPath, expectedHex.toUpper()));
+    QVERIFY(!DownloadManager::verifyFileSha512(payloadPath,
+                                               QString(128, QLatin1Char('0'))));
   }
 
   void testCollectionsExtendedFiltersAndHiddenGames() {
@@ -4843,9 +4908,9 @@ private slots:
 
     const QString gLocal = gm.addGame("Local RPG", "/games/local.exe");
     const QString gNative = gm.addNativeGame("Native Shooter", "/bin/true");
-    const QString gEpic = gm.registerEpicGame(
-        "EpicApp1", "ns", "cat", "Epic Adventure", "/games/epic/game.exe",
-        "/games/epic");
+    const QString gEpic =
+        gm.registerEpicGame("EpicApp1", "ns", "cat", "Epic Adventure",
+                            "/games/epic/game.exe", "/games/epic");
     QVERIFY(!gLocal.isEmpty() && !gNative.isEmpty() && !gEpic.isEmpty());
 
     QVERIFY(gm.addGameToCollection(gLocal, "RPG"));
@@ -4898,8 +4963,10 @@ private slots:
     const QByteArray oldForce = qgetenv("TSUKI_FORCE_FILE_SECRETS");
     qputenv("TSUKI_FORCE_FILE_SECRETS", "1");
     auto restore = qScopeGuard([&]() {
-      if (oldForce.isEmpty()) qunsetenv("TSUKI_FORCE_FILE_SECRETS");
-      else qputenv("TSUKI_FORCE_FILE_SECRETS", oldForce);
+      if (oldForce.isEmpty())
+        qunsetenv("TSUKI_FORCE_FILE_SECRETS");
+      else
+        qputenv("TSUKI_FORCE_FILE_SECRETS", oldForce);
     });
 
     const QString fallbackPath = tmpDir.filePath("secret_token.json");
@@ -4977,10 +5044,14 @@ private slots:
     qputenv("WAYLAND_DISPLAY", "wayland-0");
     qputenv("DISPLAY", ":0");
     auto restoreDisp = qScopeGuard([&]() {
-      if (oldWayland.isEmpty()) qunsetenv("WAYLAND_DISPLAY");
-      else qputenv("WAYLAND_DISPLAY", oldWayland);
-      if (oldDisplay.isEmpty()) qunsetenv("DISPLAY");
-      else qputenv("DISPLAY", oldDisplay);
+      if (oldWayland.isEmpty())
+        qunsetenv("WAYLAND_DISPLAY");
+      else
+        qputenv("WAYLAND_DISPLAY", oldWayland);
+      if (oldDisplay.isEmpty())
+        qunsetenv("DISPLAY");
+      else
+        qputenv("DISPLAY", oldDisplay);
     });
 
     const LaunchPlan plan = pipeline.buildLaunchPlan(game, proton, pfx);
@@ -4992,15 +5063,18 @@ private slots:
     QCOMPARE(plan.environment.value("STORE"), QStringLiteral("egs"));
     QCOMPARE(plan.environment.value("PROTON_VERB"),
              QStringLiteral("waitforexitandrun"));
-    QCOMPARE(plan.environment.value("PROTONFIXES_DISABLE"), QStringLiteral("1"));
+    QCOMPARE(plan.environment.value("PROTONFIXES_DISABLE"),
+             QStringLiteral("1"));
     QCOMPARE(plan.environment.value("PROTON_ENABLE_WAYLAND"),
              QStringLiteral("1"));
     QVERIFY(!plan.environment.contains("DISPLAY"));
     QCOMPARE(plan.environment.value("PROTON_ENABLE_HDR"), QStringLiteral("1"));
     QCOMPARE(plan.environment.value("DXVK_HDR"), QStringLiteral("1"));
-    QCOMPARE(plan.environment.value("PROTON_ENABLE_NVAPI"), QStringLiteral("1"));
+    QCOMPARE(plan.environment.value("PROTON_ENABLE_NVAPI"),
+             QStringLiteral("1"));
     QCOMPARE(plan.environment.value("DXVK_ENABLE_NVAPI"), QStringLiteral("1"));
-    QCOMPARE(plan.environment.value("WINE_FULLSCREEN_FSR"), QStringLiteral("1"));
+    QCOMPARE(plan.environment.value("WINE_FULLSCREEN_FSR"),
+             QStringLiteral("1"));
     QCOMPARE(plan.environment.value("WINE_FULLSCREEN_FSR_STRENGTH"),
              QStringLiteral("3"));
     QCOMPARE(plan.environment.value("__NV_PRIME_RENDER_OFFLOAD"),
@@ -5015,10 +5089,19 @@ private slots:
     QCOMPARE(standalone.program, proton.binaryPath);
     QVERIFY(standalone.arguments.contains("waitforexitandrun"));
 
-    // DRI_PRIME integer selection
+    // DRI_PRIME integer selection must not fuzzy-match digits in PCI hex IDs
+    // (e.g. 0x1414)
     game.gpuSelection = QStringLiteral("1");
     const LaunchPlan driPlan = pipeline.buildLaunchPlan(game, proton, pfx);
     QCOMPARE(driPlan.environment.value("DRI_PRIME"), QStringLiteral("1"));
+    const auto matchedGpu1 = diagMgr.findGpu(QStringLiteral("1"));
+    if (matchedGpu1.has_value()) {
+      QCOMPARE(matchedGpu1->driPrimeIndex, 1);
+    }
+
+    game.gpuSelection = QStringLiteral("0");
+    const LaunchPlan driPlan0 = pipeline.buildLaunchPlan(game, proton, pfx);
+    QCOMPARE(driPlan0.environment.value("DRI_PRIME"), QStringLiteral("0"));
   }
 
   void testPrefixCacheCleanupAndGameRelocation() {
@@ -5037,7 +5120,8 @@ private slots:
     SteamGridDbService sgdb(&settings, &dl);
     GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &pipeline);
 
-    // 1. Prefix cache cleanup deletes shader caches & Windows temp while preserving saves
+    // 1. Prefix cache cleanup deletes shader caches & Windows temp while
+    // preserving saves
     const QString pfxId = prefixMgr.createPrefix(
         "CacheTest", tmpDir.filePath("prefixes"), "win64", "win10", "", false);
     QVERIFY(!pfxId.isEmpty());
@@ -5114,7 +5198,8 @@ private slots:
     {
       EpicFileManifest f1;
       f1.filename = "core.pak";
-      f1.shaHash = QCryptographicHash::hash(unchangedBytes, QCryptographicHash::Sha1);
+      f1.shaHash =
+          QCryptographicHash::hash(unchangedBytes, QCryptographicHash::Sha1);
       f1.fileSize = unchangedBytes.size();
       v1Files.append(f1);
 
@@ -5126,13 +5211,15 @@ private slots:
 
       EpicFileManifest f3;
       f3.filename = "obsolete.dll";
-      f3.shaHash = QCryptographicHash::hash(removedBytes, QCryptographicHash::Sha1);
+      f3.shaHash =
+          QCryptographicHash::hash(removedBytes, QCryptographicHash::Sha1);
       f3.fileSize = removedBytes.size();
       v1Files.append(f3);
 
       EpicFileManifest f4;
       f4.filename = "hd_textures.pak";
-      f4.shaHash = QCryptographicHash::hash(addedBytes, QCryptographicHash::Sha1);
+      f4.shaHash =
+          QCryptographicHash::hash(addedBytes, QCryptographicHash::Sha1);
       f4.fileSize = addedBytes.size();
       f4.installTags = {QStringLiteral("HD_Textures")};
       v1Files.append(f4);
@@ -5151,7 +5238,8 @@ private slots:
 
       EpicFileManifest f5;
       f5.filename = "patch2.pak";
-      f5.shaHash = QCryptographicHash::hash(addedBytes, QCryptographicHash::Sha1);
+      f5.shaHash =
+          QCryptographicHash::hash(addedBytes, QCryptographicHash::Sha1);
       f5.fileSize = addedBytes.size();
       v2Files.append(f5);
     }
@@ -5170,11 +5258,15 @@ private slots:
     const auto tags = m1.computeInstallTags();
     QCOMPARE(tags.size(), 1);
     QCOMPARE(tags.first().tag, QStringLiteral("HD_Textures"));
-    QVERIFY(EpicManifest::fileMatchesTags(m1.files[0], {QStringLiteral("OtherTag")}));
-    QVERIFY(!EpicManifest::fileMatchesTags(m1.files[3], {QStringLiteral("OtherTag")}));
-    QVERIFY(EpicManifest::fileMatchesTags(m1.files[3], {QStringLiteral("HD_Textures")}));
+    QVERIFY(EpicManifest::fileMatchesTags(m1.files[0],
+                                          {QStringLiteral("OtherTag")}));
+    QVERIFY(!EpicManifest::fileMatchesTags(m1.files[3],
+                                           {QStringLiteral("OtherTag")}));
+    QVERIFY(EpicManifest::fileMatchesTags(m1.files[3],
+                                          {QStringLiteral("HD_Textures")}));
 
-    // Manifest diffing: 1 unchanged (core.pak), 2 modified/added (game.exe + patch2.pak), 2 removed
+    // Manifest diffing: 1 unchanged (core.pak), 2 modified/added (game.exe +
+    // patch2.pak), 2 removed
     const EpicManifestDiff diff = EpicManifestParser::diffManifests(m1, m2);
     QCOMPARE(diff.unchangedFiles.size(), 1);
     QCOMPARE(diff.modifiedOrNewFiles.size(), 2);
@@ -5185,7 +5277,8 @@ private slots:
     const QString pfxId = prefixMgr.createPrefix(
         "PrereqPfx", tmpDir.filePath("prefixes"), "win64", "win10", "", false);
     QVERIFY(!prefixMgr.arePrereqsInstalled(pfxId, {"vcredist-2022"}));
-    QVERIFY(prefixMgr.markPrereqsInstalled(pfxId, {"vcredist-2022", "directx"}));
+    QVERIFY(
+        prefixMgr.markPrereqsInstalled(pfxId, {"vcredist-2022", "directx"}));
     QVERIFY(prefixMgr.arePrereqsInstalled(pfxId, {"vcredist-2022"}));
   }
 
@@ -5209,9 +5302,10 @@ private slots:
 
     const QString resolvedLocal = EpicCloudSaveService::resolveSaveFolderPath(
         "{LocalAppData}/MyGame/{EpicID}/Saves", pfxPath, installDir, "acc123");
-    QVERIFY2(resolvedLocal.endsWith(
-                 "/pfx/drive_c/users/steamuser/AppData/Local/MyGame/acc123/Saves"),
-             qPrintable(resolvedLocal));
+    QVERIFY2(
+        resolvedLocal.endsWith(
+            "/pfx/drive_c/users/steamuser/AppData/Local/MyGame/acc123/Saves"),
+        qPrintable(resolvedLocal));
 
     const QString resolvedInstall = EpicCloudSaveService::resolveSaveFolderPath(
         "{InstallDir}/Saved", pfxPath, installDir, "acc123");
@@ -5230,29 +5324,29 @@ private slots:
     prev.lastSyncEpoch = 1000;
     prev.lastManifestHash = "hash-1";
     QVariantMap tracked;
-    tracked["slot1.sav"] = QVariantMap{
-        {"sha1", QString::fromLatin1(lf.sha1.toHex())},
-        {"mtime", 1000},
-        {"size", 2}};
+    tracked["slot1.sav"] =
+        QVariantMap{{"sha1", QString::fromLatin1(lf.sha1.toHex())},
+                    {"mtime", 1000},
+                    {"size", 2}};
     prev.trackedFiles = tracked;
 
     // Neither side changed -> UpToDate
-    QCOMPARE(EpicCloudSaveService::evaluateSyncState(
-                 localList, 1000, true, 1000, "hash-1", prev),
+    QCOMPARE(EpicCloudSaveService::evaluateSyncState(localList, 1000, true,
+                                                     1000, "hash-1", prev),
              EpicCloudSaveService::SyncDecision::UpToDate);
     // Only remote changed -> DownloadRecommended
-    QCOMPARE(EpicCloudSaveService::evaluateSyncState(
-                 localList, 1000, true, 2000, "hash-2", prev),
+    QCOMPARE(EpicCloudSaveService::evaluateSyncState(localList, 1000, true,
+                                                     2000, "hash-2", prev),
              EpicCloudSaveService::SyncDecision::DownloadRecommended);
     // Only local changed -> UploadRecommended
     auto lfChanged = lf;
     lfChanged.sha1 = QCryptographicHash::hash("v2", QCryptographicHash::Sha1);
-    QCOMPARE(EpicCloudSaveService::evaluateSyncState(
-                 {lfChanged}, 2000, true, 1000, "hash-1", prev),
+    QCOMPARE(EpicCloudSaveService::evaluateSyncState({lfChanged}, 2000, true,
+                                                     1000, "hash-1", prev),
              EpicCloudSaveService::SyncDecision::UploadRecommended);
     // Both sides changed -> Conflict
-    QCOMPARE(EpicCloudSaveService::evaluateSyncState(
-                 {lfChanged}, 2000, true, 2500, "hash-2", prev),
+    QCOMPARE(EpicCloudSaveService::evaluateSyncState({lfChanged}, 2000, true,
+                                                     2500, "hash-2", prev),
              EpicCloudSaveService::SyncDecision::Conflict);
 
     // 3. Safety snapshot creation, pruning & restoration
@@ -5320,13 +5414,17 @@ private slots:
     a2.resumeFn = [&]() { ++resumed2; };
     a2.cancelFn = [](bool) {};
 
-    QCOMPARE(dl.registerExternalTask("epic:g1", "Game One", "epic_game", "g1", "",
-                                     true, a1, true), true);
-    // Task 2 exceeds maxConcurrentGameDownloads=1 so it is registered as queued (returns false = not started immediately)
-    QCOMPARE(dl.registerExternalTask("epic:g2", "Game Two", "epic_game", "g2", "",
-                                     true, a2, true), false);
+    QCOMPARE(dl.registerExternalTask("epic:g1", "Game One", "epic_game", "g1",
+                                     "", true, a1, true),
+             true);
+    // Task 2 exceeds maxConcurrentGameDownloads=1 so it is registered as queued
+    // (returns false = not started immediately)
+    QCOMPARE(dl.registerExternalTask("epic:g2", "Game Two", "epic_game", "g2",
+                                     "", true, a2, true),
+             false);
 
-    // Sequential game downloads: Game One started immediately, Game Two is queued
+    // Sequential game downloads: Game One started immediately, Game Two is
+    // queued
     QCOMPARE(started1, 1);
     QCOMPARE(started2, 0);
     QCOMPARE(dl.activeDownloadCount(), 1);
@@ -5403,8 +5501,8 @@ private slots:
 
     // Load DownloadsView.qml
     {
-      QQmlComponent comp(
-          &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/DownloadsView.qml")));
+      QQmlComponent comp(&engine, resolveQmlUrl(QStringLiteral(
+                                      "src/qml/pages/DownloadsView.qml")));
       QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
       std::unique_ptr<QObject> obj(comp.create());
       QVERIFY(obj != nullptr);
@@ -5418,8 +5516,8 @@ private slots:
     // Load CloudSaveConflictDialog.qml & invoke openConflict
     {
       QQmlComponent comp(
-          &engine,
-          resolveQmlUrl(QStringLiteral("src/qml/components/CloudSaveConflictDialog.qml")));
+          &engine, resolveQmlUrl(QStringLiteral(
+                       "src/qml/components/CloudSaveConflictDialog.qml")));
       QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
       std::unique_ptr<QObject> obj(comp.create());
       QVERIFY(obj != nullptr);
@@ -5429,9 +5527,9 @@ private slots:
       details["localFileCount"] = 3;
       details["localLatestEpoch"] = 1700000000;
       details["remoteLatestEpoch"] = 1700003600;
-      QVERIFY(QMetaObject::invokeMethod(
-          obj.get(), "openConflict", Q_ARG(QVariant, QVariant("g-conflict")),
-          Q_ARG(QVariant, QVariant(details))));
+      QVERIFY(QMetaObject::invokeMethod(obj.get(), "openConflict",
+                                        Q_ARG(QVariant, QVariant("g-conflict")),
+                                        Q_ARG(QVariant, QVariant(details))));
       QCoreApplication::processEvents();
       QCOMPARE(obj->property("visible").toBool(), true);
       QVERIFY(QMetaObject::invokeMethod(obj.get(), "resolve",
@@ -5439,16 +5537,17 @@ private slots:
       QTRY_COMPARE(obj->property("visible").toBool(), false);
     }
 
-    // Load RunnersView, PrefixesView, EpicDownloadDialog, SettingsPage, EpicLibraryView, GameDetailPage, TopBar, MediaGrid
-    for (const QString &rel : {
-             QStringLiteral("src/qml/pages/RunnersView.qml"),
-             QStringLiteral("src/qml/pages/PrefixesView.qml"),
-             QStringLiteral("src/qml/pages/SettingsPage.qml"),
-             QStringLiteral("src/qml/pages/EpicLibraryView.qml"),
-             QStringLiteral("src/qml/pages/GameDetailPage.qml"),
-             QStringLiteral("src/qml/home/TopBar.qml"),
-             QStringLiteral("src/qml/home/MediaGrid.qml"),
-             QStringLiteral("src/qml/components/EpicDownloadDialog.qml")}) {
+    // Load RunnersView, PrefixesView, EpicDownloadDialog, SettingsPage,
+    // EpicLibraryView, GameDetailPage, TopBar, MediaGrid
+    for (const QString &rel :
+         {QStringLiteral("src/qml/pages/RunnersView.qml"),
+          QStringLiteral("src/qml/pages/PrefixesView.qml"),
+          QStringLiteral("src/qml/pages/SettingsPage.qml"),
+          QStringLiteral("src/qml/pages/EpicLibraryView.qml"),
+          QStringLiteral("src/qml/pages/GameDetailPage.qml"),
+          QStringLiteral("src/qml/home/TopBar.qml"),
+          QStringLiteral("src/qml/home/MediaGrid.qml"),
+          QStringLiteral("src/qml/components/EpicDownloadDialog.qml")}) {
       QQmlComponent comp(&engine, resolveQmlUrl(rel));
       QVERIFY2(comp.isReady(),
                qPrintable(rel + QStringLiteral(": ") + comp.errorString()));
@@ -5484,12 +5583,17 @@ private slots:
     epicSvc.setDownloadManager(&dl);
     epicSvc.setGameManager(&gm);
 
-    // 1. Hardcoded non-game Epic blocklist (Discord, Spotify, Unreal Engine, etc.) + Epic hide/unhide
+    // 1. Hardcoded non-game Epic blocklist (Discord, Spotify, Unreal Engine,
+    // etc.) + Epic hide/unhide
     QVERIFY(EpicService::isBlockedNonGameEpicApp("Discord", "discord", "ns"));
-    QVERIFY(EpicService::isBlockedNonGameEpicApp("Discord Canary", "discord-canary", "ns"));
-    QVERIFY(EpicService::isBlockedNonGameEpicApp("Spotify", "spotify-app", "ns"));
-    QVERIFY(EpicService::isBlockedNonGameEpicApp("Unreal Engine", "UE_5.4", "ue"));
-    QVERIFY(!EpicService::isBlockedNonGameEpicApp("Red Dead Redemption 2", "heather", "ns"));
+    QVERIFY(EpicService::isBlockedNonGameEpicApp("Discord Canary",
+                                                 "discord-canary", "ns"));
+    QVERIFY(
+        EpicService::isBlockedNonGameEpicApp("Spotify", "spotify-app", "ns"));
+    QVERIFY(
+        EpicService::isBlockedNonGameEpicApp("Unreal Engine", "UE_5.4", "ue"));
+    QVERIFY(!EpicService::isBlockedNonGameEpicApp("Red Dead Redemption 2",
+                                                  "heather", "ns"));
     QVERIFY(!EpicService::isBlockedNonGameEpicApp("Hades", "hades-app", "ns"));
 
     EpicLibraryItem discordItem;
@@ -5516,12 +5620,14 @@ private slots:
     // Discord must NEVER appear even though it was inserted into epic_library!
     QCOMPARE(epicModel->rowCount(), 2);
     QCOMPARE(epicModel->hiddenCount(), 0);
-    // showHidden=true includes hidden games alongside visible games (Discord still never appears)
+    // showHidden=true includes hidden games alongside visible games (Discord
+    // still never appears)
     epicModel->setShowHidden(true);
     QCOMPARE(epicModel->rowCount(), 2);
     epicModel->setShowHidden(false);
 
-    // User hiding an Epic game removes it from default view and includes it alongside normal games when showHidden=true
+    // User hiding an Epic game removes it from default view and includes it
+    // alongside normal games when showHidden=true
     epicSvc.toggleHideEpicGame("hades-app");
     QCOMPARE(epicModel->rowCount(), 1);
     QCOMPARE(epicModel->hiddenCount(), 1);
@@ -5546,7 +5652,8 @@ private slots:
     epicModel->setShowHidden(false);
     QCOMPARE(epicModel->rowCount(), 2);
 
-    // 2. Persistent Epic download restoration across app restarts + Runners tab isolation
+    // 2. Persistent Epic download restoration across app restarts + Runners tab
+    // isolation
     const QString partialInstallDir = tmpDir.filePath("EpicGames/Hades");
     QDir().mkpath(partialInstallDir);
     QueuedDownloadRecord qRec;
@@ -5567,17 +5674,21 @@ private slots:
     payload["progress"] = 42.5;
     payload["downloadedBytes"] = 425000000;
     payload["totalDownloadBytes"] = 1000000000;
-    qRec.payloadJson = QString::fromUtf8(QJsonDocument(payload).toJson(QJsonDocument::Compact));
+    qRec.payloadJson = QString::fromUtf8(
+        QJsonDocument(payload).toJson(QJsonDocument::Compact));
     QVERIFY(db.saveQueuedDownload(qRec));
 
     epicSvc.restorePendingDownloads();
-    // Restored download must appear in DownloadManager in Paused state with preserved progress
+    // Restored download must appear in DownloadManager in Paused state with
+    // preserved progress
     QCOMPARE(dl.rowCount(), 1);
     const QVariantMap restoredDl = dl.activeDownloads().first().toMap();
-    QCOMPARE(restoredDl.value("id").toString(), QStringLiteral("epic-dl-hades-app"));
+    QCOMPARE(restoredDl.value("id").toString(),
+             QStringLiteral("epic-dl-hades-app"));
     QCOMPARE(restoredDl.value("isPaused").toBool(), true);
     QCOMPARE(restoredDl.value("progress").toDouble(), 42.5);
-    // EpicService must also know it's an active paused download (so no EpicDownloadDialog re-prompt!)
+    // EpicService must also know it's an active paused download (so no
+    // EpicDownloadDialog re-prompt!)
     const QVariantMap epicDlState = epicSvc.getDownloadState("hades-app");
     QCOMPARE(epicDlState.value("isDownloading").toBool(), true);
     QCOMPARE(epicDlState.value("isPaused").toBool(), true);
@@ -5585,13 +5696,15 @@ private slots:
     QCOMPARE(dl.runnerDownloadCount(), 0);
     QVERIFY(dl.runnerDownloads().isEmpty());
 
-    // 3. Multi-select Library filters (Linux Only, Windows Only, Epic Only, Favourite, Local)
+    // 3. Multi-select Library filters (Linux Only, Windows Only, Epic Only,
+    // Favourite, Local)
     auto addSampleGame = [&](const QString &id, const QString &title,
                              bool isNative, const QString &source, bool fav) {
       GameRecord g;
       g.id = id;
       g.title = title;
-      g.platform = isNative ? QStringLiteral("linux") : QStringLiteral("windows");
+      g.platform =
+          isNative ? QStringLiteral("linux") : QStringLiteral("windows");
       g.source = source;
       if (source == QLatin1String("epic")) {
         g.epicAppName = id + QStringLiteral("-app");
@@ -5613,7 +5726,8 @@ private slots:
     QCOMPARE(listModel.rowCount(), 2);
     listModel.toggleFilter("favourite");
     QCOMPARE(listModel.rowCount(), 1);
-    QCOMPARE(listModel.get(0).value("id").toString(), QStringLiteral("g-win-epic-fav"));
+    QCOMPARE(listModel.get(0).value("id").toString(),
+             QStringLiteral("g-win-epic-fav"));
     listModel.clearFilters();
     QCOMPARE(listModel.rowCount(), 4);
     // OR within platform group (linux + windows)
@@ -5623,7 +5737,8 @@ private slots:
     QCOMPARE(listModel.rowCount(), 4);
     listModel.clearFilters();
 
-    // 4. UMU launch plan sets STEAM_COMPAT_INSTALL_PATH and skips blocking steamrt update when runtime exists
+    // 4. UMU launch plan sets STEAM_COMPAT_INSTALL_PATH and skips blocking
+    // steamrt update when runtime exists
     const QString fakeProtonDir = tmpDir.filePath("GE-Proton10-Test");
     QDir().mkpath(fakeProtonDir);
     const QString fakeProtonBin = fakeProtonDir + "/proton";
@@ -5631,7 +5746,8 @@ private slots:
       QFile f(fakeProtonBin);
       QVERIFY(f.open(QIODevice::WriteOnly));
       f.write("#!/bin/sh\nexit 0\n");
-      f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+      f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                       QFileDevice::ExeOwner);
     }
     RunnerRecord testRunner;
     testRunner.id = "ge-test";
@@ -5666,19 +5782,32 @@ private slots:
     umuGame.umuState = 1;
     QVERIFY(db.saveGame(umuGame));
 
-    const LaunchPlan plan = pipeline.buildLaunchPlan(umuGame, testRunner, testPrefix);
-    QCOMPARE(plan.environment.value(QStringLiteral("STEAM_COMPAT_INSTALL_PATH")),
-             fakeGameDir);
-    if (!RunnerManager::resolveUmuRunPath().isEmpty()) {
-      QVERIFY(plan.usesUmu);
-      QCOMPARE(plan.environment.value(QStringLiteral("PROTONPATH")), fakeProtonDir);
-      if (!RunnerManager::resolveSteamLinuxRuntimePath().isEmpty()) {
-        QCOMPARE(plan.environment.value(QStringLiteral("UMU_RUNTIME_UPDATE")),
-                 QStringLiteral("0"));
-      }
+    const QString fakeUmuBin = tmpDir.filePath("umu-run");
+    {
+      QFile f(fakeUmuBin);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write("#!/bin/sh\nexit 0\n");
+      f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                       QFileDevice::ExeOwner);
     }
+    pipeline.setUmuBinaryOverrideForTesting(fakeUmuBin);
 
-    // 5. Verify EpicLibraryView Sign Out button fits inside Account pill & GameDetailPage has Epic & Online tab
+    const LaunchPlan plan =
+        pipeline.buildLaunchPlan(umuGame, testRunner, testPrefix);
+    QCOMPARE(
+        plan.environment.value(QStringLiteral("STEAM_COMPAT_INSTALL_PATH")),
+        fakeGameDir);
+    QVERIFY(plan.usesUmu);
+    QCOMPARE(plan.environment.value(QStringLiteral("PROTONPATH")),
+             fakeProtonDir);
+    if (!RunnerManager::resolveSteamLinuxRuntimePath().isEmpty()) {
+      QCOMPARE(plan.environment.value(QStringLiteral("UMU_RUNTIME_UPDATE")),
+               QStringLiteral("0"));
+    }
+    pipeline.setUmuBinaryOverrideForTesting(QString());
+
+    // 5. Verify EpicLibraryView Sign Out button fits inside Account pill &
+    // GameDetailPage has Epic & Online tab
     UiController ui(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
                     &ctrlMgr, &sgdb, &pipeline, &diagMgr, &gm, &epicSvc);
     QQmlEngine engine;
@@ -5691,7 +5820,9 @@ private slots:
     QVERIFY(QTest::qWaitForWindowExposed(&win));
 
     {
-      QQmlComponent detailComp(&engine, resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
+      QQmlComponent detailComp(
+          &engine,
+          resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
       QVERIFY2(detailComp.isReady(), qPrintable(detailComp.errorString()));
       std::unique_ptr<QObject> dObj(detailComp.create());
       QVERIFY(dObj != nullptr);
@@ -5707,8 +5838,842 @@ private slots:
           foundEpicOnline = true;
         }
       }
-      QVERIFY2(foundEpicOnline, "GameDetailPage missing dedicated Epic & Online tab (stackIndex 5)");
+      QVERIFY2(
+          foundEpicOnline,
+          "GameDetailPage missing dedicated Epic & Online tab (stackIndex 5)");
     }
+  }
+
+  void testNineIssuesFixesAndRefinements() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+
+    const QByteArray oldHome = qgetenv("HOME");
+    const QByteArray oldXdgData = qgetenv("XDG_DATA_HOME");
+    const QByteArray oldXdgCache = qgetenv("XDG_CACHE_HOME");
+    const QByteArray oldXdgConfig = qgetenv("XDG_CONFIG_HOME");
+    const bool hadXdgData = qEnvironmentVariableIsSet("XDG_DATA_HOME");
+    const bool hadXdgCache = qEnvironmentVariableIsSet("XDG_CACHE_HOME");
+    const bool hadXdgConfig = qEnvironmentVariableIsSet("XDG_CONFIG_HOME");
+
+    const QString origGenericConfig =
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+    const QString fakeHome = tmpDir.filePath(QStringLiteral("home"));
+    QVERIFY(QDir().mkpath(fakeHome));
+    qputenv("HOME", fakeHome.toUtf8());
+    qputenv("XDG_DATA_HOME",
+            (fakeHome + QStringLiteral("/.local/share")).toUtf8());
+    qputenv("XDG_CACHE_HOME", (fakeHome + QStringLiteral("/.cache")).toUtf8());
+    qputenv("XDG_CONFIG_HOME",
+            (fakeHome + QStringLiteral("/.config")).toUtf8());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                       fakeHome + QStringLiteral("/.config"));
+    auto restoreEnv = qScopeGuard([&]() {
+      QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                         origGenericConfig);
+      qputenv("HOME", oldHome);
+      if (hadXdgData)
+        qputenv("XDG_DATA_HOME", oldXdgData);
+      else
+        qunsetenv("XDG_DATA_HOME");
+      if (hadXdgCache)
+        qputenv("XDG_CACHE_HOME", oldXdgCache);
+      else
+        qunsetenv("XDG_CACHE_HOME");
+      if (hadXdgConfig)
+        qputenv("XDG_CONFIG_HOME", oldXdgConfig);
+      else
+        qunsetenv("XDG_CONFIG_HOME");
+    });
+
+    DatabaseManager db(tmpDir.filePath(QStringLiteral("issues.db")));
+    QVERIFY(db.initialize());
+    AppSettings settings;
+    settings.setDatabaseManager(&db);
+    // Defaults: allowDeleteSteamRunners OFF, autoFetchEpicArtwork ON
+    QCOMPARE(settings.allowDeleteSteamRunners(), false);
+    QCOMPARE(settings.autoFetchEpicArtwork(), true);
+
+    DownloadManager dl;
+    dl.setAppSettings(&settings);
+    dl.setDatabaseManager(&db);
+
+    // 1. Runner deletion: non-Steam Heroic tool is deletable; Steam &
+    // compatibilitytools.d gated by setting
+    const QString heroicWineDir =
+        fakeHome + QStringLiteral("/.config/heroic/tools/wine/HeroicWine-9.0");
+    const QString compatToolDir =
+        fakeHome +
+        QStringLiteral(
+            "/.local/share/Steam/compatibilitytools.d/GE-Proton9-99");
+    const QString steamProtonDir =
+        fakeHome +
+        QStringLiteral(
+            "/.local/share/Steam/steamapps/common/Proton - Experimental");
+    for (const QString &d : {heroicWineDir, compatToolDir, steamProtonDir}) {
+      QVERIFY(QDir().mkpath(d));
+    }
+    {
+      QFile f1(heroicWineDir + QStringLiteral("/bin/wine"));
+      QVERIFY(QDir().mkpath(QFileInfo(f1.fileName()).absolutePath()));
+      QVERIFY(f1.open(QIODevice::WriteOnly));
+      f1.close();
+      QFile f2(compatToolDir + QStringLiteral("/proton"));
+      QVERIFY(f2.open(QIODevice::WriteOnly));
+      f2.close();
+      QFile f3(steamProtonDir + QStringLiteral("/proton"));
+      QVERIFY(f3.open(QIODevice::WriteOnly));
+      f3.close();
+    }
+
+    RunnerManager rm(&db, &settings, &dl);
+    const QList<RunnerRecord> detected = rm.installedRunners();
+    QString heroicId, compatId, steamId;
+    for (const RunnerRecord &r : detected) {
+      if (r.path == heroicWineDir)
+        heroicId = r.id;
+      else if (r.path == compatToolDir)
+        compatId = r.id;
+      else if (r.path == steamProtonDir)
+        steamId = r.id;
+    }
+    QVERIFY(!heroicId.isEmpty());
+    QVERIFY(!compatId.isEmpty());
+    QVERIFY(!steamId.isEmpty());
+    QCOMPARE(rm.canDeleteRunner(heroicId), true);
+    QCOMPARE(rm.canDeleteRunner(compatId), false);
+    QCOMPARE(rm.canDeleteRunner(steamId), false);
+
+    // Heroic runner deletes cleanly from DB & disk
+    QVERIFY(rm.uninstallRunner(heroicId));
+    QVERIFY(!QDir(heroicWineDir).exists());
+    // Steam & compatibilitytools.d runners blocked when allowDeleteSteamRunners
+    // is OFF
+    QVERIFY(!rm.uninstallRunner(compatId));
+    QVERIFY(!rm.uninstallRunner(steamId));
+    QVERIFY(QDir(compatToolDir).exists());
+    QVERIFY(QDir(steamProtonDir).exists());
+    // Enable allowDeleteSteamRunners -> both become deletable
+    settings.setAllowDeleteSteamRunners(true);
+    QCOMPARE(rm.canDeleteRunner(compatId), true);
+    QCOMPARE(rm.canDeleteRunner(steamId), true);
+    QVERIFY(rm.uninstallRunner(compatId));
+    QVERIFY(rm.uninstallRunner(steamId));
+    QVERIFY(!QDir(compatToolDir).exists());
+    QVERIFY(!QDir(steamProtonDir).exists());
+
+    // 2. Storage cleaning: cache, inactive logs, old artwork, and Epic
+    // thumbnail cache
+    PrefixManager prefixMgr(&db, &settings, &rm);
+    WinetricksManager wtMgr(&db, &settings, &rm, &dl);
+    ControllerManager ctrlMgr(&db, &settings);
+    DiagnosticsManager diagMgr(&db, &settings, &rm, &prefixMgr);
+    LaunchPipeline pipeline(&db, &settings, &rm, &prefixMgr, &ctrlMgr,
+                            &diagMgr);
+    SteamGridDbService sgdb(&settings, &dl);
+    GameManager gm(&db, &settings, &rm, &prefixMgr, &sgdb, &pipeline);
+    EpicService epicSvc(&db, &settings, &rm, &prefixMgr, &sgdb);
+    epicSvc.setGameManager(&gm);
+    UiController ui(&db, &settings, &dl, &rm, &prefixMgr, &wtMgr, &ctrlMgr,
+                    &sgdb, &pipeline, &diagMgr, &gm, &epicSvc);
+
+    // Populate active game + active artwork + superseded old artwork + orphan
+    // folder + cache + logs + epic cache
+    const QString activeArtDir =
+        AppSettings::artworkDir() + QStringLiteral("/active-g1");
+    const QString orphanArtDir =
+        AppSettings::artworkDir() + QStringLiteral("/deleted-old-game");
+    const QString epicThumbDir =
+        AppSettings::artworkDir() + QStringLiteral("/epic_HadesApp");
+    QVERIFY(QDir().mkpath(activeArtDir));
+    QVERIFY(QDir().mkpath(orphanArtDir));
+    QVERIFY(QDir().mkpath(epicThumbDir));
+    auto writeDummyFile = [](const QString &p, const QByteArray &data) {
+      QDir().mkpath(QFileInfo(p).absolutePath());
+      QFile f(p);
+      QVERIFY(f.open(QIODevice::WriteOnly));
+      f.write(data);
+      f.close();
+    };
+    const QString activeCover = activeArtDir + QStringLiteral("/cover.jpg");
+    const QString supersededArt = activeArtDir + QStringLiteral("/poster.svg");
+    const QString orphanArt = orphanArtDir + QStringLiteral("/cover.jpg");
+    const QString epicThumb = epicThumbDir + QStringLiteral("/cover.jpg");
+    const QString cacheFile =
+        AppSettings::cacheDir() + QStringLiteral("/old_runner.tar.gz");
+    const QString logFile =
+        AppSettings::logsDir() + QStringLiteral("/old-game.log");
+    writeDummyFile(activeCover, QByteArray(1024, 'A'));
+    writeDummyFile(supersededArt, QByteArray(512, 'B'));
+    writeDummyFile(orphanArt, QByteArray(2048, 'C'));
+    writeDummyFile(epicThumb, QByteArray(1536, 'D'));
+    writeDummyFile(cacheFile, QByteArray(4096, 'E'));
+    writeDummyFile(logFile, QByteArray(768, 'F'));
+
+    GameRecord activeGame;
+    activeGame.id = QStringLiteral("active-g1");
+    activeGame.title = QStringLiteral("Active Non-Epic Game");
+    activeGame.platform = QStringLiteral("windows");
+    activeGame.source = QStringLiteral("local");
+    activeGame.executablePath = tmpDir.filePath(QStringLiteral("active.exe"));
+    activeGame.coverPath = activeCover;
+    activeGame.enableEacRuntime = true;
+    activeGame.enableBattlEyeRuntime = true;
+    QVERIFY(db.saveGame(activeGame));
+
+    EpicLibraryItem epicItem;
+    epicItem.appName = QStringLiteral("HadesApp");
+    epicItem.namespaceId = QStringLiteral("ns-hades");
+    epicItem.catalogItemId = QStringLiteral("cat-hades");
+    epicItem.title = QStringLiteral("Hades");
+    epicItem.coverPath = epicThumb;
+    QVERIFY(db.saveEpicLibraryItem(epicItem));
+
+    const QVariantMap statsBefore = ui.getStorageCleaningStats();
+    QVERIFY2(
+        statsBefore.value(QStringLiteral("cacheBytes")).toLongLong() >= 4096,
+        qPrintable(
+            QStringLiteral(
+                "cacheDir=%1 exists=%2 size=%3 runnerDl=%4 entries=%5 stats=%6")
+                .arg(AppSettings::cacheDir())
+                .arg(QFileInfo::exists(cacheFile))
+                .arg(QFileInfo(cacheFile).size())
+                .arg(dl.runnerDownloadCount())
+                .arg(QDir(AppSettings::cacheDir())
+                         .entryList(QDir::AllEntries | QDir::NoDotAndDotDot)
+                         .join(","))
+                .arg(QString::fromUtf8(QJsonDocument::fromVariant(statsBefore)
+                                           .toJson(QJsonDocument::Compact)))));
+    QVERIFY(statsBefore.value(QStringLiteral("logsBytes")).toLongLong() >= 768);
+    QVERIFY(statsBefore.value(QStringLiteral("oldArtworkBytes")).toLongLong() >=
+            (512 + 2048));
+    QVERIFY(
+        statsBefore.value(QStringLiteral("epicArtworkBytes")).toLongLong() >=
+        1536);
+
+    ui.clearAllCleanableStorage();
+    QVERIFY(!QFileInfo::exists(cacheFile));
+    QVERIFY(!QFileInfo::exists(logFile));
+    QVERIFY(!QFileInfo::exists(supersededArt));
+    QVERIFY(!QFileInfo::exists(orphanArt));
+    QVERIFY(QFileInfo::exists(activeCover));
+    QVERIFY(QFileInfo::exists(epicThumb));
+
+    ui.clearEpicArtworkCache();
+    QVERIFY(!QFileInfo::exists(epicThumb));
+    QVERIFY(QFileInfo::exists(activeCover));
+    const auto refreshedEpicItem =
+        db.getEpicLibraryItem(QStringLiteral("HadesApp"));
+    QVERIFY(refreshedEpicItem.has_value());
+    QVERIFY(refreshedEpicItem->coverPath.isEmpty());
+
+    // 3. Non-Epic game must NOT get anti-cheat env vars or Online/Anti-Cheat
+    // tab in GameDetailPage
+    const QString fakeEacDir =
+        AppSettings::toolsDir() + QStringLiteral("/runtimes/eac_runtime");
+    QVERIFY(QDir().mkpath(fakeEacDir));
+    writeDummyFile(fakeEacDir + QStringLiteral("/easyanticheat_x64.so"),
+                   QByteArray("ELF"));
+    RunnerRecord pRunner;
+    pRunner.id = QStringLiteral("p-runner");
+    pRunner.name = QStringLiteral("GE-Proton");
+    pRunner.type = QStringLiteral("proton-ge");
+    pRunner.binaryPath = QStringLiteral("/usr/bin/true");
+    PrefixRecord pfx;
+    pfx.id = QStringLiteral("default-prefix");
+    pfx.name = QStringLiteral("Default");
+    pfx.path = tmpDir.filePath(QStringLiteral("pfx"));
+    const LaunchPlan nonEpicPlan =
+        pipeline.buildLaunchPlan(activeGame, pRunner, pfx);
+    QVERIFY(!nonEpicPlan.environment.contains(
+        QStringLiteral("PROTON_EAC_RUNTIME")));
+    QVERIFY(!nonEpicPlan.environment.contains(
+        QStringLiteral("PROTON_BATTLEYE_RUNTIME")));
+
+    // 4. QML verification: Runners tab icon, dialog radii == 12, AddGameDialog
+    // smooth prefix stack,
+    //    GameDetailPage non-Epic hides tab 5 & anti-cheat, EpicLibraryView no
+    //    "DL " & sign-out confirm dialog
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
+                                             &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"),
+                                             &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
+                                             &ui);
+
+    QQuickWindow win;
+    win.resize(1280, 820);
+    win.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+    // SettingsPage Runners icon == "runner" -> nav/runner.svg &
+    // nav/runner-filled.svg
+    {
+      QQmlComponent settingsComp(
+          &engine,
+          resolveQmlUrl(QStringLiteral("src/qml/pages/SettingsPage.qml")));
+      QVERIFY2(settingsComp.isReady(), qPrintable(settingsComp.errorString()));
+      std::unique_ptr<QObject> sObj(settingsComp.create());
+      QVERIFY(sObj != nullptr);
+      const QVariantList tabMeta = sObj->property("tabMeta").toList();
+      QCOMPARE(tabMeta.at(4).toMap().value(QStringLiteral("symbol")).toString(),
+               QStringLiteral("runner"));
+      QVERIFY(sObj->findChild<QObject *>(
+                  QStringLiteral("allowDeleteSteamRunnersToggle")) != nullptr);
+      QVERIFY(sObj->findChild<QObject *>(
+                  QStringLiteral("autoFetchEpicArtworkToggle")) != nullptr);
+      QVERIFY(sObj->findChild<QObject *>(
+                  QStringLiteral("clearCacheStorageBtn")) != nullptr);
+      QVERIFY(sObj->findChild<QObject *>(
+                  QStringLiteral("clearEpicArtworkBtn")) != nullptr);
+    }
+
+    // All dialogs use less-rounded radius == 12.0
+    for (const auto &pair : QList<QPair<QString, QString>>{
+             {QStringLiteral("src/qml/components/AddGameDialog.qml"),
+              QStringLiteral("addGameDialogBg")},
+             {QStringLiteral("src/qml/components/EpicDownloadDialog.qml"),
+              QStringLiteral("epicDownloadDialogBg")},
+             {QStringLiteral("src/qml/components/EpicImportDialog.qml"),
+              QStringLiteral("epicImportDialogBg")},
+             {QStringLiteral("src/qml/components/RemoveGameDialog.qml"),
+              QString()},
+             {QStringLiteral("src/qml/components/ArtworkUrlDialog.qml"),
+              QString()},
+             {QStringLiteral("src/qml/components/CloudSaveConflictDialog.qml"),
+              QString()},
+             {QStringLiteral("src/qml/components/WinetricksModal.qml"),
+              QString()}}) {
+      QQmlComponent c(&engine, resolveQmlUrl(pair.first));
+      QVERIFY2(c.isReady(), qPrintable(c.errorString()));
+      std::unique_ptr<QObject> dlg(c.create());
+      QVERIFY(dlg != nullptr);
+      auto *bg = dlg->property("background").value<QQuickItem *>();
+      QVERIFY(bg != nullptr);
+      if (!pair.second.isEmpty()) {
+        QCOMPARE(bg->objectName(), pair.second);
+      }
+      QCOMPARE(bg->property("radius").toDouble(), 12.0);
+    }
+
+    // AddGameDialog smoothly transitions between Dedicated and Existing prefix
+    // modes
+    {
+      QQmlComponent addComp(
+          &engine, resolveQmlUrl(
+                       QStringLiteral("src/qml/components/AddGameDialog.qml")));
+      QVERIFY2(addComp.isReady(), qPrintable(addComp.errorString()));
+      std::unique_ptr<QObject> addDlg(addComp.create());
+      QVERIFY(addDlg != nullptr);
+      addDlg->setProperty("parent", QVariant::fromValue(win.contentItem()));
+      QVERIFY(QMetaObject::invokeMethod(
+          addDlg.get(), "resetAndOpen",
+          Q_ARG(QVariant, QVariant(QStringLiteral("windows")))));
+      QCoreApplication::processEvents();
+      QTest::qWait(40);
+      QCOMPARE(addDlg->property("useDedicatedPrefix").toBool(), true);
+      addDlg->setProperty("useDedicatedPrefix", false);
+      QCoreApplication::processEvents();
+      QTest::qWait(240);
+      QCOMPARE(addDlg->property("useDedicatedPrefix").toBool(), false);
+      QVERIFY(QMetaObject::invokeMethod(addDlg.get(), "close"));
+      QCoreApplication::processEvents();
+    }
+
+    // GameDetailPage for non-Epic and Epic games: StackLayout tabs never
+    // overlap, anti-cheat hidden/disabled for non-Epic
+    GameRecord epicGame;
+    epicGame.id = QStringLiteral("epic-g1");
+    epicGame.title = QStringLiteral("Hades");
+    epicGame.platform = QStringLiteral("windows");
+    epicGame.source = QStringLiteral("epic");
+    epicGame.epicAppName = QStringLiteral("HadesApp");
+    epicGame.executablePath = tmpDir.filePath(QStringLiteral("hades.exe"));
+    epicGame.enableEacRuntime = true;
+    epicGame.enableBattlEyeRuntime = false;
+    QVERIFY(db.saveGame(epicGame));
+
+    {
+      auto verifyStackExclusive = [](QObject *dObj, int expectedStackIndex) {
+        auto *tabStack =
+            dObj->findChild<QQuickItem *>(QStringLiteral("detailTabStack"));
+        QVERIFY(tabStack != nullptr);
+        const QList<QQuickItem *> stackChildren = tabStack->childItems();
+        QCOMPARE(stackChildren.size(), 6);
+        for (int i = 0; i < stackChildren.size(); ++i) {
+          QVERIFY2(stackChildren[i]->property("visible").toBool() ==
+                       (i == expectedStackIndex),
+                   qPrintable(
+                       QStringLiteral("StackLayout child %1 visible=%2 "
+                                      "expected=%3 (activeTab=%4)")
+                           .arg(i)
+                           .arg(stackChildren[i]->property("visible").toBool())
+                           .arg(i == expectedStackIndex)
+                           .arg(expectedStackIndex)));
+        }
+      };
+
+      // Non-Epic Windows game opened by gameId
+      QQmlComponent detailComp(
+          &engine,
+          resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
+      QVERIFY2(detailComp.isReady(), qPrintable(detailComp.errorString()));
+      std::unique_ptr<QObject> dObj(detailComp.create());
+      QVERIFY(dObj != nullptr);
+      dObj->setProperty("gameId", QStringLiteral("active-g1"));
+      QVERIFY(QMetaObject::invokeMethod(dObj.get(), "reloadGame"));
+      QCoreApplication::processEvents();
+      const QVariantList nonEpicTabs = dObj->property("tabList").toList();
+      QCOMPARE(nonEpicTabs.size(), 5);
+      for (const QVariant &t : nonEpicTabs) {
+        const int idx = t.toMap().value(QStringLiteral("stackIndex")).toInt();
+        QVERIFY2(idx != 5,
+                 "Non-Epic game should not show Online & Anti-Cheat tab");
+        dObj->setProperty("activeTab", idx);
+        QCoreApplication::processEvents();
+        verifyStackExclusive(dObj.get(), idx);
+      }
+      auto *onlineTab =
+          dObj->findChild<QQuickItem *>(QStringLiteral("detailOnlineTab"));
+      QVERIFY(onlineTab != nullptr);
+      QCOMPARE(onlineTab->property("visible").toBool(), false);
+      auto *eacToggle =
+          dObj->findChild<QQuickItem *>(QStringLiteral("eacRuntimeToggle"));
+      auto *battleyeToggle = dObj->findChild<QQuickItem *>(
+          QStringLiteral("battleyeRuntimeToggle"));
+      QVERIFY(eacToggle != nullptr && battleyeToggle != nullptr);
+      QCOMPARE(eacToggle->property("enabled").toBool(), false);
+      QCOMPARE(eacToggle->property("checked").toBool(), false);
+      QCOMPARE(battleyeToggle->property("enabled").toBool(), false);
+      QCOMPARE(battleyeToggle->property("checked").toBool(), false);
+
+      // Epic Windows game opened via gameId only (isEpicEntry flips false->true
+      // inside reloadGame)
+      std::unique_ptr<QObject> epicDetailObj(detailComp.create());
+      QVERIFY(epicDetailObj != nullptr);
+      epicDetailObj->setProperty("gameId", QStringLiteral("epic-g1"));
+      QVERIFY(QMetaObject::invokeMethod(epicDetailObj.get(), "reloadGame"));
+      QCoreApplication::processEvents();
+      QCOMPARE(epicDetailObj->property("activeTab").toInt(), 0);
+      verifyStackExclusive(epicDetailObj.get(), 0);
+
+      const QVariantList epicTabs = epicDetailObj->property("tabList").toList();
+      QCOMPARE(epicTabs.size(), 6);
+      QCOMPARE(epicTabs[2].toMap().value(QStringLiteral("label")).toString(),
+               QStringLiteral("Epic & Online"));
+      QCOMPARE(epicTabs[2].toMap().value(QStringLiteral("stackIndex")).toInt(),
+               5);
+      for (const QVariant &t : epicTabs) {
+        const int idx = t.toMap().value(QStringLiteral("stackIndex")).toInt();
+        epicDetailObj->setProperty("activeTab", idx);
+        QCoreApplication::processEvents();
+        verifyStackExclusive(epicDetailObj.get(), idx);
+      }
+      auto *epicEacToggle = epicDetailObj->findChild<QQuickItem *>(
+          QStringLiteral("eacRuntimeToggle"));
+      auto *epicBeToggle = epicDetailObj->findChild<QQuickItem *>(
+          QStringLiteral("battleyeRuntimeToggle"));
+      QVERIFY(epicEacToggle != nullptr && epicBeToggle != nullptr);
+      QCOMPARE(epicEacToggle->property("enabled").toBool(), true);
+      QCOMPARE(epicEacToggle->property("checked").toBool(), true);
+      QCOMPARE(epicBeToggle->property("enabled").toBool(), true);
+      QCOMPARE(epicBeToggle->property("checked").toBool(), false);
+    }
+
+    // EpicLibraryView has epicSignOutDialog and does not show "DL " prefix in
+    // QML source
+    {
+      QQmlComponent epicComp(
+          &engine,
+          resolveQmlUrl(QStringLiteral("src/qml/pages/EpicLibraryView.qml")));
+      QVERIFY2(epicComp.isReady(), qPrintable(epicComp.errorString()));
+      std::unique_ptr<QObject> eObj(epicComp.create());
+      QVERIFY(eObj != nullptr);
+      auto *signOutDlg =
+          eObj->findChild<QObject *>(QStringLiteral("epicSignOutDialog"));
+      QVERIFY(signOutDlg != nullptr);
+      auto *signOutBg =
+          signOutDlg->property("background").value<QQuickItem *>();
+      QVERIFY(signOutBg != nullptr);
+      QCOMPARE(signOutBg->property("radius").toDouble(), 12.0);
+    }
+  }
+
+  void testEpicArtworkStoragePersistenceAndLazyLoading() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    const QByteArray oldHome = qgetenv("HOME");
+    const QByteArray oldData = qgetenv("XDG_DATA_HOME");
+    const QByteArray oldCache = qgetenv("XDG_CACHE_HOME");
+    const QByteArray oldCfg = qgetenv("XDG_CONFIG_HOME");
+    const QByteArray oldForceFileSecrets = qgetenv("TSUKI_FORCE_FILE_SECRETS");
+    const QString origGenericConfig =
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+
+    qputenv("HOME", tmpDir.path().toUtf8());
+    qputenv("XDG_DATA_HOME",
+            (tmpDir.path() + QStringLiteral("/data")).toUtf8());
+    qputenv("XDG_CACHE_HOME",
+            (tmpDir.path() + QStringLiteral("/cache")).toUtf8());
+    qputenv("XDG_CONFIG_HOME",
+            (tmpDir.path() + QStringLiteral("/cfg")).toUtf8());
+    qputenv("TSUKI_FORCE_FILE_SECRETS", "1");
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                       tmpDir.path() + QStringLiteral("/cfg"));
+
+    const auto restoreEnv = qScopeGuard([&]() {
+      QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                         origGenericConfig);
+      auto restoreVar = [](const char *name, const QByteArray &val) {
+        if (val.isNull())
+          qunsetenv(name);
+        else
+          qputenv(name, val);
+      };
+      restoreVar("HOME", oldHome);
+      restoreVar("XDG_DATA_HOME", oldData);
+      restoreVar("XDG_CACHE_HOME", oldCache);
+      restoreVar("XDG_CONFIG_HOME", oldCfg);
+      restoreVar("TSUKI_FORCE_FILE_SECRETS", oldForceFileSecrets);
+    });
+
+    // Write valid PNG image payload into memory for mock CDN responses
+    QByteArray pngBytes;
+    {
+      QImage img(64, 96, QImage::Format_RGBA8888);
+      img.fill(QColor(QStringLiteral("#38bdf8")));
+      QBuffer buf(&pngBytes);
+      QVERIFY(buf.open(QIODevice::WriteOnly));
+      QVERIFY(img.save(&buf, "PNG"));
+      QVERIFY(pngBytes.size() > 256);
+    }
+    const QByteArray invalidHtmlBytes(512, 'H');
+
+    QTcpServer server;
+    QHash<QString, int> hitsByPath;
+    QObject::connect(&server, &QTcpServer::newConnection, &server, [&]() {
+      while (QTcpSocket *sock = server.nextPendingConnection()) {
+        QObject::connect(
+            sock, &QTcpSocket::readyRead, sock,
+            [sock, &hitsByPath, pngBytes, invalidHtmlBytes]() {
+              const QByteArray req = sock->readAll();
+              const QByteArray firstLine = req.split('\n').value(0).trimmed();
+              const QByteArray path = firstLine.split(' ').value(1);
+              hitsByPath[QString::fromUtf8(path)] += 1;
+
+              const QByteArray body =
+                  path.contains("corrupt") ? invalidHtmlBytes : pngBytes;
+              const QByteArray contentType =
+                  path.contains("corrupt") ? "text/html" : "image/png";
+              const QByteArray resp =
+                  QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: ") +
+                  contentType + QByteArrayLiteral("\r\nContent-Length: ") +
+                  QByteArray::number(body.size()) +
+                  QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + body;
+              sock->write(resp);
+              sock->disconnectFromHost();
+            });
+        QObject::connect(sock, &QTcpSocket::disconnected, sock,
+                         &QObject::deleteLater);
+      }
+    });
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    const QString baseUrl =
+        QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+
+    AppSettings settings;
+    DatabaseManager db(tmpDir.filePath(QStringLiteral("test.db")));
+    QVERIFY(db.initialize());
+    DownloadManager dl;
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    SteamGridDbService sgdb(&settings, &dl);
+    ControllerManager ctrl(&db, &settings);
+    DiagnosticsManager diag(&db, &settings, &runnerMgr, &prefixMgr);
+    LaunchPipeline lp(&db, &settings, &runnerMgr, &prefixMgr, &ctrl, &diag);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &lp);
+
+    // Save signed-in OAuth session so EpicLibraryView renders epicGrid
+    {
+      QJsonObject authObj;
+      authObj[QStringLiteral("accessToken")] = QStringLiteral("tok-1");
+      authObj[QStringLiteral("refreshToken")] = QStringLiteral("ref-1");
+      authObj[QStringLiteral("accountId")] = QStringLiteral("acc-1");
+      authObj[QStringLiteral("displayName")] = QStringLiteral("TsukiTester");
+      authObj[QStringLiteral("expiresAtEpoch")] =
+          QDateTime::currentSecsSinceEpoch() + 7200;
+      authObj[QStringLiteral("refreshExpiresAtEpoch")] =
+          QDateTime::currentSecsSinceEpoch() + 86400;
+      SecretStore::saveSecret(
+          QStringLiteral("epic_oauth_session"),
+          QString::fromUtf8(
+              QJsonDocument(authObj).toJson(QJsonDocument::Compact)),
+          AppSettings::configDir() + QStringLiteral("/epic_auth.json"));
+    }
+
+    // Seed 30 Epic games so grid scrolls past viewport, plus a corrupt-response
+    // item
+    QList<EpicLibraryItem> seedItems;
+    for (int i = 0; i < 30; ++i) {
+      EpicLibraryItem item;
+      item.appName =
+          QStringLiteral("EpicApp%1").arg(i, 2, 10, QLatin1Char('0'));
+      item.namespaceId = QStringLiteral("ns-%1").arg(i);
+      item.catalogItemId = QStringLiteral("cat-%1").arg(i);
+      item.title =
+          QStringLiteral("Epic Game %1").arg(i, 2, 10, QLatin1Char('0'));
+      item.coverUrl =
+          QStringLiteral("%1/cover_%2.png").arg(baseUrl, item.appName);
+      item.bannerUrl =
+          QStringLiteral("%1/banner_%2.png").arg(baseUrl, item.appName);
+      seedItems.append(item);
+    }
+    {
+      EpicLibraryItem badItem;
+      badItem.appName = QStringLiteral("EpicBadImg");
+      badItem.namespaceId = QStringLiteral("ns-bad");
+      badItem.catalogItemId = QStringLiteral("cat-bad");
+      badItem.title = QStringLiteral("ZZZZ Bad Image");
+      badItem.coverUrl = QStringLiteral("%1/corrupt.html").arg(baseUrl);
+      seedItems.append(badItem);
+    }
+    QVERIFY(db.saveEpicLibraryItems(seedItems));
+
+    EpicService epicSvc(&db, &settings, &runnerMgr, &prefixMgr, &sgdb);
+    auto *model = epicSvc.libraryModel();
+    QVERIFY(model != nullptr);
+    QCOMPARE(model->rowCount(), 31);
+
+    // 1. Before lazy fetch: uncached items must NOT expose raw http:// URLs in
+    // CoverPathRole
+    const QModelIndex firstIdx = model->index(0, 0);
+    QCOMPARE(model->data(firstIdx, EpicLibraryModel::CoverPathRole).toUrl(),
+             QUrl());
+    QCOMPARE(model->data(firstIdx, EpicLibraryModel::HasCoverUrlRole).toBool(),
+             true);
+
+    // 2. Request cover lazily -> downloads once, validates image, persists file
+    // & DB path
+    epicSvc.requestCoverArtwork(QStringLiteral("EpicApp00"));
+    QTRY_COMPARE_WITH_TIMEOUT(
+        hitsByPath.value(QStringLiteral("/cover_EpicApp00.png")), 1, 5000);
+    const QString expectedDiskCover =
+        AppSettings::artworkDir() + QStringLiteral("/epic_EpicApp00/cover.jpg");
+    QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(expectedDiskCover), 5000);
+    QCOMPARE(model->data(firstIdx, EpicLibraryModel::CoverPathRole).toUrl(),
+             QUrl::fromLocalFile(expectedDiskCover));
+    const auto savedRow = db.getEpicLibraryItem(QStringLiteral("EpicApp00"));
+    QVERIFY(savedRow.has_value());
+    QCOMPARE(savedRow->coverPath, expectedDiskCover);
+
+    // 3. Invalid non-image HTML payload must be rejected (never stored on disk)
+    epicSvc.requestCoverArtwork(QStringLiteral("EpicBadImg"));
+    QTRY_COMPARE_WITH_TIMEOUT(hitsByPath.value(QStringLiteral("/corrupt.html")),
+                              1, 5000);
+    QTest::qWait(80);
+    QVERIFY(!QFileInfo::exists(AppSettings::artworkDir() +
+                               QStringLiteral("/epic_EpicBadImg/cover.jpg")));
+
+    // 4. Simulate app restart + re-sync metadata with empty coverPath:
+    //    must load directly from local storage with ZERO additional HTTP
+    //    requests!
+    {
+      EpicService restartedSvc(&db, &settings, &runnerMgr, &prefixMgr, &sgdb);
+      auto *rm = restartedSvc.libraryModel();
+      QCOMPARE(
+          rm->data(rm->index(0, 0), EpicLibraryModel::CoverPathRole).toUrl(),
+          QUrl::fromLocalFile(expectedDiskCover));
+      restartedSvc.requestCoverArtwork(QStringLiteral("EpicApp00"));
+      QCoreApplication::processEvents();
+      QTest::qWait(80);
+      QCOMPARE(hitsByPath.value(QStringLiteral("/cover_EpicApp00.png")), 1);
+
+      // Even if DB column was cleared while cover.jpg exists on disk, reload()
+      // adopts disk file!
+      QVERIFY(db.clearEpicLibraryArtworkFields(QStringLiteral("EpicApp00"),
+                                               true, false, false));
+      rm->reload();
+      QCOMPARE(
+          rm->data(rm->index(0, 0), EpicLibraryModel::CoverPathRole).toUrl(),
+          QUrl::fromLocalFile(expectedDiskCover));
+      QCOMPARE(hitsByPath.value(QStringLiteral("/cover_EpicApp00.png")), 1);
+
+      // Deleting disk file heals stale DB path cleanly
+      QVERIFY(QFile::remove(expectedDiskCover));
+      rm->reload();
+      QCOMPARE(
+          rm->data(rm->index(0, 0), EpicLibraryModel::CoverPathRole).toUrl(),
+          QUrl());
+      QCOMPARE(db.getEpicLibraryItem(QStringLiteral("EpicApp00"))->coverPath,
+               QString());
+    }
+
+    // 5. QML EpicLibraryView GridView lazy loading in bounded viewport
+    // (960x600):
+    //    fetches only visible/nearby covers, NOT offscreen rows below viewport!
+    hitsByPath.clear();
+    epicSvc.libraryModel()->reload();
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dl);
+    UiController ui(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr, &ctrl,
+                    &sgdb, &lp, &diag, &gm, &epicSvc, nullptr, nullptr);
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
+                                             &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("downloadManager"),
+                                             &dl);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
+                                             &ui);
+
+    QQmlComponent epicComp(&engine, resolveQmlUrl(QStringLiteral(
+                                        "src/qml/pages/EpicLibraryView.qml")));
+    QVERIFY2(epicComp.isReady(), qPrintable(epicComp.errorString()));
+    QQuickWindow win;
+    win.resize(960, 600);
+    std::unique_ptr<QQuickItem> epicView(
+        qobject_cast<QQuickItem *>(epicComp.create()));
+    QVERIFY(epicView != nullptr);
+    epicView->setParentItem(win.contentItem());
+    epicView->setWidth(960);
+    epicView->setHeight(600);
+    win.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&win));
+    QCoreApplication::processEvents();
+    QTest::qWait(150);
+
+    auto *grid = epicView->findChild<QQuickItem *>(QStringLiteral("epicGrid"));
+    QVERIFY(grid != nullptr);
+    QVERIFY(grid->property("cacheBuffer").toInt() > 0);
+    QVERIFY2(grid->property("contentHeight").toDouble() > grid->height(),
+             "Test setup should have scrollable Epic grid");
+
+    auto *contentItem = grid->property("contentItem").value<QQuickItem *>();
+    QVERIFY(contentItem != nullptr);
+    QList<QQuickItem *> cells;
+    for (QQuickItem *ci : contentItem->childItems()) {
+      if (ci && ci->objectName() == QLatin1String("epicGridCell")) {
+        cells.append(ci);
+      }
+    }
+    QVERIFY(!cells.isEmpty());
+    QVERIFY2(cells.size() < 31,
+             qPrintable(QStringLiteral("GridView should virtualize & lazy-load "
+                                       "delegates (%1 instantiated out of 31)")
+                            .arg(cells.size())));
+    QCOMPARE(hitsByPath.value(QStringLiteral("/cover_EpicApp29.png")), 0);
+    QTRY_COMPARE_WITH_TIMEOUT(
+        hitsByPath.value(QStringLiteral("/cover_EpicApp00.png")), 1, 5000);
+    QVERIFY2(hitsByPath.size() < 25,
+             qPrintable(QStringLiteral("Lazy loading fetched %1 items instead "
+                                       "of only visible/nearby viewport items")
+                            .arg(hitsByPath.size())));
+
+    auto *coverItem =
+        cells.first()->findChild<QQuickItem *>(QStringLiteral("epicGridCover"));
+    QVERIFY(coverItem != nullptr);
+    QVERIFY(coverItem->property("fadeDuration").toInt() > 0);
+
+    // Scroll to bottom row -> offscreen item 29 now lazily fetches & stores to
+    // disk once
+    QMetaObject::invokeMethod(grid, "positionViewAtIndex", Q_ARG(int, 29),
+                              Q_ARG(int, 2)); // GridView.End
+    QTRY_COMPARE_WITH_TIMEOUT(
+        hitsByPath.value(QStringLiteral("/cover_EpicApp29.png")), 1, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        QFileInfo::exists(AppSettings::artworkDir() +
+                          QStringLiteral("/epic_EpicApp29/cover.jpg")),
+        5000);
+
+    // 6. Resizing EpicLibraryView & MediaGrid (simulating sidebar
+    // collapse/expand across column boundaries)
+    //    must keep coverSourceWidth/Height & cacheBuffer invariant (zero image
+    //    reloads!)
+    QMetaObject::invokeMethod(grid, "positionViewAtBeginning");
+    QCoreApplication::processEvents();
+    const int epicSrcWBefore = epicView->property("coverSourceWidth").toInt();
+    const int epicSrcHBefore = epicView->property("coverSourceHeight").toInt();
+    const int epicBufBefore = grid->property("cacheBuffer").toInt();
+    const int epicColsBefore = epicView->property("columns").toInt();
+    const int app00HitsBefore =
+        hitsByPath.value(QStringLiteral("/cover_EpicApp00.png"));
+
+    // Shrink by 152px (sidebar open 68 -> 220) and expand back
+    epicView->setWidth(960 - 152);
+    QCoreApplication::processEvents();
+    QCOMPARE(epicView->property("coverSourceWidth").toInt(), epicSrcWBefore);
+    QCOMPARE(epicView->property("coverSourceHeight").toInt(), epicSrcHBefore);
+    QCOMPARE(grid->property("cacheBuffer").toInt(), epicBufBefore);
+    QVERIFY(epicView->property("columns").toInt() != epicColsBefore);
+    QCOMPARE(hitsByPath.value(QStringLiteral("/cover_EpicApp00.png")),
+             app00HitsBefore);
+
+    epicView->setWidth(960);
+    QCoreApplication::processEvents();
+    QCOMPARE(epicView->property("coverSourceWidth").toInt(), epicSrcWBefore);
+    QCOMPARE(epicView->property("coverSourceHeight").toInt(), epicSrcHBefore);
+    QCOMPARE(hitsByPath.value(QStringLiteral("/cover_EpicApp00.png")),
+             app00HitsBefore);
+
+    // Verify MediaGrid also keeps coverSourceWidth invariant across sidebar
+    // resize
+    QQmlComponent mediaComp(
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/home/MediaGrid.qml")));
+    QVERIFY2(mediaComp.isReady(), qPrintable(mediaComp.errorString()));
+    std::unique_ptr<QQuickItem> mediaView(
+        qobject_cast<QQuickItem *>(mediaComp.create()));
+    QVERIFY(mediaView != nullptr);
+    mediaView->setParentItem(win.contentItem());
+    mediaView->setWidth(1000);
+    mediaView->setHeight(600);
+    QCoreApplication::processEvents();
+    const int mediaSrcWBefore = mediaView->property("coverSourceWidth").toInt();
+    const int mediaColsBefore = mediaView->property("columns").toInt();
+    mediaView->setWidth(1000 - 152);
+    QCoreApplication::processEvents();
+    QCOMPARE(mediaView->property("coverSourceWidth").toInt(), mediaSrcWBefore);
+    QVERIFY(mediaView->property("columns").toInt() != mediaColsBefore);
+    mediaView.reset();
+    epicView.reset();
+
+    // 7. Inside HomePage.qml, toggling sidebar keeps column count stable so
+    // cards smoothly
+    //    expand/compress like a box synced with the sidebar, while window
+    //    resize still adapts columns.
+    QQmlComponent homeComp(
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/home/HomePage.qml")));
+    QVERIFY2(homeComp.isReady(), qPrintable(homeComp.errorString()));
+    settings.setSidebarCollapsed(true);
+    win.resize(1366, 768);
+    std::unique_ptr<QQuickItem> homeItem(
+        qobject_cast<QQuickItem *>(homeComp.create()));
+    QVERIFY(homeItem != nullptr);
+    homeItem->setParentItem(win.contentItem());
+    homeItem->setSize(QSizeF(1366, 768));
+    QCoreApplication::processEvents();
+    QTest::qWait(80);
+
+    QQuickItem *homeMediaGrid = nullptr;
+    for (QQuickItem *ch : homeItem->findChildren<QQuickItem *>()) {
+      if (ch && ch->property("gridView").isValid() &&
+          ch->property("columnReferenceWidth").isValid()) {
+        homeMediaGrid = ch;
+        break;
+      }
+    }
+    QVERIFY(homeMediaGrid != nullptr);
+    auto *homeGv = homeMediaGrid->property("gridView").value<QQuickItem *>();
+    QVERIFY(homeGv != nullptr);
+    const int libColsCollapsed = homeMediaGrid->property("columns").toInt();
+    const double libCellCollapsed = homeGv->property("cellWidth").toDouble();
+    settings.setSidebarCollapsed(false);
+    QTest::qWait(320);
+    QCOMPARE(homeMediaGrid->property("columns").toInt(), libColsCollapsed);
+    QVERIFY(homeGv->property("cellWidth").toDouble() < libCellCollapsed - 15.0);
+
+    // Resizing window itself still adapts column count
+    homeItem->setSize(QSizeF(960, 540));
+    QCoreApplication::processEvents();
+    QVERIFY(homeMediaGrid->property("columns").toInt() < libColsCollapsed);
   }
 };
 

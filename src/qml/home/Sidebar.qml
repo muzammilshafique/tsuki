@@ -8,12 +8,9 @@ Rectangle {
     id: sidebar
     property bool isCollapsed: appSettings.sidebarCollapsed
     property real targetWidth: isCollapsed ? 68 : 220
-    width: targetWidth
-    implicitWidth: targetWidth
     Layout.fillHeight: true
     Layout.preferredWidth: targetWidth
-    Layout.minimumWidth: targetWidth
-    Layout.maximumWidth: targetWidth
+    clip: true
     Behavior on targetWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
     color: appSettings.sidebarColor
     Behavior on color { ColorAnimation { duration: 150 } }

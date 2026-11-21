@@ -502,7 +502,7 @@ Item {
 
                                     M3Button {
                                         id: remBtnItem
-                                        visible: !runnerDelegate.modelData.isSystem
+                                        visible: !runnerDelegate.modelData.isSystem && (!runnerDelegate.modelData.isSteam || appSettings.allowDeleteSteamRunners)
                                         text: "Remove"
                                         buttonType: "destructive"
                                         Layout.preferredHeight: 30

@@ -90,6 +90,9 @@ RunnerManager::RunnerManager(DatabaseManager* db, AppSettings* settings, Downloa
     , m_settings(settings)
     , m_dl(dl)
 {
+    if (m_settings) {
+        connect(m_settings, &AppSettings::runnerDefaultsChanged, this, &RunnerManager::runnersChanged);
+    }
     detectInstalledRunners();
     populateFallbackReleases(QStringLiteral("proton-ge"));
 }
@@ -98,13 +101,25 @@ QList<RunnerRecord> RunnerManager::installedRunners() const {
     return m_db->getAllRunners();
 }
 
+bool RunnerManager::canDeleteRunner(const QString& runnerId) const {
+    auto r = m_db->getRunner(runnerId);
+    if (!r.has_value()) return false;
+    if (r->isSystem) return false;
+    if (r->isSteam()) {
+        return m_settings && m_settings->allowDeleteSteamRunners();
+    }
+    return true;
+}
+
 QVariantList RunnerManager::installedRunnersVariant() const {
     QVariantList list;
     const QList<RunnerRecord> all = m_db->getAllRunners();
     const QString defId = m_settings->defaultRunnerId();
+    const bool allowSteamDelete = m_settings && m_settings->allowDeleteSteamRunners();
     for (const RunnerRecord& r : all) {
         QVariantMap m = r.toVariantMap();
         m["isDefault"] = (r.id == defId);
+        m["canDelete"] = !r.isSystem && (!r.isSteam() || allowSteamDelete);
         list.append(m);
     }
     return list;
@@ -115,6 +130,7 @@ QVariantMap RunnerManager::getRunnerMap(const QString& runnerId) const {
     if (!r.has_value()) return QVariantMap();
     QVariantMap m = r->toVariantMap();
     m["isDefault"] = (r->id == m_settings->defaultRunnerId());
+    m["canDelete"] = !r->isSystem && (!r->isSteam() || (m_settings && m_settings->allowDeleteSteamRunners()));
     return m;
 }
 
@@ -276,7 +292,7 @@ void RunnerManager::scanSteamRunners() {
             if (name.contains(QStringLiteral("proton"), Qt::CaseInsensitive)) {
                 const QString protonBin = fi.absoluteFilePath() + QStringLiteral("/proton");
                 if (QFileInfo::exists(protonBin)) {
-                    inspectAndRegisterRunnerDir(fi.absoluteFilePath(), true, QStringLiteral("Steam"));
+                    inspectAndRegisterRunnerDir(fi.absoluteFilePath(), false, QStringLiteral("Steam"));
                 }
             }
         }
@@ -339,10 +355,10 @@ void RunnerManager::detectInstalledRunners() {
     for (const QString& root : scanRoots) {
         QDir d(root);
         if (!d.exists()) continue;
-        const bool isExternal = (root != m_settings->defaultRunnerLocation());
+        const bool isReadOnlySystem = QDir::cleanPath(root).startsWith(QStringLiteral("/usr/"));
         const QFileInfoList subDirs = d.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
         for (const QFileInfo& sub : subDirs) {
-            inspectAndRegisterRunnerDir(sub.absoluteFilePath(), isExternal);
+            inspectAndRegisterRunnerDir(sub.absoluteFilePath(), isReadOnlySystem);
         }
     }
 
@@ -806,14 +822,52 @@ bool RunnerManager::uninstallRunner(const QString& runnerId) {
 bool RunnerManager::removeRunner(const QString& runnerId, bool deleteFiles) {
     auto rec = m_db->getRunner(runnerId);
     if (!rec.has_value()) return false;
+    const bool allowSteamDelete = m_settings && m_settings->allowDeleteSteamRunners();
+    if (rec->isSteam() && !allowSteamDelete) {
+        emit runnerOperationStatus(QStringLiteral("Deleting Steam runners is disabled in Settings."), true);
+        return false;
+    }
     if (rec->isSystem && deleteFiles) {
-        deleteFiles = false; // Never delete system or Steam binaries
+        deleteFiles = false; // Never delete OS/system binaries
     }
 
     if (deleteFiles && !rec->path.isEmpty()) {
-        const QString runnerBase = QDir::cleanPath(m_settings->defaultRunnerLocation());
+        QStringList allowedBases = {
+            QDir::cleanPath(m_settings->defaultRunnerLocation()),
+            QDir::cleanPath(QDir::homePath() + QStringLiteral("/.config/heroic/tools/proton")),
+            QDir::cleanPath(QDir::homePath() + QStringLiteral("/.config/heroic/tools/wine")),
+            QDir::cleanPath(QDir::homePath() + QStringLiteral("/.local/share/lutris/runners/wine"))
+        };
+        if (allowSteamDelete) {
+            allowedBases.append(QDir::cleanPath(QDir::homePath() + QStringLiteral("/.local/share/Steam/compatibilitytools.d")));
+            allowedBases.append(QDir::cleanPath(QDir::homePath() + QStringLiteral("/.steam/root/compatibilitytools.d")));
+            allowedBases.append(QDir::cleanPath(QDir::homePath() + QStringLiteral("/.steam/steam/compatibilitytools.d")));
+            allowedBases.append(QDir::cleanPath(QDir::homePath() + QStringLiteral("/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d")));
+            allowedBases.append(QDir::cleanPath(QDir::homePath() + QStringLiteral("/snap/steam/common/.local/share/Steam/compatibilitytools.d")));
+            for (const QString& steamLib : collectSteamLibraryRoots()) {
+                allowedBases.append(QDir::cleanPath(steamLib + QStringLiteral("/steamapps/common")));
+            }
+        }
+
         const QString targetPath = QDir::cleanPath(rec->path);
-        if (targetPath.startsWith(runnerBase) && targetPath != runnerBase) {
+        bool inSafeBase = false;
+        for (const QString& base : allowedBases) {
+            if (!base.isEmpty() && targetPath.startsWith(base + QLatin1Char('/')) && targetPath != base) {
+                inSafeBase = true;
+                break;
+            }
+        }
+        if (!inSafeBase && allowSteamDelete) {
+            const QFileInfo targetFi(targetPath);
+            const QString parentName = targetFi.dir().dirName();
+            if ((parentName == QLatin1String("compatibilitytools.d") ||
+                 targetPath.contains(QStringLiteral("/steamapps/common/"))) &&
+                targetPath != QDir::homePath() &&
+                QFileInfo::exists(targetPath + QStringLiteral("/proton"))) {
+                inSafeBase = true;
+            }
+        }
+        if (inSafeBase && QDir(targetPath).exists()) {
             QDir(targetPath).removeRecursively();
         }
     }

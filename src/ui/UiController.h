@@ -90,6 +90,14 @@ public:
     Q_INVOKABLE QString selectFolder(const QString& title = QString(), const QString& initialPath = QString());
     Q_INVOKABLE bool openDirectory(const QString& path);
 
+    // Storage Cleaning Helpers
+    Q_INVOKABLE QVariantMap getStorageCleaningStats() const;
+    Q_INVOKABLE QVariantMap clearCacheStorage();
+    Q_INVOKABLE QVariantMap clearLogsStorage();
+    Q_INVOKABLE QVariantMap clearOldArtworkStorage();
+    Q_INVOKABLE QVariantMap clearEpicArtworkCache();
+    Q_INVOKABLE QVariantMap clearAllCleanableStorage();
+
     // Yoru-compatible search & card actions
     Q_INVOKABLE void search(const QString& query, int filterType = -1);
     Q_INVOKABLE void loadFavorites();
@@ -104,6 +112,7 @@ signals:
     void activeInputTypeChanged();
     void searchStateChanged(bool loading, const QString& error);
     void toastRequested(const QString& message, bool isError);
+    void storageStatsChanged();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

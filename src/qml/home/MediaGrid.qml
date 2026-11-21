@@ -19,11 +19,17 @@ Item {
     signal focusTopBarRequested()
 
     property alias gridView: grid
+    // Optional stable width (e.g. HomePage width minus expanded sidebar) so opening/closing the
+    // sidebar smoothly expands & compresses cards in lockstep instead of snapping column counts mid-slide.
+    property real columnReferenceWidth: -1
     function forceFocus() { grid.forceActiveFocus() }
-    readonly property int columns: Math.max(1, Math.floor(grid.width / grid.cellWidth))
+    readonly property real effectiveColumnWidth: root.columnReferenceWidth > 0 ? root.columnReferenceWidth : grid.width
+    readonly property int columns: Math.max(1, Math.floor(Math.max(1, effectiveColumnWidth) / Math.max(1, appSettings.thumbScaleTarget)))
+    // Tie decoded texture resolution to user's target poster scale & DPI (never live cellWidth)
+    // so toggling the sidebar or resizing the window never reloads/re-decodes cover images.
     readonly property int coverSourceWidth: Math.max(
-        192,
-        Math.min(512, Math.ceil((Math.max(160, grid.cellWidth - 16) * Math.max(1.0, Screen.devicePixelRatio)) / 64) * 64)
+        256,
+        Math.min(512, Math.ceil((Math.max(160, appSettings.thumbScaleTarget * 1.35) * Math.max(1.0, Screen.devicePixelRatio)) / 64) * 64)
     )
     readonly property int coverSourceHeight: Math.round(coverSourceWidth * 1.5)
 
@@ -102,8 +108,9 @@ Item {
         anchors.fill: parent
         clip: false
         model: root.model
-        cellWidth:  Math.floor(width / Math.max(1, Math.floor(width / appSettings.thumbScaleTarget)))
-        cellHeight: Math.floor(((cellWidth - 16) * 1.5) + root.metaHeight)
+        cellWidth:  width > 1 ? Math.max(1, (width - 0.05) / root.columns) : appSettings.thumbScaleTarget
+        cellHeight: Math.max(1, ((cellWidth - 16) * 1.5) + root.metaHeight)
+        cacheBuffer: Math.max(480, Math.round(appSettings.thumbScaleTarget * 2.5))
 
         focus: true
         keyNavigationEnabled: false
@@ -1160,7 +1167,7 @@ Item {
 
         background: Rectangle {
             color: appSettings.surfaceColor
-            radius: 18
+            radius: 12
             border.color: appSettings.borderColor
             border.width: 1
         }
@@ -1188,7 +1195,7 @@ Item {
                         readonly property bool assigned: root._collectionEditAssigned.indexOf(modelData) !== -1
                         Layout.fillWidth: true
                         height: 36
-                        radius: 10
+                        radius: 8
                         color: assigned ? appSettings.secondaryContainer : appSettings.surfaceContainerLow
                         border.color: assigned ? appSettings.accentColor : appSettings.borderColor
                         border.width: 1

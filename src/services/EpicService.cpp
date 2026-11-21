@@ -12,6 +12,8 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QBuffer>
+#include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -20,6 +22,7 @@
 #include <QPointer>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QStorageInfo>
 #include <QTimer>
 #include <QUrl>
@@ -41,7 +44,48 @@ constexpr const char* kEosOverlayNamespace = "302e5ede476149b1bc3e4fe6ae45e50e";
 constexpr const char* kEosOverlayCatalogId = "cc15684f44d849e89e9bf4cec0508b68";
 constexpr int kMaxConcurrentChunks = 6;
 constexpr int kMaxChunkRetries = 3;
-constexpr int kMaxConcurrentArtwork = 6;
+constexpr int kMaxConcurrentArtwork = 4;
+constexpr int kMaxArtworkAttempts = 2;
+
+bool isUsableLocalImageFile(const QString& path) {
+    if (path.isEmpty() ||
+        path.startsWith(QLatin1String("http://")) ||
+        path.startsWith(QLatin1String("https://"))) {
+        return false;
+    }
+    const QFileInfo fi(path);
+    return fi.exists() && fi.isFile() && fi.size() > 256;
+}
+
+void reconcileItemArtwork(DatabaseManager* db, EpicLibraryItem& item) {
+    const QString artDir = AppSettings::artworkDir() + QStringLiteral("/epic_") + EpicService::sanitizeFolderName(item.appName);
+    auto syncField = [&](QString& field, const char* typeName, bool& cleared, QString& adopted) {
+        if (!field.isEmpty() && !isUsableLocalImageFile(field)) {
+            field.clear();
+            cleared = true;
+        }
+        if (field.isEmpty()) {
+            const QString cand = artDir + QStringLiteral("/") + QLatin1String(typeName) + QStringLiteral(".jpg");
+            if (isUsableLocalImageFile(cand)) {
+                field = cand;
+                adopted = cand;
+            }
+        }
+    };
+    bool clrCover = false, clrBanner = false, clrLogo = false;
+    QString adoptCover, adoptBanner, adoptLogo;
+    syncField(item.coverPath, "cover", clrCover, adoptCover);
+    syncField(item.bannerPath, "banner", clrBanner, adoptBanner);
+    syncField(item.logoPath, "logo", clrLogo, adoptLogo);
+    if (db) {
+        if (clrCover || clrBanner || clrLogo) {
+            db->clearEpicLibraryArtworkFields(item.appName, clrCover, clrBanner, clrLogo);
+        }
+        if (!adoptCover.isEmpty() || !adoptBanner.isEmpty() || !adoptLogo.isEmpty()) {
+            db->updateEpicLibraryArtwork(item.appName, adoptCover, adoptBanner, adoptLogo);
+        }
+    }
+}
 
 QByteArray basicAuthHeader() {
     const QByteArray creds = QByteArray(kEpicClientId) + ":" + QByteArray(kEpicClientSecret);
@@ -274,6 +318,7 @@ QHash<int, QByteArray> EpicLibraryModel::roleNames() const {
         {CoverPathRole, "coverPath"},
         {BannerPathRole, "bannerPath"},
         {LogoPathRole, "logoPath"},
+        {HasCoverUrlRole, "hasCoverUrl"},
         {DownloadSizeRole, "downloadSize"},
         {InstallSizeRole, "installSize"},
         {DownloadSizeFormattedRole, "downloadSizeFormatted"},
@@ -316,11 +361,13 @@ QVariant EpicLibraryModel::data(const QModelIndex& index, int role) const {
     case DescriptionRole:
         return item.description;
     case CoverPathRole:
-        return QUrl(GameRecord::toFileUrlOrOriginal(!item.coverPath.isEmpty() ? item.coverPath : item.coverUrl));
+        return !item.coverPath.isEmpty() ? QUrl::fromLocalFile(item.coverPath) : QUrl();
     case BannerPathRole:
-        return QUrl(GameRecord::toFileUrlOrOriginal(!item.bannerPath.isEmpty() ? item.bannerPath : item.bannerUrl));
+        return !item.bannerPath.isEmpty() ? QUrl::fromLocalFile(item.bannerPath) : QUrl();
     case LogoPathRole:
-        return QUrl(GameRecord::toFileUrlOrOriginal(!item.logoPath.isEmpty() ? item.logoPath : item.logoUrl));
+        return !item.logoPath.isEmpty() ? QUrl::fromLocalFile(item.logoPath) : QUrl();
+    case HasCoverUrlRole:
+        return !item.coverUrl.trimmed().isEmpty();
     case DownloadSizeRole:
         return item.downloadSize;
     case InstallSizeRole:
@@ -399,10 +446,25 @@ void EpicLibraryModel::notifyAppChanged(const QString& appName) {
         if (m_visibleItems.at(i).appName == appName) {
             // Update local artwork / size fields from DB in case artwork or install info finished
             if (auto fresh = m_db->getEpicLibraryItem(appName); fresh.has_value()) {
+                reconcileItemArtwork(m_db, *fresh);
                 m_visibleItems[i] = *fresh;
             }
             const QModelIndex idx = createIndex(i, 0);
             emit dataChanged(idx, idx);
+            break;
+        }
+    }
+}
+
+void EpicLibraryModel::notifyArtworkChanged(const QString& appName) {
+    for (int i = 0; i < m_visibleItems.size(); ++i) {
+        if (m_visibleItems.at(i).appName == appName) {
+            if (auto fresh = m_db->getEpicLibraryItem(appName); fresh.has_value()) {
+                reconcileItemArtwork(m_db, *fresh);
+                m_visibleItems[i] = *fresh;
+            }
+            const QModelIndex idx = createIndex(i, 0);
+            emit dataChanged(idx, idx, {CoverPathRole, BannerPathRole, LogoPathRole, HasCoverUrlRole});
             break;
         }
     }
@@ -423,7 +485,7 @@ void EpicLibraryModel::reload() {
     const QList<EpicLibraryItem> all = m_db->getAllEpicLibraryItems();
     const QString q = m_searchQuery.toLower();
     m_hiddenCount = 0;
-    for (const EpicLibraryItem& item : all) {
+    for (EpicLibraryItem item : all) {
         // Hard-filter non-game bloatware (Discord, Spotify, browsers, engines, tools, etc.)
         if (EpicService::isBlockedNonGameEpicApp(item.title, item.appName, item.namespaceId)) {
             continue;
@@ -437,6 +499,7 @@ void EpicLibraryModel::reload() {
             !item.appName.toLower().contains(q)) {
             continue;
         }
+        reconcileItemArtwork(m_db, item);
         m_visibleItems.append(item);
     }
 
@@ -924,13 +987,62 @@ void EpicService::signOut() {
     for (const QString& app : keys) {
         cancelDownload(app, true);
     }
+    m_artworkQueue.clear();
+    m_queuedArtKeys.clear();
     clearAuthSession();
     m_db->clearEpicLibrary();
+
+    // Clean up cached Epic library artwork folders & uninstalled manifests not referenced by installed games
+    QSet<QString> usedFiles;
+    QSet<QString> installedApps;
+    for (const GameRecord& g : m_db->getAllGames()) {
+        if (!g.epicAppName.isEmpty()) installedApps.insert(g.epicAppName);
+        for (const QString& p : {g.coverPath, g.bannerPath, g.logoPath, g.iconPath}) {
+            if (!p.isEmpty()) usedFiles.insert(QDir::cleanPath(p));
+        }
+    }
+    QDir artRoot(AppSettings::artworkDir());
+    if (artRoot.exists()) {
+        const QFileInfoList subDirs = artRoot.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QFileInfo& sd : subDirs) {
+            if (!sd.fileName().startsWith(QStringLiteral("epic_"))) continue;
+            bool referenced = false;
+            QDir sub(sd.absoluteFilePath());
+            for (const QFileInfo& f : sub.entryInfoList(QDir::Files | QDir::NoDotAndDotDot)) {
+                if (usedFiles.contains(QDir::cleanPath(f.absoluteFilePath()))) {
+                    referenced = true;
+                    break;
+                }
+            }
+            if (!referenced) {
+                QDir(sd.absoluteFilePath()).removeRecursively();
+            }
+        }
+    }
+    QDir manifestRoot(AppSettings::dataDir() + QStringLiteral("/epic_manifests"));
+    if (manifestRoot.exists()) {
+        for (const QFileInfo& mf : manifestRoot.entryInfoList(QDir::Files | QDir::NoDotAndDotDot)) {
+            if (!installedApps.contains(mf.completeBaseName())) {
+                QFile::remove(mf.absoluteFilePath());
+            }
+        }
+    }
+
     m_authError.clear();
     m_model->reload();
     emit authStateChanged();
     emit libraryUpdated();
     emit operationStatus(QStringLiteral("Signed out of Epic Games."), false);
+}
+
+void EpicService::resetCachedArtworkState() {
+    m_artworkQueue.clear();
+    m_queuedArtKeys.clear();
+    m_artworkAttempts.clear();
+    if (m_model) {
+        m_model->reload();
+    }
+    emit libraryUpdated();
 }
 
 void EpicService::ensureValidToken(std::function<void(bool ok)> callback) {
@@ -1262,47 +1374,100 @@ void EpicService::finishLibrarySync() {
     if (!m_syncedDlcs.isEmpty()) {
         m_db->saveEpicDlcs(m_syncedDlcs);
     }
-    const QList<EpicLibraryItem> cached = m_db->getAllEpicLibraryItems();
-    queueArtworkForItems(cached);
+    // Reset retry budgets after a fresh sync; grid covers & detail artwork are fetched lazily on demand
+    // and cached permanently on disk rather than eagerly spamming cover+banner+logo for all items.
+    m_artworkAttempts.clear();
 
-    m_model->reload();
     emit syncingChanged();
     emit libraryUpdated();
     checkForUpdates();
 }
 
+void EpicService::requestCoverArtwork(const QString& appName) {
+    if (appName.isEmpty() || !m_db) return;
+    auto opt = m_db->getEpicLibraryItem(appName);
+    if (!opt.has_value()) return;
+    EpicLibraryItem item = *opt;
+    reconcileItemArtwork(m_db, item);
+    if (!item.coverPath.isEmpty()) {
+        if (m_model) m_model->notifyArtworkChanged(appName);
+        return;
+    }
+    enqueueArtworkTask(item, QStringLiteral("cover"), item.coverUrl, item.coverPath, true);
+    pumpArtworkQueue();
+}
+
+void EpicService::requestDetailArtwork(const QString& appName) {
+    if (appName.isEmpty() || !m_db) return;
+    auto opt = m_db->getEpicLibraryItem(appName);
+    if (!opt.has_value()) return;
+    EpicLibraryItem item = *opt;
+    reconcileItemArtwork(m_db, item);
+    enqueueArtworkTask(item, QStringLiteral("cover"), item.coverUrl, item.coverPath, true);
+    enqueueArtworkTask(item, QStringLiteral("banner"), item.bannerUrl, item.bannerPath, true);
+    enqueueArtworkTask(item, QStringLiteral("logo"), item.logoUrl, item.logoPath, true);
+    pumpArtworkQueue();
+}
+
 void EpicService::queueArtworkForItems(const QList<EpicLibraryItem>& items) {
     for (const EpicLibraryItem& item : items) {
-        const QString artDir = AppSettings::artworkDir() + QStringLiteral("/epic_") + sanitizeFolderName(item.appName);
-        auto maybeQueue = [&](const QString& type, const QString& urlStr, const QString& existingPath) {
-            if (urlStr.isEmpty()) return;
-            if (!existingPath.isEmpty() && QFileInfo::exists(existingPath)) return;
-            const QString key = item.appName + QLatin1Char(':') + type;
-            if (m_queuedArtKeys.contains(key)) return;
-            m_queuedArtKeys.insert(key);
-
-            const QString dest = artDir + QStringLiteral("/") + type + QStringLiteral(".jpg");
-            if (QFileInfo::exists(dest) && QFileInfo(dest).size() > 256) {
-                m_db->updateEpicLibraryArtwork(
-                    item.appName,
-                    type == QLatin1String("cover") ? dest : QString(),
-                    type == QLatin1String("banner") ? dest : QString(),
-                    type == QLatin1String("logo") ? dest : QString());
-                return;
-            }
-            m_artworkQueue.enqueue({item.appName, type, urlStr, dest});
-        };
-
-        maybeQueue(QStringLiteral("cover"), item.coverUrl, item.coverPath);
-        maybeQueue(QStringLiteral("banner"), item.bannerUrl, item.bannerPath);
-        maybeQueue(QStringLiteral("logo"), item.logoUrl, item.logoPath);
+        enqueueArtworkTask(item, QStringLiteral("cover"), item.coverUrl, item.coverPath, false);
     }
     pumpArtworkQueue();
 }
 
+void EpicService::enqueueArtworkTask(const EpicLibraryItem& item,
+                                     const QString& type,
+                                     const QString& urlStr,
+                                     const QString& existingPath,
+                                     bool prioritizeFront) {
+    if (urlStr.trimmed().isEmpty()) return;
+    if (isUsableLocalImageFile(existingPath)) return;
+
+    const QString artDir = AppSettings::artworkDir() + QStringLiteral("/epic_") + sanitizeFolderName(item.appName);
+    const QString dest = artDir + QStringLiteral("/") + type + QStringLiteral(".jpg");
+    if (isUsableLocalImageFile(dest)) {
+        m_db->updateEpicLibraryArtwork(
+            item.appName,
+            type == QLatin1String("cover") ? dest : QString(),
+            type == QLatin1String("banner") ? dest : QString(),
+            type == QLatin1String("logo") ? dest : QString());
+        if (m_model) m_model->notifyArtworkChanged(item.appName);
+        emit artworkUpdated(item.appName);
+        return;
+    }
+
+    const QString key = item.appName + QLatin1Char(':') + type;
+    if (m_queuedArtKeys.contains(key)) {
+        if (prioritizeFront) {
+            for (int i = 0; i < m_artworkQueue.size(); ++i) {
+                if (m_artworkQueue.at(i).appName == item.appName && m_artworkQueue.at(i).type == type) {
+                    if (i > 0) {
+                        m_artworkQueue.move(i, 0);
+                    }
+                    break;
+                }
+            }
+        }
+        return;
+    }
+    if (m_artworkAttempts.value(key, 0) >= kMaxArtworkAttempts) {
+        return;
+    }
+
+    m_queuedArtKeys.insert(key);
+    ArtworkTask task{item.appName, type, urlStr, dest};
+    if (prioritizeFront) {
+        m_artworkQueue.prepend(task);
+    } else {
+        m_artworkQueue.append(task);
+    }
+}
+
 void EpicService::pumpArtworkQueue() {
     while (m_activeArtworkDownloads < kMaxConcurrentArtwork && !m_artworkQueue.isEmpty()) {
-        const ArtworkTask task = m_artworkQueue.dequeue();
+        const ArtworkTask task = m_artworkQueue.takeFirst();
+        const QString key = task.appName + QLatin1Char(':') + task.type;
         QDir().mkpath(QFileInfo(task.destPath).absolutePath());
         ++m_activeArtworkDownloads;
 
@@ -1311,23 +1476,41 @@ void EpicService::pumpArtworkQueue() {
         req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("TsukiLauncher/1.0"));
 
         QNetworkReply* reply = m_nam.get(req);
-        connect(reply, &QNetworkReply::finished, this, [this, reply, task]() {
+        connect(reply, &QNetworkReply::finished, this, [this, reply, task, key]() {
             --m_activeArtworkDownloads;
-            if (reply->error() == QNetworkReply::NoError) {
+            m_queuedArtKeys.remove(key);
+            const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            bool saved = false;
+            if (reply->error() == QNetworkReply::NoError && httpStatus < 400) {
                 const QByteArray bytes = reply->readAll();
                 if (bytes.size() > 256) {
-                    QFile f(task.destPath);
-                    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-                        f.write(bytes);
-                        f.close();
-                        m_db->updateEpicLibraryArtwork(
-                            task.appName,
-                            task.type == QLatin1String("cover") ? task.destPath : QString(),
-                            task.type == QLatin1String("banner") ? task.destPath : QString(),
-                            task.type == QLatin1String("logo") ? task.destPath : QString());
-                        m_model->notifyAppChanged(task.appName);
+                    QBuffer buf;
+                    buf.setData(bytes);
+                    buf.open(QIODevice::ReadOnly);
+                    QImageReader reader(&buf);
+                    if (reader.canRead() && !reader.format().isEmpty()) {
+                        QSaveFile f(task.destPath);
+                        if (f.open(QIODevice::WriteOnly)) {
+                            f.write(bytes);
+                            if (f.commit()) {
+                                saved = true;
+                                m_artworkAttempts.remove(key);
+                                m_db->updateEpicLibraryArtwork(
+                                    task.appName,
+                                    task.type == QLatin1String("cover") ? task.destPath : QString(),
+                                    task.type == QLatin1String("banner") ? task.destPath : QString(),
+                                    task.type == QLatin1String("logo") ? task.destPath : QString());
+                                if (m_model) {
+                                    m_model->notifyArtworkChanged(task.appName);
+                                }
+                                emit artworkUpdated(task.appName);
+                            }
+                        }
                     }
                 }
+            }
+            if (!saved) {
+                m_artworkAttempts[key] = m_artworkAttempts.value(key, 0) + 1;
             }
             reply->deleteLater();
             pumpArtworkQueue();

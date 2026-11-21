@@ -35,6 +35,7 @@ Popup {
     property string customPrefixLocation: appSettings.defaultPrefixLocation
     property string prefixArch: "win64"
     property int existingPrefixIndex: 0
+    property bool allowBodyHeightAnim: false
 
     function isAnyComboPopupOpen() {
         return runnerCombo.popup.visible || existingPfxCombo.popup.visible
@@ -228,9 +229,12 @@ Popup {
         if (!isFocusInsideDialog()) {
             focusDialogInitial()
         }
+        Qt.callLater(() => { root.allowBodyHeightAnim = true })
     }
+    onClosed: root.allowBodyHeightAnim = false
 
     function resetAndOpen(initialPlatform) {
+        root.allowBodyHeightAnim = false
         exePath = ""
         platform = (initialPlatform === "linux") ? "linux" : "windows"
         gameTitle = ""
@@ -254,8 +258,8 @@ Popup {
     background: Rectangle {
         objectName: "addGameDialogBg"
         color: appSettings.surfaceColor
-        radius: 20
-        border.color: appSettings.borderColor
+        radius: 12
+        border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.10)
         border.width: 1
         layer.enabled: root.visible
         layer.effect: MultiEffect {
@@ -304,7 +308,7 @@ Popup {
 
                 Rectangle {
                     height: 20
-                    radius: 10
+                    radius: 6
                     implicitWidth: badgeLbl.implicitWidth + 14
                     color: appSettings.secondaryContainer
                     Label {
@@ -327,7 +331,7 @@ Popup {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 16
+                        radius: 8
                         color: appSettings.surfaceContainerHighest
                         opacity: closeBtnHover.hovered ? 1.0 : 0.0
                         Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
@@ -374,6 +378,10 @@ Popup {
             activeFocusOnTab: false
             Layout.fillWidth: true
             Layout.preferredHeight: Math.min(root.maxBodyHeight, dialogFormCol.implicitHeight + 28)
+            Behavior on Layout.preferredHeight {
+                enabled: root.allowBodyHeightAnim
+                NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+            }
             contentWidth: availableWidth
             clip: true
 
@@ -397,7 +405,7 @@ Popup {
                     // ── Card 1: Executable & Title ───────────────────────────
                     Rectangle {
                         Layout.fillWidth: true
-                        radius: 14
+                        radius: 10
                         color: appSettings.surfaceContainerLow
                         border.color: appSettings.borderColor
                         border.width: 1
@@ -429,6 +437,7 @@ Popup {
                                     M3TextField {
                                         id: exeInputField
                                         objectName: "addGameExeField"
+                                        fieldRadius: 10
                                         twoStageFocus: true
                                         Layout.fillWidth: true
                                         text: root.exePath
@@ -490,6 +499,7 @@ Popup {
                                 M3TextField {
                                     id: titleInputField
                                     objectName: "addGameTitleField"
+                                    fieldRadius: 10
                                     twoStageFocus: true
                                     Layout.fillWidth: true
                                     text: root.gameTitle
@@ -515,7 +525,7 @@ Popup {
                         objectName: "addGameWindowsCard"
                         visible: root.platform === "windows"
                         Layout.fillWidth: true
-                        radius: 14
+                        radius: 10
                         color: appSettings.surfaceContainerLow
                         border.color: appSettings.borderColor
                         border.width: 1
@@ -597,138 +607,170 @@ Popup {
                                 color: appSettings.borderColor
                             }
 
-                            // Dedicated Prefix options
-                            ColumnLayout {
-                                visible: root.useDedicatedPrefix
+                            // Smoothly animated Dedicated vs Existing Prefix options container
+                            Item {
+                                id: prefixModeStack
                                 Layout.fillWidth: true
-                                spacing: 10
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 4
-                                        Label {
-                                            text: "Prefix Name"
-                                            color: appSettings.textSecColor
-                                            font.family: "Rubik"
-                                            font.pixelSize: 12
-                                            font.weight: Font.Medium
-                                            renderType: Text.QtRendering
-                                        }
-                                        M3TextField {
-                                            id: customPfxNameField
-                                            twoStageFocus: true
-                                            Layout.fillWidth: true
-                                            text: root.customPrefixName
-                                            placeholderText: "e.g. cyberpunk"
-                                            onTextChanged: root.customPrefixName = text
-                                            onCommit: (val) => root.customPrefixName = val
-                                            onMoveUp: root.navigateStep(-1, 0)
-                                            onMoveDown: root.navigateStep(1, 0)
-                                            onActiveFocusChanged: if (activeFocus) root.scrollToItem(this)
-                                        }
-                                    }
-
-                                    ColumnLayout {
-                                        Layout.alignment: Qt.AlignBottom
-                                        spacing: 4
-                                        Label {
-                                            text: "Arch"
-                                            color: appSettings.textSecColor
-                                            font.family: "Rubik"
-                                            font.pixelSize: 12
-                                            font.weight: Font.Medium
-                                            renderType: Text.QtRendering
-                                        }
-                                        M3PillGroup {
-                                            id: archModePills
-                                            pillHeight: 46
-                                            fontSize: 13
-                                            model: [
-                                                { label: "64-bit", val: "win64" },
-                                                { label: "32-bit", val: "win32" }
-                                            ]
-                                            selectedValue: root.prefixArch
-                                            onSelectionChanged: (val) => root.prefixArch = String(val)
-                                            onActiveFocusChanged: if (activeFocus) root.scrollToItem(this)
-                                        }
-                                    }
+                                clip: true
+                                implicitHeight: root.useDedicatedPrefix ? dedicatedPrefixCol.implicitHeight : existingPrefixRow.implicitHeight
+                                Behavior on implicitHeight {
+                                    enabled: root.allowBodyHeightAnim
+                                    NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
                                 }
 
+                                // Dedicated Prefix options
                                 ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 4
-                                    Label {
-                                        text: "Prefix Folder"
-                                        color: appSettings.textSecColor
-                                        font.family: "Rubik"
-                                        font.pixelSize: 12
-                                        font.weight: Font.Medium
-                                        renderType: Text.QtRendering
+                                    id: dedicatedPrefixCol
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    spacing: 10
+                                    opacity: root.useDedicatedPrefix ? 1.0 : 0.0
+                                    enabled: root.useDedicatedPrefix
+                                    visible: opacity > 0.01
+                                    Behavior on opacity {
+                                        enabled: root.allowBodyHeightAnim
+                                        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
                                     }
+
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        spacing: 8
-                                        M3TextField {
-                                            id: customPfxLocField
-                                            twoStageFocus: true
+                                        spacing: 10
+
+                                        ColumnLayout {
                                             Layout.fillWidth: true
-                                            text: root.customPrefixLocation
-                                            onTextChanged: root.customPrefixLocation = text
-                                            onCommit: (val) => root.customPrefixLocation = val
-                                            onMoveUp: root.navigateStep(-1, 0)
-                                            onMoveDown: root.navigateStep(1, 0)
-                                            onActiveFocusChanged: if (activeFocus) root.scrollToItem(this)
+                                            spacing: 4
+                                            Label {
+                                                text: "Prefix Name"
+                                                color: appSettings.textSecColor
+                                                font.family: "Rubik"
+                                                font.pixelSize: 12
+                                                font.weight: Font.Medium
+                                                renderType: Text.QtRendering
+                                            }
+                                            M3TextField {
+                                                id: customPfxNameField
+                                                fieldRadius: 10
+                                                twoStageFocus: true
+                                                Layout.fillWidth: true
+                                                text: root.customPrefixName
+                                                placeholderText: "e.g. cyberpunk"
+                                                onTextChanged: root.customPrefixName = text
+                                                onCommit: (val) => root.customPrefixName = val
+                                                onMoveUp: root.navigateStep(-1, 0)
+                                                onMoveDown: root.navigateStep(1, 0)
+                                                onActiveFocusChanged: if (activeFocus) root.scrollToItem(this)
+                                            }
                                         }
-                                        M3Button {
-                                            id: customPfxBrowseBtn
-                                            text: "Folder"
-                                            iconSymbol: "folder_open"
-                                            buttonType: "tonal"
-                                            onActiveFocusChanged: if (activeFocus) root.scrollToItem(this)
-                                            onClicked: {
-                                                let d = uiController.selectFolder("Select Custom Prefix Base Directory", root.customPrefixLocation)
-                                                if (d && d.length > 0) {
-                                                    root.customPrefixLocation = d
+
+                                        ColumnLayout {
+                                            Layout.alignment: Qt.AlignBottom
+                                            spacing: 4
+                                            Label {
+                                                text: "Arch"
+                                                color: appSettings.textSecColor
+                                                font.family: "Rubik"
+                                                font.pixelSize: 12
+                                                font.weight: Font.Medium
+                                                renderType: Text.QtRendering
+                                            }
+                                            M3PillGroup {
+                                                id: archModePills
+                                                pillHeight: 46
+                                                fontSize: 13
+                                                model: [
+                                                    { label: "64-bit", val: "win64" },
+                                                    { label: "32-bit", val: "win32" }
+                                                ]
+                                                selectedValue: root.prefixArch
+                                                onSelectionChanged: (val) => root.prefixArch = String(val)
+                                                onActiveFocusChanged: if (activeFocus) root.scrollToItem(this)
+                                            }
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 4
+                                        Label {
+                                            text: "Prefix Folder"
+                                            color: appSettings.textSecColor
+                                            font.family: "Rubik"
+                                            font.pixelSize: 12
+                                            font.weight: Font.Medium
+                                            renderType: Text.QtRendering
+                                        }
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+                                            M3TextField {
+                                                id: customPfxLocField
+                                                fieldRadius: 10
+                                                twoStageFocus: true
+                                                Layout.fillWidth: true
+                                                text: root.customPrefixLocation
+                                                onTextChanged: root.customPrefixLocation = text
+                                                onCommit: (val) => root.customPrefixLocation = val
+                                                onMoveUp: root.navigateStep(-1, 0)
+                                                onMoveDown: root.navigateStep(1, 0)
+                                                onActiveFocusChanged: if (activeFocus) root.scrollToItem(this)
+                                            }
+                                            M3Button {
+                                                id: customPfxBrowseBtn
+                                                text: "Folder"
+                                                iconSymbol: "folder_open"
+                                                buttonType: "tonal"
+                                                onActiveFocusChanged: if (activeFocus) root.scrollToItem(this)
+                                                onClicked: {
+                                                    let d = uiController.selectFolder("Select Custom Prefix Base Directory", root.customPrefixLocation)
+                                                    if (d && d.length > 0) {
+                                                        root.customPrefixLocation = d
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            }
 
-                            // Existing Prefix selector
-                            RowLayout {
-                                visible: !root.useDedicatedPrefix
-                                Layout.fillWidth: true
-                                spacing: 12
-                                Label {
-                                    Layout.preferredWidth: 96
-                                    text: "Select Prefix"
-                                    color: appSettings.textSecColor
-                                    font.family: "Rubik"
-                                    font.pixelSize: 13
-                                    font.weight: Font.Medium
-                                    renderType: Text.QtRendering
-                                }
-                                StyledCombo {
-                                    id: existingPfxCombo
-                                    upDownNavigatesFocus: true
-                                    Layout.fillWidth: true
-                                    readonly property var pfxList: uiController.prefixManager.prefixes
-                                    comboModel: {
-                                        let list = []
-                                        for (let i = 0; i < pfxList.length; i++) {
-                                            list.push(pfxList[i].name)
-                                        }
-                                        return list.length > 0 ? list : ["Default Prefix"]
+                                // Existing Prefix selector
+                                RowLayout {
+                                    id: existingPrefixRow
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    spacing: 12
+                                    opacity: !root.useDedicatedPrefix ? 1.0 : 0.0
+                                    enabled: !root.useDedicatedPrefix
+                                    visible: opacity > 0.01
+                                    Behavior on opacity {
+                                        enabled: root.allowBodyHeightAnim
+                                        NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
                                     }
-                                    selectedIndex: root.existingPrefixIndex
-                                    onSelected: (idx) => root.existingPrefixIndex = idx
-                                    onActiveFocusChanged: if (activeFocus) root.scrollToItem(this)
+                                    Label {
+                                        Layout.preferredWidth: 96
+                                        text: "Select Prefix"
+                                        color: appSettings.textSecColor
+                                        font.family: "Rubik"
+                                        font.pixelSize: 13
+                                        font.weight: Font.Medium
+                                        renderType: Text.QtRendering
+                                    }
+                                    StyledCombo {
+                                        id: existingPfxCombo
+                                        upDownNavigatesFocus: true
+                                        Layout.fillWidth: true
+                                        readonly property var pfxList: uiController.prefixManager.prefixes
+                                        comboModel: {
+                                            let list = []
+                                            for (let i = 0; i < pfxList.length; i++) {
+                                                list.push(pfxList[i].name)
+                                            }
+                                            return list.length > 0 ? list : ["Default Prefix"]
+                                        }
+                                        selectedIndex: root.existingPrefixIndex
+                                        onSelected: (idx) => root.existingPrefixIndex = idx
+                                        onActiveFocusChanged: if (activeFocus) root.scrollToItem(this)
+                                    }
                                 }
                             }
                         }
@@ -737,7 +779,7 @@ Popup {
                     // ── Card 3: Launch Options ───────────────────────────────
                     Rectangle {
                         Layout.fillWidth: true
-                        radius: 14
+                        radius: 10
                         color: appSettings.surfaceContainerLow
                         border.color: appSettings.borderColor
                         border.width: 1
@@ -785,6 +827,7 @@ Popup {
                                 M3TextField {
                                     id: workDirInputField
                                     objectName: "addGameWorkDirField"
+                                    fieldRadius: 10
                                     twoStageFocus: true
                                     Layout.fillWidth: true
                                     text: root.workDir
@@ -812,6 +855,7 @@ Popup {
 
                                 M3TextField {
                                     id: argsInputField
+                                    fieldRadius: 10
                                     twoStageFocus: true
                                     Layout.fillWidth: true
                                     text: root.launchArgs

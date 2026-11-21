@@ -65,7 +65,7 @@ Popup {
 
     background: Rectangle {
         color: appSettings.surfaceColor
-        radius: 24
+        radius: 12
         border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.10)
         border.width: 1
         layer.enabled: root.visible
@@ -230,6 +230,7 @@ Popup {
 
                 M3TextField {
                     id: wtSearchField
+                    fieldRadius: 10
                     twoStageFocus: true
                     implicitWidth: 230
                     placeholderText: "Search verbs (e.g. vcrun2022)…"
@@ -329,7 +330,7 @@ Popup {
                     readonly property bool isVerbInstalled: Boolean(verbRow.modelData.isInstalled)
                     width: verbListView.width
                     height: 52
-                    radius: 12
+                    radius: 10
                     color: (rowMA.containsMouse || isCurrentRow)
                         ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
                         : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03))

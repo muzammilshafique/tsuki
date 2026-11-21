@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QtEndian>
+#include <algorithm>
 #include <cstring>
 #include <zlib.h>
 

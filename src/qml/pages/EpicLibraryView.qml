@@ -22,10 +22,16 @@ Item {
     readonly property int cardRadius: appSettings.cardRadius
     readonly property bool hasTitleBelow: appSettings.titleVisibility === 0
     readonly property int metaHeight: hasTitleBelow ? (appSettings.tagPosition === 0 || appSettings.tagPosition === 1 ? 52 : 32) : 0
-    readonly property int columns: Math.max(1, Math.floor(epicGrid.width / epicGrid.cellWidth))
+    // Optional stable width (e.g. HomePage width minus expanded sidebar) so opening/closing the
+    // sidebar smoothly expands & compresses cards in lockstep instead of snapping column counts mid-slide.
+    property real columnReferenceWidth: -1
+    readonly property real effectiveColumnWidth: root.columnReferenceWidth > 0 ? root.columnReferenceWidth : epicGrid.width
+    readonly property int columns: Math.max(1, Math.floor(Math.max(1, effectiveColumnWidth) / Math.max(1, appSettings.thumbScaleTarget)))
+    // Tie decoded texture resolution to user's target poster scale & DPI (never live cellWidth)
+    // so toggling the sidebar or resizing the window never invalidates/reloads grid cover images.
     readonly property int coverSourceWidth: Math.max(
-        192,
-        Math.min(512, Math.ceil((Math.max(160, epicGrid.cellWidth - 16) * Math.max(1.0, Screen.devicePixelRatio)) / 64) * 64)
+        256,
+        Math.min(512, Math.ceil((Math.max(160, appSettings.thumbScaleTarget * 1.35) * Math.max(1.0, Screen.devicePixelRatio)) / 64) * 64)
     )
     readonly property int coverSourceHeight: Math.round(coverSourceWidth * 1.5)
 
@@ -859,7 +865,7 @@ Item {
                             text: "Sign Out"
                             buttonType: "tonal"
                             implicitHeight: 28
-                            onClicked: if (root.epicSvc) root.epicSvc.signOut()
+                            onClicked: epicSignOutDialog.openConfirm()
                             Keys.onLeftPressed: (event) => { event.accepted = true; syncBtn.forceActiveFocus() }
                             Keys.onDownPressed: (event) => { event.accepted = true; epicGrid.forceActiveFocus() }
                         }
@@ -876,6 +882,7 @@ Item {
 
             GridView {
                 id: epicGrid
+                objectName: "epicGrid"
                 anchors.fill: parent
                 anchors.leftMargin: 32
                 anchors.rightMargin: 32
@@ -883,8 +890,9 @@ Item {
                 anchors.bottomMargin: 24
                 clip: false
                 model: root.epicModel
-                cellWidth: Math.floor(width / Math.max(1, Math.floor(width / appSettings.thumbScaleTarget)))
-                cellHeight: Math.floor(((cellWidth - 16) * 1.5) + root.metaHeight)
+                cellWidth: width > 1 ? Math.max(1, (width - 0.05) / root.columns) : appSettings.thumbScaleTarget
+                cellHeight: Math.max(1, ((cellWidth - 16) * 1.5) + root.metaHeight)
+                cacheBuffer: Math.max(480, Math.round(appSettings.thumbScaleTarget * 2.5))
                 focus: true
                 keyNavigationEnabled: false
 
@@ -993,11 +1001,13 @@ Item {
 
                 delegate: Item {
                     id: eCell
+                    objectName: "epicGridCell"
                     required property int index
                     required property string appName
                     required property string title
                     required property string developer
                     required property url coverPath
+                    required property bool hasCoverUrl
                     required property string downloadSizeFormatted
                     required property bool isInstalled
                     required property string installedGameId
@@ -1062,6 +1072,56 @@ Item {
                     readonly property bool isTvFocused: Boolean(uiController && uiController.isKeyboardNavActive) && eCell.GridView.isCurrentItem && epicGrid.activeFocus
                     readonly property bool isHoveredOrFocused: isTvFocused || isMouseActive
                     readonly property bool isCardBlurred: eCell.isMenuOpen || (appSettings.titleVisibility === 1 && isHoveredOrFocused)
+                    readonly property bool inLazyViewport: {
+                        if (epicGrid.height <= 0) return true
+                        const pad = Math.max(160, appSettings.thumbScaleTarget * 1.15)
+                        return (eCell.y + eCell.height) >= (epicGrid.contentY - pad)
+                            && eCell.y <= (epicGrid.contentY + epicGrid.height + pad)
+                    }
+                    property bool imageLoadActivated: false
+                    property bool _coverFetchRequested: false
+                    readonly property bool isCoverLoading: eCell.hasCoverUrl
+                        && ((eCell.coverPath.toString().length === 0) || eCoverImg.status === Image.Loading)
+                        && eCoverImg.status !== Image.Error
+
+                    Timer {
+                        id: lazyLoadTimer
+                        interval: 70
+                        repeat: false
+                        onTriggered: eCell.activateLazyLoad()
+                    }
+
+                    function activateLazyLoad() {
+                        if (!inLazyViewport) return
+                        if (!imageLoadActivated) imageLoadActivated = true
+                        if (!_coverFetchRequested && eCell.coverPath.toString().length === 0 && eCell.hasCoverUrl && root.epicSvc) {
+                            _coverFetchRequested = true
+                            root.epicSvc.requestCoverArtwork(eCell.appName)
+                        }
+                    }
+
+                    function scheduleLazyLoad() {
+                        if (!inLazyViewport) {
+                            lazyLoadTimer.stop()
+                            return
+                        }
+                        if (epicGrid.moving || Math.abs(epicGrid.verticalVelocity) > 650) {
+                            lazyLoadTimer.restart()
+                        } else {
+                            activateLazyLoad()
+                        }
+                    }
+
+                    Component.onCompleted: scheduleLazyLoad()
+                    onInLazyViewportChanged: scheduleLazyLoad()
+                    onCoverPathChanged: if (coverPath.toString().length > 0 && inLazyViewport) scheduleLazyLoad()
+                    Connections {
+                        target: epicGrid
+                        function onMovingChanged() {
+                            if (!epicGrid.moving) eCell.scheduleLazyLoad()
+                        }
+                    }
+
                     z: isTvFocused ? 50 : ((isMouseActive || isMenuOpen) ? 20 : 1)
 
                     Item {
@@ -1203,22 +1263,41 @@ Item {
 
                                 RoundedCover {
                                     id: eCoverImg
+                                    objectName: "epicGridCover"
                                     anchors.fill: parent
-                                    source: eCell.coverPath
+                                    source: eCell.imageLoadActivated ? eCell.coverPath : ""
                                     sourceWidth: root.coverSourceWidth
                                     sourceHeight: root.coverSourceHeight
                                     topRadius: Math.max(0, root.cardRadius - 1)
                                     bottomRadius: root.metaHeight > 0 ? 0 : Math.max(0, root.cardRadius - 1)
                                     placeholderColor: appSettings.surfaceAltColor
+                                    fadeDuration: 180
+                                    onStatusChanged: {
+                                        if (status === Image.Error && eCell.imageLoadActivated && !eCell._coverFetchRequested && eCell.hasCoverUrl && root.epicSvc) {
+                                            eCell._coverFetchRequested = true
+                                            root.epicSvc.requestCoverArtwork(eCell.appName)
+                                        }
+                                    }
                                 }
 
                                 YIcon {
+                                    id: ePlaceholderIcon
                                     anchors.centerIn: parent
                                     size: 44
                                     source: "qrc:/tsuki_app/icons/nav/epic.svg"
                                     color: appSettings.textTerColor
                                     opacity: 0.35
-                                    visible: eCell.coverPath.toString().length === 0 || eCoverImg.status === Image.Error
+                                    visible: !eCoverImg.isReady || eCoverImg.opacity < 0.99
+
+                                    SequentialAnimation on opacity {
+                                        running: root.visible && eCell.visible && eCell.isCoverLoading
+                                        loops: Animation.Infinite
+                                        NumberAnimation { from: 0.22; to: 0.52; duration: 750; easing.type: Easing.InOutSine }
+                                        NumberAnimation { from: 0.52; to: 0.22; duration: 750; easing.type: Easing.InOutSine }
+                                        onRunningChanged: {
+                                            if (!running) ePlaceholderIcon.opacity = 0.35
+                                        }
+                                    }
                                 }
 
                                 // Live download progress strip at bottom of poster
@@ -1274,7 +1353,7 @@ Item {
                                     : (eCell.isQueued
                                         ? "QUEUED"
                                         : (eCell.isDownloading
-                                            ? (eCell.isPaused ? "PAUSED" : ("DL " + Math.round(eCell.downloadProgress) + "%"))
+                                            ? (eCell.isPaused ? "PAUSED" : (Math.round(eCell.downloadProgress) + "%"))
                                             : (eCell.hasUpdate ? "UPDATE" : (eCell.isInstalled ? "INSTALLED" : "EPIC"))))
                                 color: parent.tagC
                                 font { pixelSize: 10; weight: Font.Bold; letterSpacing: 0.5 }
@@ -1467,6 +1546,215 @@ Item {
                     iconSymbol: "refresh"
                     buttonType: "filled"
                     onClicked: if (root.epicSvc) root.epicSvc.syncLibrary()
+                }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // EPIC SIGN OUT CONFIRMATION DIALOG
+    // ═══════════════════════════════════════════════════════════════════════════
+    Popup {
+        id: epicSignOutDialog
+        objectName: "epicSignOutDialog"
+        modal: true
+        focus: true
+        width: Math.min(parent ? parent.width - 48 : 480, 480)
+        x: parent ? Math.round((parent.width - width) / 2) : 0
+        y: parent ? Math.round((parent.height - height) / 2) : 0
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        enter: Transition {
+            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+            NumberAnimation { property: "scale"; from: 0.96; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+        }
+        exit: Transition {
+            NumberAnimation { property: "opacity"; from: 1.0; to: 0.0; duration: 120; easing.type: Easing.InCubic }
+            NumberAnimation { property: "scale"; from: 1.0; to: 0.96; duration: 120; easing.type: Easing.InCubic }
+        }
+
+        function openConfirm() {
+            open()
+            Qt.callLater(() => signOutCancelBtn.forceActiveFocus())
+        }
+
+        onClosed: {
+            if (root.isSignedIn) signOutBtn.forceActiveFocus()
+        }
+
+        background: Rectangle {
+            objectName: "epicSignOutDialogBg"
+            color: appSettings.surfaceColor
+            radius: 12
+            border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.10)
+            border.width: 1
+            layer.enabled: epicSignOutDialog.visible
+            layer.effect: MultiEffect {
+                shadowEnabled: true
+                shadowColor: Qt.rgba(0, 0, 0, appSettings.isEffectiveDark ? 0.60 : 0.25)
+                shadowBlur: 0.8
+                shadowVerticalOffset: 8
+            }
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 0
+            Keys.onEscapePressed: (event) => { event.accepted = true; epicSignOutDialog.close() }
+            Keys.onBackPressed: (event) => { event.accepted = true; epicSignOutDialog.close() }
+            Keys.onPressed: (event) => {
+                if (event.key === Qt.Key_Backspace) {
+                    event.accepted = true
+                    epicSignOutDialog.close()
+                }
+            }
+
+            // Header
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 58
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20
+                    anchors.rightMargin: 16
+                    spacing: 12
+
+                    Rectangle {
+                        width: 34
+                        height: 34
+                        radius: 8
+                        color: Qt.rgba(239/255, 68/255, 68/255, 0.15)
+                        YIcon {
+                            anchors.centerIn: parent
+                            size: 18
+                            symbol: "person"
+                            color: "#ef4444"
+                        }
+                    }
+
+                    Label {
+                        text: "Sign Out of Epic Games?"
+                        color: appSettings.textColor
+                        font.family: "Rubik"
+                        font.pixelSize: 16
+                        font.weight: Font.Bold
+                        Layout.fillWidth: true
+                    }
+
+                    Item {
+                        width: 32
+                        height: 32
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 8
+                            color: appSettings.surfaceContainerHighest
+                            opacity: signOutCloseHover.hovered ? 1.0 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                        }
+                        YIcon {
+                            anchors.centerIn: parent
+                            symbol: "close"
+                            color: signOutCloseHover.hovered ? appSettings.textColor : appSettings.textSecColor
+                            size: 16
+                        }
+                        HoverHandler { id: signOutCloseHover; cursorShape: Qt.PointingHandCursor }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: epicSignOutDialog.close()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: appSettings.borderColor
+                }
+            }
+
+            // Body
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.margins: 20
+                spacing: 12
+
+                Label {
+                    Layout.fillWidth: true
+                    text: "Sign out of <b>" + ((root.epicSvc && root.epicSvc.accountDisplayName.length > 0) ? root.epicSvc.accountDisplayName : "your Epic account") + "</b>?"
+                    color: appSettings.textColor
+                    font.pixelSize: 14
+                    textFormat: Text.RichText
+                    wrapMode: Text.WordWrap
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    radius: 10
+                    color: appSettings.surfaceContainerLow
+                    border.color: appSettings.borderColor
+                    border.width: 1
+                    implicitHeight: signOutNoteLbl.implicitHeight + 20
+
+                    Label {
+                        id: signOutNoteLbl
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        text: (root.epicSvc && root.epicSvc.activeDownloadCount > 0)
+                            ? ("Your cached Epic library list will be cleared and " + root.epicSvc.activeDownloadCount + " active Epic download(s) will be cancelled. Installed games stay in your Library.")
+                            : "Your cached Epic library list and session tokens will be cleared. Installed games will remain in your Library."
+                        color: (root.epicSvc && root.epicSvc.activeDownloadCount > 0) ? "#ef4444" : appSettings.textSecColor
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                        lineHeight: 1.3
+                    }
+                }
+            }
+
+            // Footer
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 58
+
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: appSettings.borderColor
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 20
+                    anchors.rightMargin: 20
+                    spacing: 10
+
+                    Item { Layout.fillWidth: true }
+
+                    M3Button {
+                        id: signOutCancelBtn
+                        objectName: "epicSignOutCancelBtn"
+                        text: "Cancel"
+                        buttonType: "tonal"
+                        onClicked: epicSignOutDialog.close()
+                        Keys.onRightPressed: (event) => { event.accepted = true; signOutConfirmBtn.forceActiveFocus() }
+                    }
+
+                    M3Button {
+                        id: signOutConfirmBtn
+                        objectName: "epicSignOutConfirmBtn"
+                        text: "Sign Out"
+                        buttonType: "destructive"
+                        onClicked: {
+                            epicSignOutDialog.close()
+                            if (root.epicSvc) root.epicSvc.signOut()
+                        }
+                        Keys.onLeftPressed: (event) => { event.accepted = true; signOutCancelBtn.forceActiveFocus() }
+                    }
                 }
             }
         }

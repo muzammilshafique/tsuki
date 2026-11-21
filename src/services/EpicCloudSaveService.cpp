@@ -18,6 +18,7 @@
 #include <QUrl>
 #include <QUuid>
 #include <algorithm>
+#include <memory>
 
 namespace Tsuki {
 

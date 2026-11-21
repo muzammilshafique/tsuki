@@ -14,6 +14,7 @@ Item {
     property real bottomVignetteAlpha: 0.0
     property real bottomVignetteHeight: 36
     property real darkenAlpha: 0.0
+    property int fadeDuration: 0
 
     readonly property int status: coverImg.status
     readonly property bool isReady: coverImg.status === Image.Ready
@@ -51,14 +52,20 @@ Item {
         asynchronous: true
         smooth: true
         mipmap: false
-        visible: !root.useShader && status === Image.Ready
+        opacity: root.isReady ? 1.0 : 0.0
+        Behavior on opacity {
+            enabled: root.fadeDuration > 0
+            NumberAnimation { duration: root.fadeDuration; easing.type: Easing.OutCubic }
+        }
+        visible: !root.useShader && opacity > 0.001
     }
 
     // 0-FBO GPU rounded-corner + PreserveAspectCrop + vignette/darken pass
     ShaderEffect {
         id: coverShader
         anchors.fill: parent
-        visible: root.useShader && coverImg.status === Image.Ready
+        opacity: coverImg.opacity
+        visible: root.useShader && opacity > 0.001
         property variant source: coverImg
         property size itemSize: Qt.size(Math.max(1, width), Math.max(1, height))
         property size texSize: Qt.size(Math.max(1, coverImg.implicitWidth), Math.max(1, coverImg.implicitHeight))

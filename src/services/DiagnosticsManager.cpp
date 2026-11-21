@@ -90,6 +90,39 @@ void DiagnosticsManager::clearGameLog(const QString& gameId) {
     emit activeGameLogChanged();
 }
 
+int DiagnosticsManager::clearInactiveGameLogs(const QSet<QString>& runningGameIds, qint64* freedBytesOut) {
+    int removedCount = 0;
+    qint64 freedBytes = 0;
+
+    const QStringList memKeys = m_inMemoryLogs.keys();
+    for (const QString& gid : memKeys) {
+        if (!runningGameIds.contains(gid)) {
+            m_inMemoryLogs.remove(gid);
+        }
+    }
+
+    QDir logsDir(AppSettings::logsDir());
+    if (logsDir.exists()) {
+        const QFileInfoList entries = logsDir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
+        for (const QFileInfo& fi : entries) {
+            const QString baseId = fi.completeBaseName();
+            if (fi.suffix().compare(QStringLiteral("log"), Qt::CaseInsensitive) == 0 &&
+                runningGameIds.contains(baseId)) {
+                continue;
+            }
+            const qint64 sz = fi.size();
+            if (QFile::remove(fi.absoluteFilePath())) {
+                ++removedCount;
+                freedBytes += sz;
+            }
+        }
+    }
+
+    if (freedBytesOut) *freedBytesOut = freedBytes;
+    emit activeGameLogChanged();
+    return removedCount;
+}
+
 bool DiagnosticsManager::exportGameLog(const QString& gameId, const QString& destinationPath) const {
     QString cleanDest = destinationPath.trimmed();
     if (cleanDest.startsWith(QStringLiteral("file://"))) {
@@ -447,16 +480,28 @@ QVariantList DiagnosticsManager::detectedGpus() const {
 std::optional<DiagnosticsManager::GpuInfo> DiagnosticsManager::findGpu(const QString& gpuSelection) const {
     const QString sel = gpuSelection.trimmed();
     if (sel.isEmpty()) return std::nullopt;
+    bool isNumericIndex = false;
+    const int parsedIdx = sel.toInt(&isNumericIndex);
+    if (isNumericIndex && parsedIdx >= 0) {
+        for (const GpuInfo& g : m_gpus) {
+            if (g.driPrimeIndex == parsedIdx) {
+                return g;
+            }
+        }
+        return std::nullopt;
+    }
     for (const GpuInfo& g : m_gpus) {
         if (g.id.compare(sel, Qt::CaseInsensitive) == 0 ||
             g.name.compare(sel, Qt::CaseInsensitive) == 0) {
             return g;
         }
     }
-    // Partial substring match as fallback
-    for (const GpuInfo& g : m_gpus) {
-        if (g.name.contains(sel, Qt::CaseInsensitive)) {
-            return g;
+    // Partial substring match as fallback for descriptive names/vendors (avoid matching single chars)
+    if (sel.size() >= 2) {
+        for (const GpuInfo& g : m_gpus) {
+            if (g.name.contains(sel, Qt::CaseInsensitive)) {
+                return g;
+            }
         }
     }
     return std::nullopt;

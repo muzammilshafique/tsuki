@@ -8,6 +8,7 @@
 #include <QProcessEnvironment>
 #include <QVariantList>
 #include <QVariantMap>
+#include <optional>
 
 namespace Tsuki {
 

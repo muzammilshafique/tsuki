@@ -29,7 +29,7 @@ Popup {
 
     background: Rectangle {
         color: appSettings.surfaceColor
-        radius: 20
+        radius: 12
         border.color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.10)
         border.width: 1
         layer.enabled: root.visible
@@ -141,6 +141,7 @@ Popup {
 
                 M3TextField {
                     id: urlInput
+                    fieldRadius: 10
                     twoStageFocus: true
                     Layout.fillWidth: true
                     placeholderText: "https://.../image.jpg"

@@ -50,6 +50,7 @@ public:
         CoverPathRole,
         BannerPathRole,
         LogoPathRole,
+        HasCoverUrlRole,
         DownloadSizeRole,
         InstallSizeRole,
         DownloadSizeFormattedRole,
@@ -88,6 +89,7 @@ public:
     Q_INVOKABLE QVariantMap get(int row) const;
     Q_INVOKABLE void reload();
     void notifyAppChanged(const QString& appName);
+    void notifyArtworkChanged(const QString& appName);
 
 signals:
     void searchQueryChanged();
@@ -163,6 +165,9 @@ public:
     Q_INVOKABLE void checkForUpdates();
     Q_INVOKABLE void toggleHideEpicGame(const QString& appName);
     Q_INVOKABLE void restorePendingDownloads();
+    Q_INVOKABLE void requestCoverArtwork(const QString& appName);
+    Q_INVOKABLE void requestDetailArtwork(const QString& appName);
+    void resetCachedArtworkState();
     static bool isBlockedNonGameEpicApp(const QString& title,
                                         const QString& appName = QString(),
                                         const QString& namespaceId = QString());
@@ -229,6 +234,7 @@ signals:
     void authStateChanged();
     void syncingChanged();
     void libraryUpdated();
+    void artworkUpdated(const QString& appName);
     void activeDownloadsChanged();
     void downloadStateChanged(const QString& appName);
     void downloadFinished(const QString& appName, const QString& gameId);
@@ -364,8 +370,9 @@ private:
     QHash<QString, QString> m_latestBuildVersions;
 
     // Artwork queue
-    QQueue<ArtworkTask> m_artworkQueue;
+    QList<ArtworkTask> m_artworkQueue;
     QSet<QString> m_queuedArtKeys;
+    QHash<QString, int> m_artworkAttempts;
     int m_activeArtworkDownloads = 0;
 
     // Active chunk downloads keyed by appName
@@ -390,6 +397,11 @@ private:
     void finishLibrarySync();
 
     void queueArtworkForItems(const QList<EpicLibraryItem>& items);
+    void enqueueArtworkTask(const EpicLibraryItem& item,
+                            const QString& type,
+                            const QString& urlStr,
+                            const QString& existingPath,
+                            bool prioritizeFront);
     void pumpArtworkQueue();
 
     void fetchAssetManifestWithToken(const EpicLibraryItem& item,

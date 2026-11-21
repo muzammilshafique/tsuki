@@ -9,6 +9,7 @@
 #include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QUrlQuery>
+#include <memory>
 
 namespace Tsuki {
 
@@ -210,7 +211,7 @@ QString SteamGridDbService::generateFallbackPoster(const QString &gameId,
 
           connect(
               gridReply, &QNetworkReply::finished, this,
-              [this, gridReply, gameId, sgdbId, apiKey, artDir, releaseYear,
+              [this, gridReply, gameId, gameTitle, sgdbId, apiKey, artDir, releaseYear,
                onResolved]() {
                 QString gridUrl;
                 if (gridReply->error() == QNetworkReply::NoError) {
@@ -233,8 +234,8 @@ QString SteamGridDbService::generateFallbackPoster(const QString &gameId,
 
                 connect(
                     heroReply, &QNetworkReply::finished, this,
-                    [this, heroReply, gameId, gridUrl, artDir, releaseYear,
-                     onResolved]() {
+                    [this, heroReply, gameId, gameTitle, sgdbId, apiKey, gridUrl,
+                     artDir, releaseYear, onResolved]() {
                       QString heroUrl;
                       if (heroReply->error() == QNetworkReply::NoError) {
                         const QJsonArray arr =
@@ -246,47 +247,86 @@ QString SteamGridDbService::generateFallbackPoster(const QString &gameId,
                       }
                       heroReply->deleteLater();
 
-                      const QString coverDest =
-                          artDir + QStringLiteral("/cover.jpg");
-                      const QString bannerDest =
-                          artDir + QStringLiteral("/banner.jpg");
+                      QNetworkRequest logoReq(QUrl(
+                          QStringLiteral(
+                              "https://www.steamgriddb.com/api/v2/logos/game/%1")
+                              .arg(sgdbId)));
+                      logoReq.setRawHeader("Authorization",
+                                           QByteArray("Bearer ") + apiKey.toUtf8());
+                      QNetworkReply *logoReply = m_nam.get(logoReq);
 
-                      if (!gridUrl.isEmpty()) {
-                        downloadImageToFile(
-                            QUrl(gridUrl), coverDest,
-                            [this, gameId, coverDest, heroUrl, bannerDest,
-                             releaseYear, onResolved](bool okCover) {
-                              const QString finalCover =
-                                  okCover ? coverDest : QString();
-                              if (!heroUrl.isEmpty()) {
-                                downloadImageToFile(
-                                    QUrl(heroUrl), bannerDest,
-                                    [this, gameId, finalCover, bannerDest,
-                                     releaseYear, onResolved](bool okBanner) {
-                                      const QString finalBanner =
-                                          okBanner ? bannerDest : QString();
-                                      if (onResolved)
-                                        onResolved(finalCover, finalBanner,
-                                                   QString(), QString(),
-                                                   releaseYear);
-                                      emit artworkUpdated(
-                                          gameId, finalCover, finalBanner,
-                                          QString(), QString(), releaseYear);
-                                    });
-                              } else {
-                                if (onResolved)
-                                  onResolved(finalCover, QString(), QString(),
-                                             QString(), releaseYear);
-                                emit artworkUpdated(gameId, finalCover,
-                                                    QString(), QString(),
-                                                    QString(), releaseYear);
-                              }
-                            });
-                      } else {
-                        if (onResolved)
-                          onResolved(QString(), QString(), QString(), QString(),
-                                     releaseYear);
-                      }
+                      connect(
+                          logoReply, &QNetworkReply::finished, this,
+                          [this, logoReply, gameId, gameTitle, gridUrl, heroUrl,
+                           artDir, releaseYear, onResolved]() {
+                            QString logoUrl;
+                            if (logoReply->error() == QNetworkReply::NoError) {
+                              const QJsonArray arr =
+                                  QJsonDocument::fromJson(logoReply->readAll())
+                                      .object()["data"]
+                                      .toArray();
+                              if (!arr.isEmpty())
+                                logoUrl = arr.first().toObject()["url"].toString();
+                            }
+                            logoReply->deleteLater();
+
+                            if (gridUrl.isEmpty() && heroUrl.isEmpty() && logoUrl.isEmpty()) {
+                              fetchFromPublicSteamStore(gameId, gameTitle, onResolved);
+                              return;
+                            }
+
+                            const QString coverDest =
+                                artDir + QStringLiteral("/cover.jpg");
+                            const QString bannerDest =
+                                artDir + QStringLiteral("/banner.jpg");
+                            const QString logoDest =
+                                artDir + QStringLiteral("/logo.png");
+
+                            struct PendingArt {
+                              QString cover;
+                              QString banner;
+                              QString logo;
+                              int remaining = 0;
+                            };
+                            auto state = std::make_shared<PendingArt>();
+                            if (!gridUrl.isEmpty()) ++state->remaining;
+                            if (!heroUrl.isEmpty()) ++state->remaining;
+                            if (!logoUrl.isEmpty()) ++state->remaining;
+
+                            auto maybeFinish = [this, gameId, releaseYear, onResolved, state]() {
+                              if (--state->remaining > 0) return;
+                              if (onResolved)
+                                onResolved(state->cover, state->banner, state->logo,
+                                           QString(), releaseYear);
+                              emit artworkUpdated(gameId, state->cover, state->banner,
+                                                  state->logo, QString(), releaseYear);
+                            };
+
+                            if (!gridUrl.isEmpty()) {
+                              downloadImageToFile(
+                                  QUrl(gridUrl), coverDest,
+                                  [state, coverDest, maybeFinish](bool ok) {
+                                    if (ok) state->cover = coverDest;
+                                    maybeFinish();
+                                  });
+                            }
+                            if (!heroUrl.isEmpty()) {
+                              downloadImageToFile(
+                                  QUrl(heroUrl), bannerDest,
+                                  [state, bannerDest, maybeFinish](bool ok) {
+                                    if (ok) state->banner = bannerDest;
+                                    maybeFinish();
+                                  });
+                            }
+                            if (!logoUrl.isEmpty()) {
+                              downloadImageToFile(
+                                  QUrl(logoUrl), logoDest,
+                                  [state, logoDest, maybeFinish](bool ok) {
+                                    if (ok) state->logo = logoDest;
+                                    maybeFinish();
+                                  });
+                            }
+                          });
                     });
               });
         });

@@ -202,6 +202,10 @@ AppSettings::AppSettings(QObject *parent)
           .value(QStringLiteral("runners/preferX86_64V3"),
                  SecretStore::detectCpuX86_64V3())
           .toBool();
+  m_allowDeleteSteamRunners =
+      m_settings
+          .value(QStringLiteral("runners/allowDeleteSteamRunners"), false)
+          .toBool();
   m_defaultDxvkHud =
       m_settings
           .value(QStringLiteral("performance/dxvkHud"), QStringLiteral("none"))
@@ -230,6 +234,10 @@ AppSettings::AppSettings(QObject *parent)
       m_settings
           .value(QStringLiteral("integrations/steamGridDbApiKey"), QString())
           .toString();
+  m_autoFetchEpicArtwork =
+      m_settings
+          .value(QStringLiteral("integrations/autoFetchEpicArtwork"), true)
+          .toBool();
   m_logLevel =
       m_settings
           .value(QStringLiteral("logging/logLevel"), QStringLiteral("info"))
@@ -1071,6 +1079,14 @@ void AppSettings::setPreferX86_64V3Runners(bool v) {
   emit runnerDefaultsChanged();
 }
 
+void AppSettings::setAllowDeleteSteamRunners(bool v) {
+  if (m_allowDeleteSteamRunners == v)
+    return;
+  m_allowDeleteSteamRunners = v;
+  m_settings.setValue(QStringLiteral("runners/allowDeleteSteamRunners"), v);
+  emit runnerDefaultsChanged();
+}
+
 void AppSettings::setDownloadSpeedLimitKBps(int kbps) {
   kbps = qMax(0, kbps);
   if (m_downloadSpeedLimitKBps == kbps)
@@ -1131,6 +1147,14 @@ void AppSettings::setSteamGridDbApiKey(const QString &key) {
   m_steamGridDbApiKey = key.trimmed();
   m_settings.setValue(QStringLiteral("integrations/steamGridDbApiKey"),
                       m_steamGridDbApiKey);
+  emit apiSettingsChanged();
+}
+
+void AppSettings::setAutoFetchEpicArtwork(bool v) {
+  if (m_autoFetchEpicArtwork == v)
+    return;
+  m_autoFetchEpicArtwork = v;
+  m_settings.setValue(QStringLiteral("integrations/autoFetchEpicArtwork"), v);
   emit apiSettingsChanged();
 }
 

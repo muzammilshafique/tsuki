@@ -122,6 +122,7 @@ public:
     Q_INVOKABLE void togglePauseDownload(const QString& id);
     Q_INVOKABLE void cancelDownload(const QString& id);
     Q_INVOKABLE bool isMediaDownloading(const QString& id) const;
+    QSet<QString> activeDestinationFiles() const;
     Q_INVOKABLE void moveQueueItemUp(const QString& id);
     Q_INVOKABLE void moveQueueItemDown(const QString& id);
     Q_INVOKABLE void prioritizeDownload(const QString& id);
