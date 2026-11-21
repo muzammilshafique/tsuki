@@ -96,6 +96,7 @@ public:
                                    const QString& mode = QStringLiteral("auto")) {
         syncGameSaves(gameId, mode, nullptr);
     }
+    Q_INVOKABLE void resolveConflict(const QString& gameId, const QString& resolution);
     void syncGameSaves(const QString& gameId,
                        const QString& mode,
                        std::function<void(bool ok, const QString& outcome, const QVariantMap& details)> callback);

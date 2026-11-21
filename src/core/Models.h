@@ -719,6 +719,7 @@ struct EpicDlcItem {
     QVariantMap toVariantMap() const {
         QVariantMap m;
         m["appName"] = appName;
+        m["dlcAppName"] = appName;
         m["parentAppName"] = parentAppName;
         m["namespaceId"] = namespaceId;
         m["catalogItemId"] = catalogItemId;

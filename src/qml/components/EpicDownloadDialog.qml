@@ -851,7 +851,8 @@ Popup {
                                 model: root.availableDlcs || []
                                 delegate: Rectangle {
                                     required property var modelData
-                                    readonly property bool isChecked: root.selectedDlcAppNames.indexOf(modelData.dlcAppName) !== -1
+                                    readonly property string dlcId: String(modelData.appName || modelData.dlcAppName || "")
+                                    readonly property bool isChecked: dlcId.length > 0 && root.selectedDlcAppNames.indexOf(dlcId) !== -1
                                     Layout.fillWidth: true
                                     height: 34
                                     radius: 8
@@ -868,7 +869,7 @@ Popup {
                                         }
                                         Label {
                                             Layout.fillWidth: true
-                                            text: "DLC: " + String(modelData.title || modelData.dlcAppName || "")
+                                            text: "DLC: " + String(modelData.title || dlcId)
                                             color: isChecked ? appSettings.onSecondaryContainer : appSettings.textColor
                                             font.pixelSize: 12
                                             font.weight: isChecked ? Font.DemiBold : Font.Normal
@@ -878,7 +879,7 @@ Popup {
                                     MouseArea {
                                         anchors.fill: parent
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.toggleDlc(String(modelData.dlcAppName || ""))
+                                        onClicked: if (dlcId.length > 0) root.toggleDlc(dlcId)
                                     }
                                 }
                             }

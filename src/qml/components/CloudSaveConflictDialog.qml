@@ -16,6 +16,7 @@ Popup {
 
     property string gameId: ""
     property var conflictDetails: ({})
+    property bool launchOnResolve: true
 
     signal resolutionChosen(string gameId, string choice)
 
@@ -29,16 +30,21 @@ Popup {
     function openConflict(targetGameId, details) {
         root.gameId = targetGameId || ""
         root.conflictDetails = details || ({})
+        root.launchOnResolve = !(root.conflictDetails && root.conflictDetails.triggeredByLaunch === false)
         root.open()
         openFocusTimer.restart()
     }
 
     function resolve(choice) {
         const gid = root.gameId
+        const shouldLaunch = root.launchOnResolve
         root.close()
         root.resolutionChosen(gid, choice)
-        if (uiController && uiController.launchPipeline && gid.length > 0) {
+        if (!uiController || gid.length === 0) return
+        if (shouldLaunch && uiController.launchPipeline) {
             uiController.launchPipeline.resolveCloudConflictAndLaunch(gid, choice)
+        } else if (!shouldLaunch && uiController.cloudSaveService) {
+            uiController.cloudSaveService.resolveConflict(gid, choice)
         }
     }
 
@@ -141,7 +147,9 @@ Popup {
 
             Label {
                 Layout.fillWidth: true
-                text: "Both your local save files and Epic Cloud Saves have changed since the last sync. Choose which version to keep before launching."
+                text: root.launchOnResolve
+                    ? "Both your local save files and Epic Cloud Saves have changed since the last sync. Choose which version to keep before launching."
+                    : "Both your local save files and Epic Cloud Saves have changed since the last sync. Choose which version to keep."
                 color: appSettings.textColor
                 font.pixelSize: 13
                 wrapMode: Text.WordWrap
@@ -181,7 +189,7 @@ Popup {
                             font.weight: Font.DemiBold
                         }
                         Label {
-                            text: root.formatEpoch(root.conflictDetails.localLatestEpoch)
+                            text: root.formatEpoch(root.conflictDetails.localLatestEpoch || root.conflictDetails.localTimestamp)
                             color: appSettings.textSecColor
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
@@ -219,7 +227,7 @@ Popup {
                             font.weight: Font.DemiBold
                         }
                         Label {
-                            text: root.formatEpoch(root.conflictDetails.remoteLatestEpoch)
+                            text: root.formatEpoch(root.conflictDetails.remoteLatestEpoch || root.conflictDetails.cloudTimestamp)
                             color: appSettings.textSecColor
                             font.pixelSize: 11
                             wrapMode: Text.WordWrap
@@ -257,7 +265,7 @@ Popup {
                     id: downloadCloudBtn
                     objectName: "conflictDownloadCloudBtn"
                     Layout.fillWidth: true
-                    text: "Download Cloud Saves & Play"
+                    text: root.launchOnResolve ? "Download Cloud Saves & Play" : "Download Cloud Saves"
                     iconSymbol: "download"
                     buttonType: "filled"
                     onClicked: root.resolve("download")
@@ -268,7 +276,7 @@ Popup {
                     id: uploadLocalBtn
                     objectName: "conflictUploadLocalBtn"
                     Layout.fillWidth: true
-                    text: "Keep Local Saves, Upload to Cloud & Play"
+                    text: root.launchOnResolve ? "Keep Local Saves, Upload to Cloud & Play" : "Keep Local Saves & Upload to Cloud"
                     iconSymbol: "refresh"
                     buttonType: "tonal"
                     onClicked: root.resolve("upload")
@@ -284,7 +292,7 @@ Popup {
                         id: skipSyncBtn
                         objectName: "conflictSkipSyncBtn"
                         Layout.fillWidth: true
-                        text: "Launch Without Syncing"
+                        text: root.launchOnResolve ? "Launch Without Syncing" : "Skip Sync"
                         buttonType: "tonal"
                         onClicked: root.resolve("skip")
                         Keys.onUpPressed: (event) => { event.accepted = true; uploadLocalBtn.forceActiveFocus() }

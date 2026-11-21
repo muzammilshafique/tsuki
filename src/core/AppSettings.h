@@ -156,6 +156,8 @@ class AppSettings : public QObject {
   Q_PROPERTY(bool pauseDownloadsOnGameLaunch READ pauseDownloadsOnGameLaunch
                  WRITE setPauseDownloadsOnGameLaunch NOTIFY
                      downloadSettingsChanged)
+  Q_PROPERTY(bool autoUpdateEpicGames READ autoUpdateEpicGames WRITE
+                 setAutoUpdateEpicGames NOTIFY downloadSettingsChanged)
   Q_PROPERTY(bool xboxEmulationDefault READ xboxEmulationDefault WRITE
                  setXboxEmulationDefault NOTIFY controllerDefaultsChanged)
   Q_PROPERTY(QString steamGridDbApiKey READ steamGridDbApiKey WRITE
@@ -340,6 +342,8 @@ public:
   void setMaxConcurrentGameDownloads(int maxGames);
   bool pauseDownloadsOnGameLaunch() const { return m_pauseDownloadsOnGameLaunch; }
   void setPauseDownloadsOnGameLaunch(bool pause);
+  bool autoUpdateEpicGames() const { return m_autoUpdateEpicGames; }
+  void setAutoUpdateEpicGames(bool enable);
 
   bool xboxEmulationDefault() const { return m_xboxEmulationDefault; }
   void setXboxEmulationDefault(bool v);
@@ -423,6 +427,7 @@ private:
   int m_maxConcurrentChunkWorkers = 6;
   int m_maxConcurrentGameDownloads = 1;
   bool m_pauseDownloadsOnGameLaunch = true;
+  bool m_autoUpdateEpicGames = true;
 
   bool m_xboxEmulationDefault = false;
 

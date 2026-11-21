@@ -544,6 +544,26 @@ EpicService::EpicService(DatabaseManager* db,
     // Construct model only after m_downloads and auth state are initialized,
     // because EpicLibraryModel::reload() queries getDownloadState().
     m_model = new EpicLibraryModel(this, db, this);
+
+    // Automatically check installed Epic games for updates shortly after startup and periodically
+    // (skipped in headless offscreen tests so unit tests never fire unintended network calls).
+    m_autoUpdateTimer = new QTimer(this);
+    m_autoUpdateTimer->setInterval(6 * 60 * 60 * 1000); // 6 hours
+    connect(m_autoUpdateTimer, &QTimer::timeout, this, [this]() {
+        if (m_isSignedIn) {
+            checkForUpdates();
+        }
+    });
+    if (qgetenv("QT_QPA_PLATFORM").trimmed().toLower() != "offscreen") {
+        m_autoUpdateTimer->start();
+        if (m_isSignedIn) {
+            QTimer::singleShot(3000, this, [this]() {
+                if (m_isSignedIn) {
+                    checkForUpdates();
+                }
+            });
+        }
+    }
 }
 
 EpicService::~EpicService() {
@@ -1578,6 +1598,31 @@ QVariantList EpicService::getInstallTagsForGame(const QString& appName) const {
     return out;
 }
 
+void EpicService::processUpdateCheckResult(const QString& gameId,
+                                           const QString& appName,
+                                           const QString& installedBuild,
+                                           const QString& latestBuild,
+                                           bool allowAutoQueue) {
+    const QString cleanApp = appName.trimmed();
+    const QString cleanLatest = latestBuild.trimmed();
+    if (cleanApp.isEmpty() || cleanLatest.isEmpty()) return;
+
+    m_latestBuildVersions.insert(cleanApp, cleanLatest);
+    const bool hasUpd = !installedBuild.trimmed().isEmpty() && (cleanLatest != installedBuild.trimmed());
+    const bool prev = m_appsWithUpdates.contains(cleanApp);
+    if (hasUpd) m_appsWithUpdates.insert(cleanApp);
+    else m_appsWithUpdates.remove(cleanApp);
+
+    if (hasUpd != prev) {
+        emit updatesChanged();
+    }
+
+    if (hasUpd && allowAutoQueue && m_settings && m_settings->autoUpdateEpicGames() &&
+        !gameId.isEmpty() && !m_downloads.contains(cleanApp)) {
+        updateGame(gameId);
+    }
+}
+
 void EpicService::checkForUpdates() {
     if (!m_isSignedIn || !m_db) return;
     const QList<GameRecord> games = m_db->getAllGames();
@@ -1601,9 +1646,10 @@ void EpicService::checkForUpdates() {
             req.setHeader(QNetworkRequest::UserAgentHeader, QLatin1String(kEpicLauncherUserAgent));
 
             QNetworkReply* reply = m_nam.get(req);
+            const QString gameId = g.id;
             const QString appName = g.epicAppName;
             const QString installedBuild = g.epicBuildVersion.trimmed();
-            connect(reply, &QNetworkReply::finished, this, [this, reply, appName, installedBuild]() {
+            connect(reply, &QNetworkReply::finished, this, [this, reply, gameId, appName, installedBuild]() {
                 const bool netOk = (reply->error() == QNetworkReply::NoError);
                 const QByteArray body = netOk ? safeReadReply(reply) : QByteArray();
                 reply->deleteLater();
@@ -1614,15 +1660,7 @@ void EpicService::checkForUpdates() {
                 const QString latestBuild = elements.first().toObject().value(QStringLiteral("buildVersion")).toString().trimmed();
                 if (latestBuild.isEmpty()) return;
 
-                m_latestBuildVersions.insert(appName, latestBuild);
-                const bool hasUpd = !installedBuild.isEmpty() && (latestBuild != installedBuild);
-                const bool prev = m_appsWithUpdates.contains(appName);
-                if (hasUpd) m_appsWithUpdates.insert(appName);
-                else m_appsWithUpdates.remove(appName);
-
-                if (hasUpd != prev) {
-                    emit updatesChanged();
-                }
+                processUpdateCheckResult(gameId, appName, installedBuild, latestBuild, true);
             });
         }
     });
@@ -2055,6 +2093,111 @@ void EpicService::installDlc(const QString& parentGameId, const QString& dlcAppN
         return;
     }
     beginSessionExecution(session);
+}
+
+bool EpicService::uninstallDlc(const QString& parentGameId, const QString& dlcAppName) {
+    if (!m_db || parentGameId.isEmpty() || dlcAppName.isEmpty()) return false;
+    auto gOpt = m_db->getGame(parentGameId);
+    if (!gOpt.has_value() || !gOpt->isEpic()) return false;
+    if (m_downloads.contains(dlcAppName)) {
+        emit operationStatus(QStringLiteral("Cannot remove DLC while it is actively downloading."), true);
+        return false;
+    }
+
+    const QList<EpicDlcItem> dlcs = m_db->getEpicDlcsForGame(gOpt->epicAppName);
+    std::optional<EpicDlcItem> found;
+    for (const EpicDlcItem& d : dlcs) {
+        if (d.appName == dlcAppName) {
+            found = d;
+            break;
+        }
+    }
+    if (!found.has_value()) {
+        emit operationStatus(QStringLiteral("DLC '%1' not found in owned Epic DLCs.").arg(dlcAppName), true);
+        return false;
+    }
+
+    const QString installDir = QDir::cleanPath(!gOpt->epicInstallDir.isEmpty() ? gOpt->epicInstallDir : gOpt->workingDirectory);
+    const QString dlcManifestPath = manifestCachePath(dlcAppName);
+
+    auto collectManifestPaths = [](const QString& mfPath, QSet<QString>& outSet) {
+        QFile f(mfPath);
+        if (!f.exists() || !f.open(QIODevice::ReadOnly)) return false;
+        EpicManifest parsed;
+        if (!EpicManifestParser::parse(f.readAll(), parsed)) return false;
+        for (const EpicFileManifest& fm : parsed.files) {
+            const QString norm = QDir::cleanPath(fm.filename).toLower();
+            if (!norm.isEmpty()) outSet.insert(norm);
+        }
+        return true;
+    };
+
+    int removedFiles = 0;
+    if (!installDir.isEmpty() && QDir(installDir).exists() && QFileInfo::exists(dlcManifestPath)) {
+        QFile dlcMf(dlcManifestPath);
+        EpicManifest dlcManifest;
+        if (dlcMf.open(QIODevice::ReadOnly) && EpicManifestParser::parse(dlcMf.readAll(), dlcManifest)) {
+            QSet<QString> protectedPaths;
+            collectManifestPaths(manifestCachePath(gOpt->epicAppName), protectedPaths);
+            for (const EpicDlcItem& sibling : dlcs) {
+                if (sibling.appName != dlcAppName && sibling.isInstalled) {
+                    collectManifestPaths(manifestCachePath(sibling.appName), protectedPaths);
+                }
+            }
+
+            const QString cleanRootPrefix = installDir.endsWith(QLatin1Char('/')) ? installDir : (installDir + QLatin1Char('/'));
+            for (const EpicFileManifest& fm : dlcManifest.files) {
+                const QString relNorm = QDir::cleanPath(fm.filename);
+                if (relNorm.isEmpty() || relNorm.startsWith(QStringLiteral("..")) || QDir::isAbsolutePath(relNorm)) {
+                    continue;
+                }
+                if (protectedPaths.contains(relNorm.toLower())) {
+                    continue;
+                }
+                const QString absPath = QDir::cleanPath(QDir(installDir).filePath(relNorm));
+                if (!absPath.startsWith(cleanRootPrefix)) {
+                    continue;
+                }
+                if (QFileInfo::exists(absPath) || QFileInfo(absPath).isSymLink()) {
+                    if (QFile::remove(absPath)) {
+                        ++removedFiles;
+                    }
+                    // Prune empty parent directories strictly inside installDir
+                    QDir parentDir = QFileInfo(absPath).dir();
+                    while (QDir::cleanPath(parentDir.absolutePath()).startsWith(cleanRootPrefix)) {
+                        const QString dirPath = QDir::cleanPath(parentDir.absolutePath());
+                        if (!parentDir.entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty()) {
+                            break;
+                        }
+                        if (!parentDir.rmdir(dirPath)) {
+                            break;
+                        }
+                        parentDir.cdUp();
+                    }
+                }
+            }
+        }
+    }
+
+    if (QFileInfo::exists(dlcManifestPath)) {
+        QFile::remove(dlcManifestPath);
+    }
+
+    m_db->setEpicDlcInstalled(dlcAppName, false);
+    if (auto fresh = m_db->getGame(parentGameId); fresh.has_value()) {
+        GameRecord updated = *fresh;
+        if (updated.epicSelectedDlcs.removeAll(dlcAppName) > 0) {
+            m_db->saveGame(updated);
+        }
+    }
+
+    emit dlcsChanged(gOpt->epicAppName);
+    emit operationStatus(
+        removedFiles > 0
+            ? QStringLiteral("Removed DLC '%1' (%2 files deleted).").arg(found->title).arg(removedFiles)
+            : QStringLiteral("Marked DLC '%1' as uninstalled.").arg(found->title),
+        false);
+    return true;
 }
 
 void EpicService::runGamePrerequisites(const QString& gameId, bool force) {
@@ -2591,10 +2734,20 @@ void EpicService::finalizeDownloadSession(const std::shared_ptr<DownloadSession>
 
     if (session->isDlc) {
         m_db->setEpicDlcInstalled(appName, true);
+        if (!gameId.isEmpty()) {
+            if (auto fresh = m_db->getGame(gameId); fresh.has_value()) {
+                GameRecord upd = *fresh;
+                if (!upd.epicSelectedDlcs.contains(appName)) {
+                    upd.epicSelectedDlcs.append(appName);
+                    m_db->saveGame(upd);
+                }
+            }
+        }
         if (m_dlMgr && !queueId.isEmpty()) {
             m_dlMgr->finishExternalTask(queueId, true, QStringLiteral("DLC Installed"), gameId, installDir);
         }
         emit downloadStateChanged(appName);
+        emit dlcsChanged(session->parentAppName);
         emit downloadFinished(appName, gameId);
         emit operationStatus(QStringLiteral("Installed DLC '%1'.").arg(session->title), false);
         return;

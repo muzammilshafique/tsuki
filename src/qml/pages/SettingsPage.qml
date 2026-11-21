@@ -2357,6 +2357,20 @@ Page {
                                                 onToggled: (c) => appSettings.pauseDownloadsOnGameLaunch = c
                                             }
                                         }
+
+                                        SettingTile {
+                                            label: "Auto-Update Epic Games"
+                                            infoTip: "Automatically check installed Epic games on startup and queue delta updates when available"
+                                            searchKeywords: "Auto Update Epic Games Automatic Updates Delta Background"
+                                            tabIndex: 6
+                                            inlineControl: true
+                                            controlItem: Toggle {
+                                                id: autoUpdateEpicGamesToggle
+                                                objectName: "autoUpdateEpicGamesToggle"
+                                                checked: appSettings.autoUpdateEpicGames
+                                                onToggled: (c) => appSettings.autoUpdateEpicGames = c
+                                            }
+                                        }
                                     }
                                 }
 

@@ -6675,6 +6675,251 @@ private slots:
     QCoreApplication::processEvents();
     QVERIFY(homeMediaGrid->property("columns").toInt() < libColsCollapsed);
   }
+
+  void testEpicUpdatesDlcManagementAndCloudSaveFixes() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+
+    const QByteArray oldHome = qgetenv("HOME");
+    const QByteArray oldXdgData = qgetenv("XDG_DATA_HOME");
+    const QByteArray oldXdgCache = qgetenv("XDG_CACHE_HOME");
+    const QByteArray oldXdgConfig = qgetenv("XDG_CONFIG_HOME");
+    const bool hadXdgData = qEnvironmentVariableIsSet("XDG_DATA_HOME");
+    const bool hadXdgCache = qEnvironmentVariableIsSet("XDG_CACHE_HOME");
+    const bool hadXdgConfig = qEnvironmentVariableIsSet("XDG_CONFIG_HOME");
+    const QString origGenericConfig =
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+
+    const QString fakeHome = tmpDir.filePath(QStringLiteral("home"));
+    QVERIFY(QDir().mkpath(fakeHome));
+    qputenv("HOME", fakeHome.toUtf8());
+    qputenv("XDG_DATA_HOME", (fakeHome + QStringLiteral("/.local/share")).toUtf8());
+    qputenv("XDG_CACHE_HOME", (fakeHome + QStringLiteral("/.cache")).toUtf8());
+    qputenv("XDG_CONFIG_HOME", (fakeHome + QStringLiteral("/.config")).toUtf8());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                       fakeHome + QStringLiteral("/.config"));
+    auto restoreEnv = qScopeGuard([&]() {
+      QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                         origGenericConfig);
+      qputenv("HOME", oldHome);
+      if (hadXdgData) qputenv("XDG_DATA_HOME", oldXdgData);
+      else qunsetenv("XDG_DATA_HOME");
+      if (hadXdgCache) qputenv("XDG_CACHE_HOME", oldXdgCache);
+      else qunsetenv("XDG_CACHE_HOME");
+      if (hadXdgConfig) qputenv("XDG_CONFIG_HOME", oldXdgConfig);
+      else qunsetenv("XDG_CONFIG_HOME");
+    });
+
+    AppSettings settings;
+    QCOMPARE(settings.autoUpdateEpicGames(), true);
+    settings.setAutoUpdateEpicGames(false);
+    QCOMPARE(settings.autoUpdateEpicGames(), false);
+    {
+      AppSettings reloaded;
+      QCOMPARE(reloaded.autoUpdateEpicGames(), false);
+    }
+
+    DatabaseManager db(tmpDir.filePath(QStringLiteral("test_024.db")));
+    QVERIFY(db.initialize());
+    DownloadManager dl;
+    dl.setAppSettings(&settings);
+    dl.setDatabaseManager(&db);
+    RunnerManager runnerMgr(&db, &settings, &dl);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    SteamGridDbService sgdb(&settings, &dl);
+    ControllerManager ctrlMgr(&db, &settings);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dl);
+    LaunchPipeline lp(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &lp);
+    EpicService epicSvc(&db, &settings, &runnerMgr, &prefixMgr, &sgdb);
+    epicSvc.setDownloadManager(&dl);
+    epicSvc.setGameManager(&gm);
+    EpicCloudSaveService cloudSvc(&db, &settings, &prefixMgr, &epicSvc);
+    lp.setEpicService(&epicSvc);
+    lp.setCloudSaveService(&cloudSvc);
+
+    // 1. Seed installed Epic game + owned DLCs + cached manifests
+    const QString installDir = tmpDir.filePath(QStringLiteral("Games/Control"));
+    QVERIFY(QDir().mkpath(installDir + QStringLiteral("/dlc_pack")));
+    QVERIFY(QDir().mkpath(installDir + QStringLiteral("/shared")));
+    auto writeFile = [](const QString &p, const QByteArray &data) {
+      QFile f(p);
+      if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+      return f.write(data) == data.size();
+    };
+    QVERIFY(writeFile(installDir + QStringLiteral("/Control.exe"), "MZ"));
+    QVERIFY(writeFile(installDir + QStringLiteral("/shared/common.pak"), "BASE"));
+    QVERIFY(writeFile(installDir + QStringLiteral("/dlc_pack/expansion.pak"), "DLC1"));
+
+    GameRecord g;
+    g.id = QStringLiteral("g-control");
+    g.title = QStringLiteral("Control");
+    g.source = QStringLiteral("epic");
+    g.epicAppName = QStringLiteral("ControlApp");
+    g.epicNamespace = QStringLiteral("ns-control");
+    g.epicCatalogItemId = QStringLiteral("cat-control");
+    g.epicBuildVersion = QStringLiteral("1.0.0");
+    g.epicInstallDir = installDir;
+    g.executablePath = installDir + QStringLiteral("/Control.exe");
+    g.workingDirectory = installDir;
+    g.epicSelectedDlcs = {QStringLiteral("ControlDlc1")};
+    const QString saveDir = tmpDir.filePath(QStringLiteral("Saves/Control"));
+    QVERIFY(QDir().mkpath(saveDir));
+    QVERIFY(writeFile(saveDir + QStringLiteral("/slot1.sav"), "SAVE_DATA_1"));
+    QVERIFY(writeFile(saveDir + QStringLiteral("/slot2.sav"), "SAVE_DATA_2"));
+    g.epicCloudSaveFolder = saveDir;
+    QVERIFY(db.saveGame(g));
+
+    EpicDlcItem dlc1;
+    dlc1.appName = QStringLiteral("ControlDlc1");
+    dlc1.parentAppName = QStringLiteral("ControlApp");
+    dlc1.namespaceId = QStringLiteral("ns-control");
+    dlc1.catalogItemId = QStringLiteral("cat-dlc1");
+    dlc1.title = QStringLiteral("The Foundation");
+    dlc1.isInstalled = true;
+    QVERIFY(db.saveEpicDlcs({dlc1}));
+
+    // Verify EpicDlcItem map exposes both appName and dlcAppName
+    const QVariantList dlcMaps = epicSvc.getDlcsForGame(QStringLiteral("ControlApp"));
+    QCOMPARE(dlcMaps.size(), 1);
+    QCOMPARE(dlcMaps.first().toMap().value(QStringLiteral("appName")).toString(),
+             QStringLiteral("ControlDlc1"));
+    QCOMPARE(dlcMaps.first().toMap().value(QStringLiteral("dlcAppName")).toString(),
+             QStringLiteral("ControlDlc1"));
+
+    // Write cached base & DLC manifests so uninstallDlc deletes only unique DLC files
+    const QString mfDir = AppSettings::dataDir() + QStringLiteral("/epic_manifests");
+    QVERIFY(QDir().mkpath(mfDir));
+    EpicFileManifest baseExe;
+    baseExe.filename = QStringLiteral("Control.exe");
+    EpicFileManifest sharedFile;
+    sharedFile.filename = QStringLiteral("shared/common.pak");
+    EpicFileManifest dlcUniqueFile;
+    dlcUniqueFile.filename = QStringLiteral("dlc_pack/expansion.pak");
+    const QByteArray baseMf = EpicManifestParser::buildJsonManifest(
+        QStringLiteral("ControlApp"), QStringLiteral("1.0.0"), {baseExe, sharedFile}, {});
+    const QByteArray dlcMf = EpicManifestParser::buildJsonManifest(
+        QStringLiteral("ControlDlc1"), QStringLiteral("1.0.0"), {sharedFile, dlcUniqueFile}, {});
+    QVERIFY(writeFile(mfDir + QStringLiteral("/ControlApp.manifest"), baseMf));
+    QVERIFY(writeFile(mfDir + QStringLiteral("/ControlDlc1.manifest"), dlcMf));
+
+    QSignalSpy dlcSpy(&epicSvc, &EpicService::dlcsChanged);
+    QVERIFY(epicSvc.uninstallDlc(g.id, QStringLiteral("ControlDlc1")));
+    QCOMPARE(dlcSpy.count(), 1);
+    QCOMPARE(dlcSpy.takeFirst().at(0).toString(), QStringLiteral("ControlApp"));
+    QVERIFY(!QFileInfo::exists(installDir + QStringLiteral("/dlc_pack/expansion.pak")));
+    QVERIFY(!QDir(installDir + QStringLiteral("/dlc_pack")).exists());
+    // Base game & shared files must be untouched
+    QVERIFY(QFileInfo::exists(installDir + QStringLiteral("/Control.exe")));
+    QVERIFY(QFileInfo::exists(installDir + QStringLiteral("/shared/common.pak")));
+    QCOMPARE(epicSvc.getDlcsForGame(QStringLiteral("ControlApp"))
+                 .first().toMap().value(QStringLiteral("isInstalled")).toBool(),
+             false);
+    QVERIFY(!db.getGame(g.id)->epicSelectedDlcs.contains(QStringLiteral("ControlDlc1")));
+
+    // 2. Automatic update detection + autoUpdateEpicGames toggle behavior
+    auto hasQueuedEpicUpdate = [&]() {
+      for (const QVariant &v : dl.activeDownloads()) {
+        if (v.toMap().value(QStringLiteral("id")).toString() ==
+            QStringLiteral("epic-upd-ControlApp")) {
+          return true;
+        }
+      }
+      return false;
+    };
+    QSignalSpy updSpy(&epicSvc, &EpicService::updatesChanged);
+    settings.setAutoUpdateEpicGames(false);
+    epicSvc.processUpdateCheckResult(g.id, g.epicAppName, QStringLiteral("1.0.0"),
+                                     QStringLiteral("1.1.0"), true);
+    QCOMPARE(updSpy.count(), 1);
+    QVERIFY(epicSvc.hasUpdate(g.epicAppName));
+    QVERIFY(!hasQueuedEpicUpdate()); // auto-update OFF -> badge only, not auto-queued
+    QVERIFY(!epicSvc.getDownloadState(g.epicAppName).value(QStringLiteral("isDownloading")).toBool());
+
+    // Occupy the single game-download slot so an auto-queued update stays queued offline
+    // without initiating any live network request to Epic servers.
+    settings.setMaxConcurrentGameDownloads(1);
+    dl.registerExternalTask(QStringLiteral("test-slot-blocker"),
+                            QStringLiteral("Slot Blocker"),
+                            QStringLiteral("epic_install"),
+                            QStringLiteral("blocker"),
+                            QString(), true, DownloadManager::ExternalAdapter{}, true);
+
+    settings.setAutoUpdateEpicGames(true);
+    epicSvc.processUpdateCheckResult(g.id, g.epicAppName, QStringLiteral("1.0.0"),
+                                     QStringLiteral("1.1.0"), true);
+    QVERIFY(hasQueuedEpicUpdate());
+    QVERIFY(epicSvc.getDownloadState(g.epicAppName).value(QStringLiteral("isDownloading")).toBool());
+    epicSvc.cancelDownload(g.epicAppName, false);
+    dl.finishExternalTask(QStringLiteral("test-slot-blocker"), true, QStringLiteral("Done"));
+
+    // 3. Cloud Save status localFileCount & CloudSaveConflictDialog dual-key + manual mode
+    const QVariantMap csStatus = cloudSvc.getCloudSaveStatus(g.id);
+    QCOMPARE(csStatus.value(QStringLiteral("configured")).toBool(), true);
+    QCOMPARE(csStatus.value(QStringLiteral("localFileCount")).toInt(), 2);
+
+    UiController ui(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
+                    &ctrlMgr, &sgdb, &lp, &diagMgr, &gm, &epicSvc, &cloudSvc);
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"), &ui);
+
+    QQuickWindow win;
+    win.resize(1280, 820);
+    win.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+    // Verify CloudSaveConflictDialog handles both localTimestamp/cloudTimestamp and manual mode
+    QQmlComponent conflictComp(
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/components/CloudSaveConflictDialog.qml")));
+    QVERIFY2(conflictComp.isReady(), qPrintable(conflictComp.errorString()));
+    std::unique_ptr<QObject> conflictObj(conflictComp.create());
+    QVERIFY(conflictObj != nullptr);
+    conflictObj->setProperty("parent", QVariant::fromValue(win.contentItem()));
+    QVariantMap conflictDetails;
+    conflictDetails[QStringLiteral("gameTitle")] = QStringLiteral("Control");
+    conflictDetails[QStringLiteral("localFileCount")] = 2;
+    conflictDetails[QStringLiteral("localTimestamp")] = 1700000100;
+    conflictDetails[QStringLiteral("cloudTimestamp")] = 1700000200;
+    conflictDetails[QStringLiteral("triggeredByLaunch")] = false;
+    QVERIFY(QMetaObject::invokeMethod(
+        conflictObj.get(), "openConflict",
+        Q_ARG(QVariant, QVariant(g.id)),
+        Q_ARG(QVariant, QVariant(conflictDetails))));
+    QCoreApplication::processEvents();
+    QCOMPARE(conflictObj->property("launchOnResolve").toBool(), false);
+    auto *dlBtn = conflictObj->findChild<QQuickItem *>(QStringLiteral("conflictDownloadCloudBtn"));
+    auto *skipBtn = conflictObj->findChild<QQuickItem *>(QStringLiteral("conflictSkipSyncBtn"));
+    QVERIFY(dlBtn != nullptr);
+    QVERIFY(skipBtn != nullptr);
+    QCOMPARE(dlBtn->property("text").toString(), QStringLiteral("Download Cloud Saves"));
+    QCOMPARE(skipBtn->property("text").toString(), QStringLiteral("Skip Sync"));
+    // Ensure timestamp labels formatted (not "No timestamp")
+    bool sawNoTimestamp = false;
+    for (QObject *child : conflictObj->findChildren<QObject *>()) {
+      if (child->property("text").toString() == QStringLiteral("No timestamp")) {
+        sawNoTimestamp = true;
+      }
+    }
+    QVERIFY(!sawNoTimestamp);
+    QVERIFY(QMetaObject::invokeMethod(conflictObj.get(), "close"));
+
+    // Verify SettingsPage has autoUpdateEpicGamesToggle bound to appSettings.autoUpdateEpicGames
+    QQmlComponent settingsComp(
+        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/SettingsPage.qml")));
+    QVERIFY2(settingsComp.isReady(), qPrintable(settingsComp.errorString()));
+    std::unique_ptr<QQuickItem> settingsItem(
+        qobject_cast<QQuickItem *>(settingsComp.create()));
+    QVERIFY(settingsItem != nullptr);
+    settingsItem->setParentItem(win.contentItem());
+    settingsItem->setSize(QSizeF(1280, 820));
+    QCoreApplication::processEvents();
+    auto *autoUpdToggle =
+        settingsItem->findChild<QQuickItem *>(QStringLiteral("autoUpdateEpicGamesToggle"));
+    QVERIFY(autoUpdToggle != nullptr);
+    QCOMPARE(autoUpdToggle->property("checked").toBool(), true);
+  }
 };
 
 QTEST_MAIN(TestTsuki)

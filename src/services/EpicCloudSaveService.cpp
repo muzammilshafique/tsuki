@@ -380,6 +380,20 @@ QVariantMap EpicCloudSaveService::getCloudSaveStatus(const QString& gameId) cons
     m[QStringLiteral("isSyncing")] = m_syncingGames.contains(gameId);
     m[QStringLiteral("snapshots")] = listLocalSnapshots(gameId);
 
+    int localFileCount = 0;
+    if (!localDir.isEmpty() && QDir(localDir).exists()) {
+        QStringList includes;
+        QStringList excludes;
+        if (m_db) {
+            if (auto gOpt = m_db->getGame(gameId); gOpt.has_value()) {
+                includes = gOpt->epicCloudIncludeList;
+                excludes = gOpt->epicCloudExcludeList;
+            }
+        }
+        localFileCount = scanLocalSaveFiles(localDir, includes, excludes).size();
+    }
+    m[QStringLiteral("localFileCount")] = localFileCount;
+
     if (m_db) {
         if (auto st = m_db->getCloudSaveState(gameId); st.has_value() && st->lastSyncEpoch > 0) {
             m[QStringLiteral("lastSyncEpoch")] = st->lastSyncEpoch;
@@ -391,6 +405,16 @@ QVariantMap EpicCloudSaveService::getCloudSaveStatus(const QString& gameId) cons
         }
     }
     return m;
+}
+
+void EpicCloudSaveService::resolveConflict(const QString& gameId, const QString& resolution) {
+    if (gameId.trimmed().isEmpty()) return;
+    const QString res = resolution.trimmed().toLower();
+    if (res == QLatin1String("download")) {
+        syncGameSaves(gameId, QStringLiteral("download"));
+    } else if (res == QLatin1String("upload")) {
+        syncGameSaves(gameId, QStringLiteral("upload"));
+    }
 }
 
 void EpicCloudSaveService::saveStateSnapshot(const QString& gameId,
@@ -541,14 +565,17 @@ void EpicCloudSaveService::syncGameSaves(const QString& gameId,
                     conflict[QStringLiteral("localSaveDir")] = localDir;
                     conflict[QStringLiteral("localFileCount")] = localFiles.size();
                     conflict[QStringLiteral("localTimestamp")] = localLatest;
+                    conflict[QStringLiteral("localLatestEpoch")] = localLatest;
                     conflict[QStringLiteral("localTimeFormatted")] =
                         localLatest > 0 ? QDateTime::fromSecsSinceEpoch(localLatest).toString(QStringLiteral("MMM d, yyyy HH:mm:ss"))
                                         : QStringLiteral("Unknown");
                     conflict[QStringLiteral("cloudTimestamp")] = latestRemote.lastModifiedEpoch;
+                    conflict[QStringLiteral("remoteLatestEpoch")] = latestRemote.lastModifiedEpoch;
                     conflict[QStringLiteral("cloudTimeFormatted")] =
                         latestRemote.lastModifiedEpoch > 0
                             ? QDateTime::fromSecsSinceEpoch(latestRemote.lastModifiedEpoch).toString(QStringLiteral("MMM d, yyyy HH:mm:ss"))
                             : QStringLiteral("Unknown");
+                    conflict[QStringLiteral("triggeredByLaunch")] = static_cast<bool>(callback);
                     emit syncConflictDetected(game.id, conflict);
                     finishSync(game.id, false, QStringLiteral("conflict"), conflict, QString(), false, callback);
                     break;

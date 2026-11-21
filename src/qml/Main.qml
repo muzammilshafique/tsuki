@@ -171,6 +171,15 @@ ApplicationWindow {
     }
 
     Connections {
+        target: uiController ? uiController.cloudSaveService : null
+        function onSyncConflictDetected(gameId, details) {
+            if (details && details.triggeredByLaunch === false) {
+                cloudConflictDialog.openConflict(gameId, details)
+            }
+        }
+    }
+
+    Connections {
         target: uiController ? uiController.controllerManager : null
         function onSettingsActionRequested() {
             if (window.isWinetricksOpen || window.isCloudConflictOpen) return

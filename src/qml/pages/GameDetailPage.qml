@@ -477,6 +477,14 @@ Page {
         function onDownloadStateChanged(appName) {
             if (appName === root.epicAppName) {
                 root.epicData = uiController.epicService.getEpicGameMap(root.epicAppName)
+            } else if (root.epicAppName.length > 0 && root.gameDlcs && root.gameDlcs.length > 0) {
+                for (let i = 0; i < root.gameDlcs.length; ++i) {
+                    const did = String(root.gameDlcs[i].appName || root.gameDlcs[i].dlcAppName || "")
+                    if (did === appName) {
+                        root.gameDlcs = uiController.epicService.getDlcsForGame(root.epicAppName)
+                        break
+                    }
+                }
             }
         }
         function onArtworkUpdated(appName) {
@@ -493,6 +501,13 @@ Page {
             if (appName === root.epicAppName && newGameId.length > 0) {
                 root.gameId = newGameId
                 root.reloadGame()
+            } else if (root.epicAppName.length > 0 && newGameId === root.gameId) {
+                root.gameDlcs = uiController.epicService.getDlcsForGame(root.epicAppName)
+            }
+        }
+        function onDlcsChanged(parentApp) {
+            if (parentApp === root.epicAppName && root.epicAppName.length > 0) {
+                root.gameDlcs = uiController.epicService.getDlcsForGame(root.epicAppName)
             }
         }
         function onUpdatesChanged() {
@@ -4199,21 +4214,41 @@ Page {
                                     model: root.gameDlcs || []
                                     delegate: RowLayout {
                                         required property var modelData
+                                        readonly property string dlcId: String(modelData.appName || modelData.dlcAppName || "")
+                                        readonly property var dlcDlState: (uiController && uiController.epicService && dlcId.length > 0)
+                                            ? uiController.epicService.getDownloadState(dlcId) : ({})
+                                        readonly property bool dlcDownloading: Boolean(dlcDlState && dlcDlState.isDownloading)
                                         Layout.fillWidth: true
                                         spacing: 10
                                         Label {
                                             Layout.fillWidth: true
-                                            text: String(modelData.title || modelData.dlcAppName || "")
+                                            text: String(modelData.title || dlcId)
                                             color: appSettings.textColor
                                             font.pixelSize: 13
                                             elide: Text.ElideRight
                                         }
                                         M3Button {
-                                            text: modelData.isInstalled ? "Installed ✓" : "Install DLC"
-                                            buttonType: modelData.isInstalled ? "tonal" : "filled"
-                                            enabled: !modelData.isInstalled
+                                            visible: !modelData.isInstalled
+                                            text: dlcDownloading ? "Downloading…" : "Install DLC"
+                                            buttonType: dlcDownloading ? "tonal" : "filled"
+                                            enabled: !dlcDownloading && dlcId.length > 0
                                             implicitHeight: 30
-                                            onClicked: if (uiController && uiController.epicService) uiController.epicService.installDlc(root.gameId, String(modelData.dlcAppName))
+                                            onClicked: if (uiController && uiController.epicService && dlcId.length > 0) uiController.epicService.installDlc(root.gameId, dlcId)
+                                        }
+                                        M3Button {
+                                            visible: Boolean(modelData.isInstalled)
+                                            text: "Installed ✓"
+                                            buttonType: "tonal"
+                                            enabled: false
+                                            implicitHeight: 30
+                                        }
+                                        M3Button {
+                                            visible: Boolean(modelData.isInstalled)
+                                            text: "Remove"
+                                            buttonType: "destructive"
+                                            enabled: !dlcDownloading && dlcId.length > 0
+                                            implicitHeight: 30
+                                            onClicked: if (uiController && uiController.epicService && dlcId.length > 0) uiController.epicService.uninstallDlc(root.gameId, dlcId)
                                         }
                                     }
                                 }

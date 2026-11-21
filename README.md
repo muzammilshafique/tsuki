@@ -10,20 +10,24 @@ A Linux game launcher for Wine, Proton, native Linux games, and the Epic Games S
 
 ## Features
 
-- Manage Windows games (Wine / Proton), native Linux games, and Epic Games titles in one library
+- Manage Windows games (Wine / Proton), native Linux games, and Epic Games titles in one library with **custom collections**, multi-select filters, and **hidden games** support
 - **Native Epic Games Store integration** (100% C++20/Qt6 — zero `QtWebEngine` or external CLI required):
-  - External-browser OAuth token sign-in and persistent session refresh
-  - Native binary/JSON manifest parsing and multi-threaded zlib/SHA-1 chunk downloading, pause/resume, and file verification
+  - External-browser OAuth sign-in, persistent session refresh, sign-out confirmation, and **secure credential storage** via Freedesktop Secret Service (`libsecret` with strict `0600` file fallback)
+  - Native binary/JSON manifest parsing, multi-threaded zlib/SHA-1 chunk downloading, persistent pause/resume across restarts, file verification, optional install tags, update detection with **smaller delta downloads**, and automatic **prerequisites installation**
+  - **Epic Cloud Saves**: automatic pre-launch sync and post-exit upload, conflict resolution prompt, automatic local `.tar.gz` safety snapshots with 1-click restore, and custom save folder overrides
+  - Persistent disk caching and lazy viewport loading for Epic library artwork, plus optional automatic SteamGridDB / Steam Store artwork fetching after downloads
   - **Import existing installations** (e.g. Heroic Games Launcher folders) with **Copy**, **Move**, or **Keep in Place** transfer modes, runner/prefix selection, and optional disk cleanup when uninstalling
-  - Online multiplayer support via OAuth exchange codes, native **EOS Social Overlay** installation & prefix registry management, and toggleable Epic library badges
-- Download and manage Proton-GE and Proton-CachyOS runners, or use system Wine and Steam Proton installations
-- Auto-detect or 1-click install **Proton EasyAntiCheat (EAC)** and **BattlEye** anti-cheat runtimes
-- Create, clone, back up, and restore isolated Wine prefixes
-- Built-in Winetricks component installer
-- Automatic cover, banner, logo, and icon fetching via SteamGridDB
+  - Online multiplayer support via OAuth exchange codes, native **EOS Social Overlay** installation & prefix registry management, hiding games, automatic non-game app filtering, and toggleable Epic badges
+- **Downloads Manager**: dedicated downloads queue with concurrency limits, chunk worker tuning, speed throttling, and automatic pause while a game is running
+- **UMU Launcher & Modern Linux Gaming**: integrated `umu-run` / Steam Linux Runtime 3.0 support with automatic UMU ID resolution, **NTSYNC**, **Proton Wayland driver**, **HDR**, **NVIDIA NVAPI**, **Wine Fullscreen FSR**, and per-game or global **GPU selection** (NVIDIA PRIME offload, `DRI_PRIME`, and DXVK/VKD3D device filtering)
+- Download and manage **Proton-GE** and **Proton-CachyOS** runners (`x86-64-v3` CPU detection and SHA-512 verification), use system Wine and Steam Proton installations, and remove runners (with Steam runner deletion gated in Settings)
+- Auto-detect or 1-click install **Proton EasyAntiCheat (EAC)** and **BattlEye** anti-cheat runtimes for Epic games
+- Create, clone, back up, restore, and clean shader/temp caches for isolated Wine prefixes, plus **game folder relocation**
+- Built-in **Winetricks** component installer and Settings **Storage Cleaning** (logs, cache, unused artwork & manifests, prefix caches)
+- Automatic cover, banner, logo, and icon fetching via SteamGridDB / Steam Store
 - Virtual Xbox 360 controller emulation over `/dev/uinput` (with udev rule included)
-- Optional MangoHud, Feral GameMode, and Gamescope microcompositor integration
-- System diagnostics and per-game launch logs
+- Optional **MangoHud**, **Feral GameMode**, and **Gamescope** microcompositor integration
+- System diagnostics, per-game launch logs, custom GPU rounded-cover shader (`0 FBO` cards at rest), and smooth synced sidebar/grid transitions
 - Full Keyboard & Gamepad navigation support across the launcher (PlayStation and Xbox prompts)
 
 ## Installation

@@ -191,7 +191,13 @@ public:
                                    const QStringList& selectedDlcAppNames = QStringList());
     Q_INVOKABLE void updateGame(const QString& gameId);
     Q_INVOKABLE void installDlc(const QString& parentGameId, const QString& dlcAppName);
+    Q_INVOKABLE bool uninstallDlc(const QString& parentGameId, const QString& dlcAppName);
     Q_INVOKABLE void runGamePrerequisites(const QString& gameId, bool force = false);
+    void processUpdateCheckResult(const QString& gameId,
+                                  const QString& appName,
+                                  const QString& installedBuild,
+                                  const QString& latestBuild,
+                                  bool allowAutoQueue = true);
     Q_INVOKABLE QVariantMap inspectImportSource(const QString& appName,
                                                 const QString& sourceDir,
                                                 const QString& targetBaseDir = QString()) const;
@@ -242,6 +248,7 @@ signals:
     void installInfoReady(const QString& appName, qint64 downloadSize, qint64 installSize);
     void installDetailsReady(const QString& appName, const QVariantList& installTags, const QVariantList& dlcs);
     void updatesChanged();
+    void dlcsChanged(const QString& parentAppName);
     void prerequisitesFinished(const QString& gameId, bool success, const QString& message);
     void eosOverlayChanged();
     void operationStatus(const QString& message, bool isError);
@@ -368,6 +375,7 @@ private:
     // Update tracking
     QSet<QString> m_appsWithUpdates;
     QHash<QString, QString> m_latestBuildVersions;
+    QTimer* m_autoUpdateTimer = nullptr;
 
     // Artwork queue
     QList<ArtworkTask> m_artworkQueue;

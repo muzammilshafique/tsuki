@@ -225,6 +225,10 @@ AppSettings::AppSettings(QObject *parent)
       m_settings
           .value(QStringLiteral("downloads/pauseOnGameLaunch"), true)
           .toBool();
+  m_autoUpdateEpicGames =
+      m_settings
+          .value(QStringLiteral("downloads/autoUpdateEpicGames"), true)
+          .toBool();
 
   m_xboxEmulationDefault =
       m_settings.value(QStringLiteral("controller/xboxEmulation"), false)
@@ -1119,6 +1123,14 @@ void AppSettings::setPauseDownloadsOnGameLaunch(bool pause) {
     return;
   m_pauseDownloadsOnGameLaunch = pause;
   m_settings.setValue(QStringLiteral("downloads/pauseOnGameLaunch"), pause);
+  emit downloadSettingsChanged();
+}
+
+void AppSettings::setAutoUpdateEpicGames(bool enable) {
+  if (m_autoUpdateEpicGames == enable)
+    return;
+  m_autoUpdateEpicGames = enable;
+  m_settings.setValue(QStringLiteral("downloads/autoUpdateEpicGames"), enable);
   emit downloadSettingsChanged();
 }
 
