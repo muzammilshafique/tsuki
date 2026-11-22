@@ -240,6 +240,18 @@ qint16 ControllerManager::applyDeadzone(qint16 val, int deadzone) {
   return val;
 }
 
+void ControllerManager::sendKeyEventToQuickWindow(int qtKey, bool pressed) {
+  if (qtKey == 0)
+    return;
+  if (QWindow *win = QGuiApplication::focusWindow()) {
+    m_sendingSyntheticKey = true;
+    QKeyEvent ev(pressed ? QEvent::KeyPress : QEvent::KeyRelease, qtKey,
+                 Qt::NoModifier);
+    QGuiApplication::sendEvent(win, &ev);
+    m_sendingSyntheticKey = false;
+  }
+}
+
 void ControllerManager::sendKeyToQuickWindow(int qtKey) {
   if (qtKey == 0)
     return;
@@ -281,6 +293,7 @@ void ControllerManager::resetNavigationState() {
   m_dpadUp = m_dpadDown = m_dpadLeft = m_dpadRight = false;
   m_stickDirX = m_stickDirY = 0;
   m_leftTriggerHeld = m_rightTriggerHeld = false;
+  m_confirmButtonHeld = false;
   m_repeatTimer.stop();
 }
 
@@ -318,7 +331,11 @@ void ControllerManager::handleButtonPress(int sdlButton) {
     updateNavigationDirection();
     break;
   case SDL_CONTROLLER_BUTTON_A:
-    sendKeyToQuickWindow(Qt::Key_Return);
+    emit uiKeySimulated(Qt::Key_Return);
+    if (!m_confirmButtonHeld) {
+      m_confirmButtonHeld = true;
+      sendKeyEventToQuickWindow(Qt::Key_Return, true);
+    }
     break;
   case SDL_CONTROLLER_BUTTON_B:
   case SDL_CONTROLLER_BUTTON_BACK:
@@ -366,6 +383,12 @@ void ControllerManager::handleButtonRelease(int sdlButton) {
   case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
     m_dpadRight = false;
     updateNavigationDirection();
+    break;
+  case SDL_CONTROLLER_BUTTON_A:
+    if (m_confirmButtonHeld) {
+      m_confirmButtonHeld = false;
+      sendKeyEventToQuickWindow(Qt::Key_Return, false);
+    }
     break;
   default:
     break;

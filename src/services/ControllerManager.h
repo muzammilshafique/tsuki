@@ -153,6 +153,7 @@ private:
     int m_stickDirY = 0;
     bool m_leftTriggerHeld = false;
     bool m_rightTriggerHeld = false;
+    bool m_confirmButtonHeld = false;
     bool m_sendingSyntheticKey = false;
     bool m_gameRunning = false;
 
@@ -161,6 +162,7 @@ private:
     void pollSdlEvents();
     void syncVirtualXboxPad();
     void sendKeyToQuickWindow(int qtKey);
+    void sendKeyEventToQuickWindow(int qtKey, bool pressed);
     void updateNavigationDirection();
     void resetNavigationState();
 };

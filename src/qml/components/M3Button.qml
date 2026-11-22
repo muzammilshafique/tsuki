@@ -33,9 +33,11 @@ Item {
     }
 
     Rectangle {
+        id: focusRing
+        objectName: "m3ButtonFocusRing"
         anchors.fill: btnBg
-        anchors.margins: -3
-        radius: (btnBg.height / 2) + 3
+        anchors.margins: -5
+        radius: (btnBg.height / 2) + 5
         color: Qt.rgba(0, 0, 0, 0)
         border.width: 2
         border.color: appSettings.accentColor
@@ -44,6 +46,7 @@ Item {
 
     Rectangle {
         id: btnBg
+        objectName: "m3ButtonBg"
         anchors.fill: parent
         radius: height / 2
 
@@ -76,7 +79,7 @@ Item {
         }
 
         border.width: 0
-        scale: isPressed ? 0.97 : (root.kbFocused ? 1.02 : 1.0)
+        scale: isPressed ? 0.97 : 1.0
 
         Behavior on color { ColorAnimation { duration: 150 } }
         Behavior on scale { NumberAnimation { duration: 120 } }

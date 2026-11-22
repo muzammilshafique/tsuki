@@ -7046,6 +7046,14 @@ private slots:
     SteamGridDbService sgdb(&settings, &dlMgr);
     ControllerManager ctrlMgr(&db, &settings);
     DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    // Pre-seed a dummy winetricks binary inside tmpDir so WinetricksManager
+    // does not enqueue a background GitHub download during offline/CI test runs.
+    QVERIFY(QDir().mkpath(AppSettings::toolsDir()));
+    {
+      QFile dummyWt(AppSettings::toolsDir() + QStringLiteral("/winetricks"));
+      QVERIFY(dummyWt.open(QIODevice::WriteOnly | QIODevice::Truncate));
+      dummyWt.write("#!/bin/sh\n");
+    }
     WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dlMgr);
     LaunchPipeline launchPipe(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
                               &diagMgr);
@@ -7243,7 +7251,8 @@ private slots:
       g.epicAutoSyncCloudSaves = true;
       g.categories = {QStringLiteral("RPG")};
       QVERIFY(db.saveGame(g));
-      gameMgr.reload();
+      gameMgr.model()->reload();
+      gameMgr.addGameToCollection(g.id, QStringLiteral("RPG"));
 
       // 5a. Uninstalled Epic game detail page closes on Escape AND Back
       QQmlComponent detailComp(
@@ -7671,6 +7680,122 @@ private slots:
       QCoreApplication::processEvents();
       QCOMPARE(win.activeFocusItem(), epicFilesToggle);
       QVERIFY(QMetaObject::invokeMethod(remObj.get(), "close"));
+    }
+
+    // 11. Focus rings on Toggle & M3Button have exact uniform 3px gap on all 4
+    // sides (no focus scale distortion)
+    {
+      QQmlComponent togComp(&engine, resolveQmlUrl(QStringLiteral(
+                                         "src/qml/components/Toggle.qml")));
+      QVERIFY2(togComp.isReady(), qPrintable(togComp.errorString()));
+      std::unique_ptr<QObject> togObj(togComp.createWithInitialProperties(
+          {{QStringLiteral("checked"), true}}));
+      QVERIFY(togObj != nullptr);
+      auto *togItem = qobject_cast<QQuickItem *>(togObj.get());
+      togItem->setParentItem(win.contentItem());
+      togItem->forceActiveFocus();
+      QCoreApplication::processEvents();
+      auto *togRing =
+          togItem->findChild<QQuickItem *>(QStringLiteral("toggleFocusRing"));
+      auto *togTrack =
+          togItem->findChild<QQuickItem *>(QStringLiteral("toggleTrack"));
+      QVERIFY(togRing != nullptr && togTrack != nullptr);
+      QCOMPARE(togRing->isVisible(), true);
+      QCOMPARE(togTrack->scale(), 1.0);
+      QCOMPARE(togRing->width() - togTrack->width(), 10.0);
+      QCOMPARE(togRing->height() - togTrack->height(), 10.0);
+
+      QQmlComponent btnComp(&engine, resolveQmlUrl(QStringLiteral(
+                                         "src/qml/components/M3Button.qml")));
+      QVERIFY2(btnComp.isReady(), qPrintable(btnComp.errorString()));
+      std::unique_ptr<QObject> btnObj(btnComp.createWithInitialProperties(
+          {{QStringLiteral("text"), QStringLiteral("Wide Action Button")},
+           {QStringLiteral("buttonType"), QStringLiteral("filled")}}));
+      QVERIFY(btnObj != nullptr);
+      auto *btnItem = qobject_cast<QQuickItem *>(btnObj.get());
+      btnItem->setParentItem(win.contentItem());
+      btnItem->forceActiveFocus();
+      QCoreApplication::processEvents();
+      auto *btnRing =
+          btnItem->findChild<QQuickItem *>(QStringLiteral("m3ButtonFocusRing"));
+      auto *btnBg =
+          btnItem->findChild<QQuickItem *>(QStringLiteral("m3ButtonBg"));
+      QVERIFY(btnRing != nullptr && btnBg != nullptr);
+      QCOMPARE(btnRing->isVisible(), true);
+      QCOMPARE(btnBg->scale(), 1.0);
+      QCOMPARE(btnRing->width() - btnBg->width(), 10.0);
+      QCOMPARE(btnRing->height() - btnBg->height(), 10.0);
+    }
+
+    // 12. EpicLibraryView grid: Hold Enter and Hold Gamepad A/Cross open options menu;
+    //     quick tap opens game details
+    {
+      EpicLibraryItem eItem;
+      eItem.appName = QStringLiteral("HoldMenuApp");
+      eItem.namespaceId = QStringLiteral("ns-hold");
+      eItem.catalogItemId = QStringLiteral("cat-hold");
+      eItem.title = QStringLiteral("Hold Menu Game");
+      QVERIFY(db.saveEpicLibraryItems({eItem}));
+      epicSvc.libraryModel()->reload();
+
+      QQmlComponent epicComp(&engine, resolveQmlUrl(QStringLiteral(
+                                          "src/qml/pages/EpicLibraryView.qml")));
+      QVERIFY2(epicComp.isReady(), qPrintable(epicComp.errorString()));
+      std::unique_ptr<QQuickItem> epicView(
+          qobject_cast<QQuickItem *>(epicComp.create()));
+      QVERIFY(epicView != nullptr);
+      epicView->setParentItem(win.contentItem());
+      epicView->setSize(QSizeF(1060, 820));
+      QCoreApplication::processEvents();
+
+      auto *epicGrid =
+          epicView->findChild<QQuickItem *>(QStringLiteral("epicGrid"));
+      QVERIFY(epicGrid != nullptr);
+      epicGrid->setProperty("currentIndex", 0);
+      epicGrid->forceActiveFocus();
+      QCoreApplication::processEvents();
+      auto *curCell = epicGrid->property("currentItem").value<QQuickItem *>();
+      QVERIFY(curCell != nullptr);
+      QCOMPARE(curCell->property("isMenuOpen").toBool(), false);
+
+      QSignalSpy detailsSpy(epicView.get(),
+                            SIGNAL(gameDetailsRequested(QString, QString)));
+
+      // 12a. Hold Enter for 520ms -> opens options menu; releasing Enter keeps menu open
+      QTest::keyPress(&win, Qt::Key_Return);
+      QTest::qWait(520);
+      QCOMPARE(curCell->property("isMenuOpen").toBool(), true);
+      QTest::keyRelease(&win, Qt::Key_Return);
+      QCoreApplication::processEvents();
+      QCOMPARE(curCell->property("isMenuOpen").toBool(), true);
+      QCOMPARE(detailsSpy.count(), 0);
+
+      // Escape closes options menu
+      QTest::keyClick(&win, Qt::Key_Escape);
+      QCoreApplication::processEvents();
+      QCOMPARE(curCell->property("isMenuOpen").toBool(), false);
+
+      // 12b. Hold Gamepad A / Cross -> opens options menu; releasing A keeps menu open
+      win.requestActivate();
+      QCoreApplication::processEvents();
+      ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_A);
+      QTest::qWait(520);
+      QCOMPARE(curCell->property("isMenuOpen").toBool(), true);
+      ctrlMgr.handleButtonRelease(SDL_CONTROLLER_BUTTON_A);
+      QCoreApplication::processEvents();
+      QCOMPARE(curCell->property("isMenuOpen").toBool(), true);
+      QCOMPARE(detailsSpy.count(), 0);
+
+      // Close menu, then quick tap Gamepad A / Cross -> opens game details
+      QTest::keyClick(&win, Qt::Key_Escape);
+      QCoreApplication::processEvents();
+      QCOMPARE(curCell->property("isMenuOpen").toBool(), false);
+      ctrlMgr.handleButtonPress(SDL_CONTROLLER_BUTTON_A);
+      QCoreApplication::processEvents();
+      ctrlMgr.handleButtonRelease(SDL_CONTROLLER_BUTTON_A);
+      QCoreApplication::processEvents();
+      QCOMPARE(curCell->property("isMenuOpen").toBool(), false);
+      QCOMPARE(detailsSpy.count(), 1);
     }
   }
 };

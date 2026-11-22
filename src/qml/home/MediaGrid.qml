@@ -280,12 +280,14 @@ Item {
         }
 
         Keys.onPressed: (event) => {
+            event.accepted = false
             if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
                 event.accepted = true
                 if (event.isAutoRepeat) return
                 let currItem = grid.currentItem
                 if (currItem && currItem.isMenuOpen) {
                     grid.isHoldingActionKey = false
+                    grid.holdTriggered = false
                     holdMenuTimer.stop()
                     return
                 }
@@ -322,13 +324,18 @@ Item {
         }
 
         Keys.onReleased: (event) => {
+            event.accepted = false
             if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
                 event.accepted = true
                 if (event.isAutoRepeat) return
                 holdMenuTimer.stop()
                 let currItem = grid.currentItem
                 if (currItem && currItem.isMenuOpen && !grid.isHoldingActionKey) {
-                    currItem.triggerMenuAction()
+                    if (grid.holdTriggered) {
+                        grid.holdTriggered = false
+                    } else {
+                        currItem.triggerMenuAction()
+                    }
                     return
                 }
                 if (grid.isHoldingActionKey) {

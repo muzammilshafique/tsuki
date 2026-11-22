@@ -22,9 +22,11 @@ Item {
     Keys.onSpacePressed: (event) => { event.accepted = true; toggleIt() }
 
     Rectangle {
+        id: focusRing
+        objectName: "toggleFocusRing"
         anchors.fill: track
-        anchors.margins: -3
-        radius: 19
+        anchors.margins: -5
+        radius: track.radius + 5
         color: "transparent"
         border.width: 2
         border.color: appSettings.accentColor
@@ -33,13 +35,14 @@ Item {
 
     Rectangle {
         id: track
+        objectName: "toggleTrack"
         anchors.fill: parent
         radius: 16
 
         color: toggle.checked ? appSettings.accentColor : appSettings.surfaceContainerHighest
         border.color: toggle.checked ? "transparent" : appSettings.textTerColor
         border.width: toggle.checked ? 0 : 1.5
-        scale: toggle.kbFocused ? 1.05 : 1.0
+        scale: toggleMa.pressed ? 0.96 : 1.0
 
         Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 150 } }

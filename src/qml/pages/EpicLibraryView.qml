@@ -953,6 +953,32 @@ Item {
                 focus: true
                 keyNavigationEnabled: false
 
+                property bool isHoldingActionKey: false
+                property bool holdTriggered: false
+
+                Timer {
+                    id: epicHoldMenuTimer
+                    interval: 450
+                    repeat: false
+                    onTriggered: {
+                        if (epicGrid.isHoldingActionKey) {
+                            epicGrid.holdTriggered = true
+                            let ci = epicGrid.currentItem
+                            if (ci && typeof ci.openMenu === "function") {
+                                ci.openMenu()
+                            }
+                        }
+                    }
+                }
+
+                onActiveFocusChanged: {
+                    if (!activeFocus) {
+                        epicHoldMenuTimer.stop()
+                        epicGrid.isHoldingActionKey = false
+                        epicGrid.holdTriggered = false
+                    }
+                }
+
                 Connections {
                     target: root.epicModel
                     function onModelReset() {
@@ -970,10 +996,17 @@ Item {
                     }
                 }
 
-                onCurrentIndexChanged: epicGrid.positionViewAtIndex(epicGrid.currentIndex, GridView.Contain)
+                onCurrentIndexChanged: {
+                    epicGrid.positionViewAtIndex(epicGrid.currentIndex, GridView.Contain)
+                    epicHoldMenuTimer.stop()
+                    epicGrid.isHoldingActionKey = false
+                    epicGrid.holdTriggered = false
+                }
 
                 Keys.onLeftPressed: (event) => {
                     event.accepted = true
+                    epicHoldMenuTimer.stop()
+                    epicGrid.isHoldingActionKey = false
                     let ci = epicGrid.currentItem
                     if (ci && ci.isMenuOpen) { ci.isMenuOpen = false; return }
                     if (epicGrid.count === 0 || (epicGrid.currentIndex % root.columns === 0)) {
@@ -984,12 +1017,16 @@ Item {
                 }
                 Keys.onRightPressed: (event) => {
                     event.accepted = true
+                    epicHoldMenuTimer.stop()
+                    epicGrid.isHoldingActionKey = false
                     let ci = epicGrid.currentItem
                     if (ci && ci.isMenuOpen) { ci.isMenuOpen = false; return }
                     if (epicGrid.currentIndex < epicGrid.count - 1) epicGrid.currentIndex++
                 }
                 Keys.onUpPressed: (event) => {
                     event.accepted = true
+                    epicHoldMenuTimer.stop()
+                    epicGrid.isHoldingActionKey = false
                     let ci = epicGrid.currentItem
                     if (ci && ci.isMenuOpen) { ci.navigateMenuUp(); return }
                     if (epicGrid.count === 0 || epicGrid.currentIndex < root.columns) {
@@ -1000,6 +1037,8 @@ Item {
                 }
                 Keys.onDownPressed: (event) => {
                     event.accepted = true
+                    epicHoldMenuTimer.stop()
+                    epicGrid.isHoldingActionKey = false
                     let ci = epicGrid.currentItem
                     if (ci && ci.isMenuOpen) { ci.navigateMenuDown(); return }
                     if (epicGrid.currentIndex + root.columns < epicGrid.count) {
@@ -1010,49 +1049,81 @@ Item {
                 }
                 Keys.onEscapePressed: (event) => {
                     event.accepted = true
+                    epicHoldMenuTimer.stop()
+                    epicGrid.isHoldingActionKey = false
                     let ci = epicGrid.currentItem
                     if (ci && ci.isMenuOpen) ci.isMenuOpen = false
                     else root.focusSidebarRequested()
                 }
                 Keys.onBackPressed: (event) => {
                     event.accepted = true
+                    epicHoldMenuTimer.stop()
+                    epicGrid.isHoldingActionKey = false
                     let ci = epicGrid.currentItem
                     if (ci && ci.isMenuOpen) ci.isMenuOpen = false
                     else root.focusSidebarRequested()
                 }
-                Keys.onReturnPressed: (event) => {
-                    event.accepted = true
-                    let ci = epicGrid.currentItem
-                    if (ci && ci.isMenuOpen) ci.triggerMenuAction()
-                    else epicGrid.openCurrent()
-                }
-                Keys.onEnterPressed: (event) => {
-                    event.accepted = true
-                    let ci = epicGrid.currentItem
-                    if (ci && ci.isMenuOpen) ci.triggerMenuAction()
-                    else epicGrid.openCurrent()
-                }
-                Keys.onSpacePressed: (event) => {
-                    event.accepted = true
-                    let ci = epicGrid.currentItem
-                    if (ci && ci.isMenuOpen) ci.triggerMenuAction()
-                    else epicGrid.openCurrent()
-                }
                 Keys.onMenuPressed: (event) => {
                     event.accepted = true
+                    epicHoldMenuTimer.stop()
+                    epicGrid.isHoldingActionKey = false
                     let ci = epicGrid.currentItem
                     if (ci) ci.toggleMenu()
                 }
                 Keys.onPressed: (event) => {
+                    event.accepted = false
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                        event.accepted = true
+                        if (event.isAutoRepeat) return
+                        let ci = epicGrid.currentItem
+                        if (ci && ci.isMenuOpen) {
+                            epicGrid.isHoldingActionKey = false
+                            epicGrid.holdTriggered = false
+                            epicHoldMenuTimer.stop()
+                            return
+                        }
+                        epicGrid.isHoldingActionKey = true
+                        epicGrid.holdTriggered = false
+                        epicHoldMenuTimer.restart()
+                        return
+                    }
                     if (event.key === Qt.Key_Backspace) {
                         event.accepted = true
+                        epicHoldMenuTimer.stop()
+                        epicGrid.isHoldingActionKey = false
                         let ci = epicGrid.currentItem
                         if (ci && ci.isMenuOpen) ci.isMenuOpen = false
                         else root.focusSidebarRequested()
                     } else if (event.key === Qt.Key_M && !event.isAutoRepeat) {
                         event.accepted = true
+                        epicHoldMenuTimer.stop()
+                        epicGrid.isHoldingActionKey = false
                         let ci = epicGrid.currentItem
                         if (ci) ci.toggleMenu()
+                    }
+                }
+                Keys.onReleased: (event) => {
+                    event.accepted = false
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                        event.accepted = true
+                        if (event.isAutoRepeat) return
+                        epicHoldMenuTimer.stop()
+                        let ci = epicGrid.currentItem
+                        if (ci && ci.isMenuOpen && !epicGrid.isHoldingActionKey) {
+                            if (epicGrid.holdTriggered) {
+                                epicGrid.holdTriggered = false
+                            } else {
+                                ci.triggerMenuAction()
+                            }
+                            return
+                        }
+                        if (epicGrid.isHoldingActionKey) {
+                            epicGrid.isHoldingActionKey = false
+                            if (!epicGrid.holdTriggered && (!ci || !ci.isMenuOpen)) {
+                                epicGrid.openCurrent()
+                            }
+                            epicGrid.holdTriggered = false
+                        }
                     }
                 }
 
@@ -1097,9 +1168,13 @@ Item {
                     }
 
                     onIsMenuOpenChanged: if (!isMenuOpen) menuFocusedIndex = 0
+                    function openMenu() {
+                        menuFocusedIndex = 0
+                        isMenuOpen = true
+                    }
                     function toggleMenu() {
                         if (isMenuOpen) isMenuOpen = false
-                        else { menuFocusedIndex = 0; isMenuOpen = true }
+                        else openMenu()
                     }
                     function navigateMenuUp() {
                         menuFocusedIndex = (menuFocusedIndex - 1 + menuActions.length) % menuActions.length

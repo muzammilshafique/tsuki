@@ -1202,11 +1202,11 @@ Page {
                                         // Focus outline ring
                                         Rectangle {
                                             anchors.fill: parent
-                                            anchors.margins: -3
-                                            topLeftRadius: 25
-                                            bottomLeftRadius: 25
-                                            topRightRadius: actionsDropdownBtn.visible ? 7 : 25
-                                            bottomRightRadius: actionsDropdownBtn.visible ? 7 : 25
+                                            anchors.margins: -5
+                                            topLeftRadius: 27
+                                            bottomLeftRadius: 27
+                                            topRightRadius: actionsDropdownBtn.visible ? 9 : 27
+                                            bottomRightRadius: actionsDropdownBtn.visible ? 9 : 27
                                             color: Qt.rgba(0, 0, 0, 0)
                                             border.color: primaryActionBtn.effectiveColor
                                             border.width: 2
@@ -1360,11 +1360,11 @@ Page {
                                         // Focus outline ring
                                         Rectangle {
                                             anchors.fill: parent
-                                            anchors.margins: -3
-                                            topLeftRadius: actionsBg.topLeftRadius + 3
-                                            bottomLeftRadius: actionsBg.bottomLeftRadius + 3
-                                            topRightRadius: 25
-                                            bottomRightRadius: 25
+                                            anchors.margins: -5
+                                            topLeftRadius: actionsBg.topLeftRadius + 5
+                                            bottomLeftRadius: actionsBg.bottomLeftRadius + 5
+                                            topRightRadius: 27
+                                            bottomRightRadius: 27
                                             color: "transparent"
                                             border.color: primaryActionBtn.effectiveColor
                                             border.width: 2
@@ -2588,10 +2588,8 @@ Page {
                                             width: colChipRow.implicitWidth + 20
                                             radius: 16
                                             color: isAssigned ? appSettings.secondaryContainer : appSettings.surfaceContainerHigh
-                                            border.color: (kbFocused || isAssigned) ? appSettings.accentColor : appSettings.borderColor
-                                            border.width: kbFocused ? 2 : 1
-                                            scale: kbFocused ? 1.04 : 1.0
-                                            Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                            border.color: isAssigned ? appSettings.accentColor : appSettings.borderColor
+                                            border.width: 1
 
                                             function toggleCollection() {
                                                 if (!uiController || !uiController.gameManager) return
@@ -2605,8 +2603,8 @@ Page {
 
                                             Rectangle {
                                                 anchors.fill: parent
-                                                anchors.margins: -3
-                                                radius: 19
+                                                anchors.margins: -5
+                                                radius: 21
                                                 color: "transparent"
                                                 border.width: 2
                                                 border.color: appSettings.accentColor
