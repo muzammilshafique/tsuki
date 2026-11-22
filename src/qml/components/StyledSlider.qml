@@ -5,6 +5,8 @@ Item {
     id: root
     implicitWidth: 240
     implicitHeight: 44
+    focus: true
+    activeFocusOnTab: false
 
     property alias from: slider.from
     property alias to: slider.to
@@ -15,8 +17,25 @@ Item {
     property int decimals: 0
     property bool showStops: false
     property alias slider: slider
+    property bool isAdjusting: false
+    readonly property bool isParentTileFocused: {
+        let p = root.parent
+        while (p) {
+            if (p.isTvFocused !== undefined) return Boolean(p.isTvFocused)
+            p = p.parent
+        }
+        return false
+    }
+    readonly property bool hasLogicalFocus: root.activeFocus || slider.activeFocus || isParentTileFocused
+    readonly property bool kbFocused: Boolean(uiController && uiController.isKeyboardNavActive) && hasLogicalFocus
     signal moveUp()
     signal moveDown()
+
+    onHasLogicalFocusChanged: {
+        if (!hasLogicalFocus && isAdjusting) {
+            isAdjusting = false
+        }
+    }
 
     function normalizeValue(v) {
         if (root.decimals <= 0) return v
@@ -40,6 +59,87 @@ Item {
         }
     }
 
+    function enterAdjustMode() {
+        root.isAdjusting = true
+    }
+
+    function exitAdjustMode() {
+        root.isAdjusting = false
+    }
+
+    function activate() {
+        root.isAdjusting = !root.isAdjusting
+    }
+
+    function handleLeft() {
+        if (!root.isAdjusting) return false
+        root.adjustLeft()
+        return true
+    }
+
+    function handleRight() {
+        if (!root.isAdjusting) return false
+        root.adjustRight()
+        return true
+    }
+
+    Keys.onLeftPressed: (event) => {
+        if (root.isAdjusting) {
+            event.accepted = true
+            root.adjustLeft()
+        } else {
+            event.accepted = false
+        }
+    }
+    Keys.onRightPressed: (event) => {
+        if (root.isAdjusting) {
+            event.accepted = true
+            root.adjustRight()
+        } else {
+            event.accepted = false
+        }
+    }
+    Keys.onReturnPressed: (event) => {
+        event.accepted = true
+        root.activate()
+    }
+    Keys.onEnterPressed: (event) => {
+        event.accepted = true
+        root.activate()
+    }
+    Keys.onSpacePressed: (event) => {
+        event.accepted = true
+        root.activate()
+    }
+    Keys.onEscapePressed: (event) => {
+        if (root.isAdjusting) {
+            event.accepted = true
+            root.exitAdjustMode()
+        } else {
+            event.accepted = false
+        }
+    }
+    Keys.onBackPressed: (event) => {
+        if (root.isAdjusting) {
+            event.accepted = true
+            root.exitAdjustMode()
+        } else {
+            event.accepted = false
+        }
+    }
+    Keys.onUpPressed: (event) => {
+        root.isAdjusting = false
+        event.accepted = true
+        if (typeof settingsPage !== "undefined" && settingsPage.focusPrevSettingRow) settingsPage.focusPrevSettingRow()
+        else root.moveUp()
+    }
+    Keys.onDownPressed: (event) => {
+        root.isAdjusting = false
+        event.accepted = true
+        if (typeof settingsPage !== "undefined" && settingsPage.focusNextSettingRow) settingsPage.focusNextSettingRow()
+        else root.moveDown()
+    }
+
     Row {
         anchors.fill: parent
         spacing: 14
@@ -48,28 +148,10 @@ Item {
             id: slider
             width: parent.width - valueBadge.width - 14
             anchors.verticalCenter: parent.verticalCenter
-            focus: true
+            focus: false
+            focusPolicy: Qt.NoFocus
             activeFocusOnTab: false
-            readonly property bool kbFocused: slider.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
-
-            Keys.onLeftPressed: (event) => {
-                event.accepted = true
-                root.adjustLeft()
-            }
-            Keys.onRightPressed: (event) => {
-                event.accepted = true
-                root.adjustRight()
-            }
-            Keys.onUpPressed: (event) => {
-                event.accepted = true
-                if (typeof settingsPage !== "undefined") settingsPage.focusPrevSettingRow()
-                else root.moveUp()
-            }
-            Keys.onDownPressed: (event) => {
-                event.accepted = true
-                if (typeof settingsPage !== "undefined") settingsPage.focusNextSettingRow()
-                else root.moveDown()
-            }
+            readonly property bool kbFocused: root.kbFocused
 
             // Material 3 Medium Slider Track (16dp height, pill outer ends, 2dp inner handle corners, 6dp gap + end stop dot)
             background: Item {
@@ -134,7 +216,7 @@ Item {
                 id: sliderHandle
                 x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
                 y: slider.topPadding + slider.availableHeight / 2 - height / 2
-                implicitWidth: slider.pressed ? 3 : ((slider.kbFocused || sliderHover.hovered) ? 5 : 4)
+                implicitWidth: slider.pressed ? 3 : (root.isAdjusting ? 6 : ((slider.kbFocused || sliderHover.hovered) ? 5 : 4))
                 implicitHeight: 44
                 radius: implicitWidth / 2
                 color: appSettings.accentColor
@@ -149,22 +231,25 @@ Item {
             }
         }
 
-        // Material 3 Value Badge (Tonal Pill container with DemiBold readout)
+        // Material 3 Value Badge (Tonal Pill container with DemiBold readout + active adjust indicator)
         Rectangle {
             id: valueBadge
             width: Math.max(56, valLabel.implicitWidth + 20)
             height: 30
             radius: 15
             anchors.verticalCenter: parent.verticalCenter
-            color: appSettings.surfaceContainerHigh
+            color: root.isAdjusting ? appSettings.accentColor : appSettings.surfaceContainerHigh
+            border.color: appSettings.accentColor
+            border.width: (!root.isAdjusting && root.kbFocused) ? 1.5 : 0
 
             Behavior on color { ColorAnimation { duration: 150 } }
 
             Label {
                 id: valLabel
                 anchors.centerIn: parent
-                text: (root.decimals > 0 ? Number(slider.value).toFixed(root.decimals) : Math.round(slider.value)) + root.suffix
-                color: appSettings.textColor
+                readonly property string formattedValue: (root.decimals > 0 ? Number(slider.value).toFixed(root.decimals) : Math.round(slider.value)) + root.suffix
+                text: root.isAdjusting ? ("◀ " + formattedValue + " ▶") : formattedValue
+                color: root.isAdjusting ? appSettings.onPrimary : appSettings.textColor
                 font.family: "Rubik"
                 font.pixelSize: 12
                 font.weight: Font.DemiBold

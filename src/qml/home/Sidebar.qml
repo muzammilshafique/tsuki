@@ -42,6 +42,22 @@ Rectangle {
     readonly property bool isKeyboardNavActive: uiController.isKeyboardNavActive
     readonly property int pendingDownloadsCount: (uiController && uiController.downloadManager) ? uiController.downloadManager.totalPendingCount : 0
 
+    function syncFocusedIndexToActive() {
+        for (let i = 0; i < navModel.length; ++i) {
+            const item = navModel[i]
+            if (!item || item.name === "divider") continue
+            const active = (item.action === "filter" && sidebar.currentSection === "library" && sidebar.currentFilter === item.val)
+                        || (item.action === "section" && sidebar.currentSection === item.section)
+            if (active) {
+                sidebar.focusedNavIndex = i
+                return
+            }
+        }
+    }
+
+    onCurrentSectionChanged: syncFocusedIndexToActive()
+    onCurrentFilterChanged: syncFocusedIndexToActive()
+
     function activateFocusedItem(event) {
         if (event) event.accepted = true
         uiController.setKeyboardNavActive(true)
@@ -53,11 +69,9 @@ Rectangle {
             let item = navModel[focusedNavIndex]
             if (!item) return
             if (item.action === "filter") {
-                sidebar.currentSection = "library"
                 sidebar.filterRequested(item.val)
                 sidebar.sectionRequested("library")
             } else if (item.action === "section") {
-                sidebar.currentSection = item.section
                 sidebar.sectionRequested(item.section)
             }
         }
@@ -221,11 +235,9 @@ Rectangle {
                         uiController.setKeyboardNavActive(false)
                         sidebar.focusedNavIndex = navDelegateItem.index
                         if (modelData.action === "filter") {
-                            sidebar.currentSection = "library"
                             sidebar.filterRequested(modelData.val)
                             sidebar.sectionRequested("library")
                         } else if (modelData.action === "section") {
-                            sidebar.currentSection = modelData.section
                             sidebar.sectionRequested(modelData.section)
                         }
                     }

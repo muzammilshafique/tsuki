@@ -174,6 +174,18 @@ Popup {
         } else {
             rows.push([dlPrefixCombo])
         }
+        if (typeof dlInstallTagsRepeater !== "undefined" && dlInstallTagsRepeater) {
+            for (let ti = 0; ti < dlInstallTagsRepeater.count; ++ti) {
+                const tagItem = dlInstallTagsRepeater.itemAt(ti)
+                if (tagItem && tagItem.visible) rows.push([tagItem])
+            }
+        }
+        if (typeof dlAvailableDlcsRepeater !== "undefined" && dlAvailableDlcsRepeater) {
+            for (let di = 0; di < dlAvailableDlcsRepeater.count; ++di) {
+                const dlcItem = dlAvailableDlcsRepeater.itemAt(di)
+                if (dlcItem && dlcItem.visible) rows.push([dlcItem])
+            }
+        }
         rows.push([cancelDlBtn, startDlBtn])
         return rows
     }
@@ -239,6 +251,7 @@ Popup {
     }
 
     function handleDialogKeyPress(event) {
+        event.accepted = false
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
             handleDialogCancelKey(event)
             return
@@ -806,14 +819,24 @@ Popup {
                             }
 
                             Repeater {
+                                id: dlInstallTagsRepeater
                                 model: root.availableInstallTags || []
                                 delegate: Rectangle {
+                                    id: dlTagRow
                                     required property var modelData
                                     readonly property bool isChecked: root.selectedInstallTags.indexOf(modelData.tag) !== -1
+                                    readonly property bool kbFocused: dlTagRow.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+                                    focus: true
+                                    activeFocusOnTab: false
                                     Layout.fillWidth: true
                                     height: 34
                                     radius: 8
                                     color: isChecked ? appSettings.secondaryContainer : appSettings.surfaceContainer
+                                    border.color: kbFocused ? appSettings.accentColor : "transparent"
+                                    border.width: kbFocused ? 2 : 0
+                                    Keys.onReturnPressed: (event) => { event.accepted = true; root.toggleInstallTag(String(modelData.tag || "")) }
+                                    Keys.onEnterPressed: (event) => { event.accepted = true; root.toggleInstallTag(String(modelData.tag || "")) }
+                                    Keys.onSpacePressed: (event) => { event.accepted = true; root.toggleInstallTag(String(modelData.tag || "")) }
                                     RowLayout {
                                         anchors.fill: parent
                                         anchors.leftMargin: 12
@@ -848,15 +871,25 @@ Popup {
                             }
 
                             Repeater {
+                                id: dlAvailableDlcsRepeater
                                 model: root.availableDlcs || []
                                 delegate: Rectangle {
+                                    id: dlDlcRow
                                     required property var modelData
                                     readonly property string dlcId: String(modelData.appName || modelData.dlcAppName || "")
                                     readonly property bool isChecked: dlcId.length > 0 && root.selectedDlcAppNames.indexOf(dlcId) !== -1
+                                    readonly property bool kbFocused: dlDlcRow.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+                                    focus: true
+                                    activeFocusOnTab: false
                                     Layout.fillWidth: true
                                     height: 34
                                     radius: 8
                                     color: isChecked ? appSettings.secondaryContainer : appSettings.surfaceContainer
+                                    border.color: kbFocused ? appSettings.accentColor : "transparent"
+                                    border.width: kbFocused ? 2 : 0
+                                    Keys.onReturnPressed: (event) => { event.accepted = true; if (dlcId.length > 0) root.toggleDlc(dlcId) }
+                                    Keys.onEnterPressed: (event) => { event.accepted = true; if (dlcId.length > 0) root.toggleDlc(dlcId) }
+                                    Keys.onSpacePressed: (event) => { event.accepted = true; if (dlcId.length > 0) root.toggleDlc(dlcId) }
                                     RowLayout {
                                         anchors.fill: parent
                                         anchors.leftMargin: 12

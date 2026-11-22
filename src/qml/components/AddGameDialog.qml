@@ -197,6 +197,7 @@ Popup {
     }
 
     function handleDialogKeyPress(event) {
+        event.accepted = false
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
             handleDialogCancelKey(event)
             return

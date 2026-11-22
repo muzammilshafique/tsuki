@@ -62,6 +62,12 @@ Item {
         }
     }
 
+    function activateSearch() {
+        if (!isSignedIn) return
+        epicSearchField.forceActiveFocus()
+        epicSearchField.selectAll()
+    }
+
     function maybeSyncInitialLibrary() {
         if (visible && isSignedIn && epicModel && epicModel.count === 0 && !isSyncing) {
             epicSvc.syncLibrary()
@@ -88,6 +94,7 @@ Item {
         Keys.onEscapePressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
         Keys.onBackPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
         Keys.onPressed: (event) => {
+            event.accepted = false
             if (event.key === Qt.Key_Backspace && !tokenField.isEditing) {
                 event.accepted = true
                 root.focusSidebarRequested()
@@ -204,6 +211,30 @@ Item {
                     }
                     onMoveUp: openBrowserBtn.forceActiveFocus()
                     onMoveDown: signInBtn.forceActiveFocus()
+                    Keys.onLeftPressed: (event) => {
+                        if (!tokenField.isEditing) {
+                            event.accepted = true
+                            root.focusSidebarRequested()
+                        } else {
+                            event.accepted = false
+                        }
+                    }
+                    Keys.onUpPressed: (event) => {
+                        if (!tokenField.isEditing) {
+                            event.accepted = true
+                            openBrowserBtn.forceActiveFocus()
+                        } else {
+                            event.accepted = false
+                        }
+                    }
+                    Keys.onDownPressed: (event) => {
+                        if (!tokenField.isEditing) {
+                            event.accepted = true
+                            if (signInBtn.enabled) signInBtn.forceActiveFocus()
+                        } else {
+                            event.accepted = false
+                        }
+                    }
                 }
 
                 Rectangle {
@@ -310,17 +341,21 @@ Item {
                         if (!searchTile.isEditing) {
                             event.accepted = true
                             root.focusSidebarRequested()
+                        } else {
+                            event.accepted = false
                         }
                     }
                     Keys.onRightPressed: (event) => {
                         if (!searchTile.isEditing) {
                             event.accepted = true
                             sortBtn.forceActiveFocus()
+                        } else {
+                            event.accepted = false
                         }
                     }
                     Keys.onDownPressed: (event) => {
                         event.accepted = true
-                        epicGrid.forceActiveFocus()
+                        if (epicGrid.count > 0) epicGrid.forceActiveFocus()
                     }
                     Keys.onReturnPressed: (event) => {
                         event.accepted = true
@@ -329,6 +364,16 @@ Item {
                     Keys.onEnterPressed: (event) => {
                         event.accepted = true
                         epicSearchField.forceActiveFocus()
+                    }
+                    Keys.onEscapePressed: (event) => {
+                        event.accepted = true
+                        if (epicGrid.count > 0) epicGrid.forceActiveFocus()
+                        else root.focusSidebarRequested()
+                    }
+                    Keys.onBackPressed: (event) => {
+                        event.accepted = true
+                        if (epicGrid.count > 0) epicGrid.forceActiveFocus()
+                        else root.focusSidebarRequested()
                     }
 
                     YIcon {
@@ -545,7 +590,14 @@ Item {
                     Keys.onEscapePressed: (event) => {
                         event.accepted = true
                         if (sortPopup.visible) sortPopup.close()
-                        else epicGrid.forceActiveFocus()
+                        else if (epicGrid.count > 0) epicGrid.forceActiveFocus()
+                        else root.focusSidebarRequested()
+                    }
+                    Keys.onBackPressed: (event) => {
+                        event.accepted = true
+                        if (sortPopup.visible) sortPopup.close()
+                        else if (epicGrid.count > 0) epicGrid.forceActiveFocus()
+                        else root.focusSidebarRequested()
                     }
 
                     Popup {
@@ -815,9 +867,12 @@ Item {
                     }
                     Keys.onLeftPressed: (event) => { event.accepted = true; sortBtn.forceActiveFocus() }
                     Keys.onRightPressed: (event) => { event.accepted = true; signOutBtn.forceActiveFocus() }
-                    Keys.onDownPressed: (event) => { event.accepted = true; epicGrid.forceActiveFocus() }
+                    Keys.onDownPressed: (event) => { event.accepted = true; if (epicGrid.count > 0) epicGrid.forceActiveFocus() }
                     Keys.onReturnPressed: (event) => { event.accepted = true; if (root.epicSvc) { root.epicSvc.syncLibrary(); root.epicSvc.checkForUpdates() } }
+                    Keys.onEnterPressed: (event) => { event.accepted = true; if (root.epicSvc) { root.epicSvc.syncLibrary(); root.epicSvc.checkForUpdates() } }
                     Keys.onSpacePressed: (event) => { event.accepted = true; if (root.epicSvc) { root.epicSvc.syncLibrary(); root.epicSvc.checkForUpdates() } }
+                    Keys.onEscapePressed: (event) => { event.accepted = true; if (epicGrid.count > 0) epicGrid.forceActiveFocus(); else root.focusSidebarRequested() }
+                    Keys.onBackPressed: (event) => { event.accepted = true; if (epicGrid.count > 0) epicGrid.forceActiveFocus(); else root.focusSidebarRequested() }
                 }
 
                 // M3 Account Pill + Sign Out (Properly padded — zero right-border overlap)
@@ -867,7 +922,9 @@ Item {
                             implicitHeight: 28
                             onClicked: epicSignOutDialog.openConfirm()
                             Keys.onLeftPressed: (event) => { event.accepted = true; syncBtn.forceActiveFocus() }
-                            Keys.onDownPressed: (event) => { event.accepted = true; epicGrid.forceActiveFocus() }
+                            Keys.onDownPressed: (event) => { event.accepted = true; if (epicGrid.count > 0) epicGrid.forceActiveFocus() }
+                            Keys.onEscapePressed: (event) => { event.accepted = true; if (epicGrid.count > 0) epicGrid.forceActiveFocus(); else root.focusSidebarRequested() }
+                            Keys.onBackPressed: (event) => { event.accepted = true; if (epicGrid.count > 0) epicGrid.forceActiveFocus(); else root.focusSidebarRequested() }
                         }
                     }
                 }

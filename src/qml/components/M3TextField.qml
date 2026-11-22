@@ -44,18 +44,24 @@ Item {
         if (root.twoStageFocus && !inputField.activeFocus) {
             event.accepted = true
             root.activate()
+        } else {
+            event.accepted = false
         }
     }
     Keys.onEnterPressed: (event) => {
         if (root.twoStageFocus && !inputField.activeFocus) {
             event.accepted = true
             root.activate()
+        } else {
+            event.accepted = false
         }
     }
     Keys.onSpacePressed: (event) => {
         if (root.twoStageFocus && !inputField.activeFocus) {
             event.accepted = true
             root.activate()
+        } else {
+            event.accepted = false
         }
     }
 
@@ -130,6 +136,10 @@ Item {
                     returnFocusToRow()
                 }
                 Keys.onEscapePressed: (event) => {
+                    event.accepted = true
+                    returnFocusToRow()
+                }
+                Keys.onBackPressed: (event) => {
                     event.accepted = true
                     returnFocusToRow()
                 }

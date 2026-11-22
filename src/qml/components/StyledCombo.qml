@@ -14,7 +14,15 @@ Item {
 
     property alias popup: popup
     property int focusedPopupIndex: selectedIndex
-    readonly property bool kbFocused: combo.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+    readonly property bool isParentTileFocused: {
+        let p = combo.parent
+        while (p) {
+            if (p.isTvFocused !== undefined) return Boolean(p.isTvFocused)
+            p = p.parent
+        }
+        return false
+    }
+    readonly property bool kbFocused: Boolean(uiController && uiController.isKeyboardNavActive) && (combo.activeFocus || isParentTileFocused)
 
     function scrollFocusedIntoView() {
         if (!flick || flick.height <= 0) return
@@ -59,22 +67,9 @@ Item {
         popup.close()
     }
 
-    function adjustLeft() {
-        if (selectedIndex > 0) {
-            selectedIndex--
-            selected(selectedIndex)
-        }
-    }
-
-    function adjustRight() {
-        if (comboModel && selectedIndex < comboModel.length - 1) {
-            selectedIndex++
-            selected(selectedIndex)
-        }
-    }
-
     function activate() {
-        togglePopup()
+        if (popup.visible) handleSelect()
+        else togglePopup()
     }
 
     implicitWidth: Math.max(160, labelMeasure.implicitWidth + 48)
@@ -92,44 +87,47 @@ Item {
 
     Keys.onReturnPressed: (event) => {
         event.accepted = true
-        if (popup.visible) handleSelect()
-        else togglePopup()
+        activate()
     }
     Keys.onEnterPressed: (event) => {
         event.accepted = true
-        if (popup.visible) handleSelect()
-        else togglePopup()
+        activate()
     }
     Keys.onSpacePressed: (event) => {
         event.accepted = true
-        if (popup.visible) handleSelect()
-        else togglePopup()
+        activate()
     }
     Keys.onUpPressed: (event) => {
         if (popup.visible) {
             event.accepted = true
             handleUp()
-        } else if (combo.upDownNavigatesFocus) {
+        } else {
             event.accepted = false
-        } else if (combo.selectedIndex > 0) {
-            event.accepted = true
-            combo.selectedIndex--
-            combo.selected(combo.selectedIndex)
         }
     }
     Keys.onDownPressed: (event) => {
         if (popup.visible) {
             event.accepted = true
             handleDown()
-        } else if (combo.upDownNavigatesFocus) {
+        } else {
             event.accepted = false
-        } else if (combo.comboModel && combo.selectedIndex < combo.comboModel.length - 1) {
-            event.accepted = true
-            combo.selectedIndex++
-            combo.selected(combo.selectedIndex)
         }
     }
+    Keys.onLeftPressed: (event) => {
+        event.accepted = popup.visible
+    }
+    Keys.onRightPressed: (event) => {
+        event.accepted = popup.visible
+    }
     Keys.onEscapePressed: (event) => {
+        if (popup.visible) {
+            event.accepted = true
+            popup.close()
+        } else {
+            event.accepted = false
+        }
+    }
+    Keys.onBackPressed: (event) => {
         if (popup.visible) {
             event.accepted = true
             popup.close()
@@ -141,7 +139,7 @@ Item {
         if (event.key === Qt.Key_Backspace && popup.visible) {
             event.accepted = true
             popup.close()
-        } else if (!popup.visible) {
+        } else {
             event.accepted = false
         }
     }

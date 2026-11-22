@@ -134,10 +134,17 @@ Page {
             return list
         }
 
-        function adjustLeft() { palettePills.adjustLeft() }
-        function adjustRight() { palettePills.adjustRight() }
+        function moveFocusLeft() { return palettePills.moveFocusLeft() }
+        function moveFocusRight() { return palettePills.moveFocusRight() }
+        function adjustLeft() { return moveFocusLeft() }
+        function adjustRight() { return moveFocusRight() }
         function activate() {
-            if (cps.showCustomInput || cps.isCustomSelected) {
+            const list = cps.pillModel || []
+            const idx = Math.max(0, Math.min(list.length - 1, palettePills.focusedIndex))
+            const focusedVal = list[idx] ? list[idx].val : ""
+            if (focusedVal === "__custom__") {
+                palettePills.activate()
+                cps.showCustomInput = true
                 customHexFocusTimer.restart()
             } else {
                 palettePills.activate()
@@ -272,7 +279,20 @@ Page {
             settingsPage.backRequested()
         }
     }
+    Keys.onBackPressed: (event) => {
+        if (gamescopeSettingsDialog.visible) {
+            event.accepted = true
+            gamescopeSettingsDialog.close()
+        } else if (tagColorsModal.visible) {
+            event.accepted = true
+            tagColorsModal.close()
+        } else {
+            event.accepted = true
+            settingsPage.backRequested()
+        }
+    }
     Keys.onPressed: (event) => {
+        event.accepted = false
         if (settingsPage.isAnyModalOpen() || settingsPage.isTextInputActive()) return
         if (event.key === Qt.Key_Backspace) {
             event.accepted = true
@@ -301,6 +321,18 @@ Page {
             if (settingsPage.StackView.status === StackView.Active && !settingsPage.isAnyModalOpen()) {
                 uiController.setKeyboardNavActive(true)
                 searchField.forceActiveFocus()
+            }
+        }
+        function onTabLeftRequested() {
+            if (settingsPage.StackView.status === StackView.Active && !settingsPage.isAnyModalOpen()) {
+                uiController.setKeyboardNavActive(true)
+                settingsPage.cycleTab(-1)
+            }
+        }
+        function onTabRightRequested() {
+            if (settingsPage.StackView.status === StackView.Active && !settingsPage.isAnyModalOpen()) {
+                uiController.setKeyboardNavActive(true)
+                settingsPage.cycleTab(1)
             }
         }
     }
@@ -421,7 +453,8 @@ Page {
             settingsPage.pendingJumpTarget = null
             if (!targetItem) return
             scrollToSettingRow(targetItem, true)
-            targetItem.forceActiveFocus()
+            if (typeof targetItem.forwardFocus === "function") targetItem.forwardFocus(false)
+            else targetItem.forceActiveFocus()
             if (typeof targetItem.highlight === "function") {
                 targetItem.highlight()
             }
@@ -452,6 +485,42 @@ Page {
         }
     }
 
+    function collectVisualTileRows(node, outGrid) {
+        if (!node || !node.visible || !node.children) return
+        const ch = node.children
+        let directTiles = []
+        let hasNonTileChildren = false
+        for (let i = 0; i < ch.length; ++i) {
+            const child = ch[i]
+            if (!child || !child.visible) continue
+            if (child.label !== undefined && child.controlItem !== undefined) {
+                directTiles.push(child)
+            } else {
+                hasNonTileChildren = true
+            }
+        }
+        if (directTiles.length > 0 && !hasNonTileChildren && node.columns !== undefined && node.columns > 1) {
+            const cols = Math.max(1, Number(node.columns))
+            for (let i = 0; i < directTiles.length; i += cols) {
+                let row = []
+                for (let c = 0; c < cols && (i + c) < directTiles.length; ++c) {
+                    row.push(directTiles[i + c])
+                }
+                if (row.length > 0) outGrid.push(row)
+            }
+            return
+        }
+        for (let i = 0; i < ch.length; ++i) {
+            const child = ch[i]
+            if (!child || !child.visible) continue
+            if (child.label !== undefined && child.controlItem !== undefined) {
+                outGrid.push([child])
+            } else {
+                collectVisualTileRows(child, outGrid)
+            }
+        }
+    }
+
     function getVisibleRows() {
         let rows = [searchTile]
         const activePage = tabStack.children[settingsPage.activeTab]
@@ -459,6 +528,15 @@ Page {
             collectVisibleTilesIn(activePage, rows)
         }
         return rows
+    }
+
+    function getVisibleRowGrid() {
+        let grid = [[searchTile]]
+        const activePage = tabStack.children[settingsPage.activeTab]
+        if (activePage) {
+            collectVisualTileRows(activePage, grid)
+        }
+        return grid
     }
 
     function isDescendant(item, ancestor) {
@@ -479,6 +557,35 @@ Page {
             }
         }
         return -1
+    }
+
+    function findActiveGridCoords(grid) {
+        const fi = settingsPage.Window.activeFocusItem
+        if (!fi) return { r: -1, c: 0 }
+        for (let r = 0; r < grid.length; ++r) {
+            for (let c = 0; c < grid[r].length; ++c) {
+                const it = grid[r][c]
+                if (it && (it.activeFocus || isDescendant(fi, it))) {
+                    return { r: r, c: c }
+                }
+            }
+        }
+        return { r: -1, c: 0 }
+    }
+
+    function focusTile(target, fromRight) {
+        if (!target) return
+        if (typeof target.forwardFocus === "function") target.forwardFocus(Boolean(fromRight))
+        else target.forceActiveFocus()
+        if (target === searchTile) {
+            let flick = settingsScroll.contentItem
+            if (flick && flick.contentY !== undefined && flick.contentY > 0) {
+                rowScrollAnim.to = 0
+                rowScrollAnim.restart()
+            }
+        } else {
+            scrollToSettingRow(target, false)
+        }
     }
 
     function scrollToSettingRow(targetItem, centerView) {
@@ -508,10 +615,9 @@ Page {
     }
 
     function focusFirstControlInActiveTab() {
-        let rows = getVisibleRows()
-        if (rows.length > 1) {
-            rows[1].forceActiveFocus()
-            scrollToSettingRow(rows[1], false)
+        let grid = getVisibleRowGrid()
+        if (grid.length > 1 && grid[1].length > 0) {
+            focusTile(grid[1][0], false)
         } else {
             navRail.forceActiveFocus()
         }
@@ -521,36 +627,45 @@ Page {
         navRail.forceActiveFocus()
     }
 
+    function focusLeftSettingTile() {
+        let grid = getVisibleRowGrid()
+        let pos = findActiveGridCoords(grid)
+        if (pos.r > 0 && pos.c > 0) {
+            focusTile(grid[pos.r][pos.c - 1], true)
+            return
+        }
+        focusRailFromContent()
+    }
+
+    function focusRightSettingTile() {
+        let grid = getVisibleRowGrid()
+        let pos = findActiveGridCoords(grid)
+        if (pos.r > 0 && pos.c >= 0 && pos.c < grid[pos.r].length - 1) {
+            focusTile(grid[pos.r][pos.c + 1], false)
+        }
+    }
+
     function focusNextSettingRow() {
-        let rows = getVisibleRows()
-        if (rows.length === 0) return
-        let idx = findActiveRowIndex(rows)
-        let nextIdx = (idx < 0) ? Math.min(1, rows.length - 1) : Math.min(rows.length - 1, idx + 1)
-        let target = rows[nextIdx]
-        target.forceActiveFocus()
-        scrollToSettingRow(target, false)
+        let grid = getVisibleRowGrid()
+        if (grid.length === 0) return
+        let pos = findActiveGridCoords(grid)
+        let nextR = (pos.r < 0) ? Math.min(1, grid.length - 1) : Math.min(grid.length - 1, pos.r + 1)
+        let nextRow = grid[nextR]
+        let target = nextRow[Math.min(Math.max(0, pos.c), nextRow.length - 1)]
+        focusTile(target, false)
     }
 
     function focusPrevSettingRow() {
-        let rows = getVisibleRows()
-        if (rows.length === 0) return
-        let idx = findActiveRowIndex(rows)
-        if (idx <= 0) {
+        let grid = getVisibleRowGrid()
+        if (grid.length === 0) return
+        let pos = findActiveGridCoords(grid)
+        if (pos.r <= 0) {
             backBtn.forceActiveFocus()
             return
         }
-        let prevIdx = idx - 1
-        let target = rows[prevIdx]
-        target.forceActiveFocus()
-        if (target === searchTile) {
-            let flick = settingsScroll.contentItem
-            if (flick && flick.contentY !== undefined && flick.contentY > 0) {
-                rowScrollAnim.to = 0
-                rowScrollAnim.restart()
-            }
-        } else {
-            scrollToSettingRow(target, false)
-        }
+        let prevRow = grid[pos.r - 1]
+        let target = prevRow[Math.min(Math.max(0, pos.c), prevRow.length - 1)]
+        focusTile(target, false)
     }
 
     Timer {
@@ -2013,6 +2128,7 @@ Page {
                                             controlItem: RowLayout {
                                                 spacing: 8
                                                 M3TextField {
+                                                    twoStageFocus: true
                                                     Layout.fillWidth: true
                                                     text: appSettings.defaultPrefixLocation
                                                     onCommit: (val) => appSettings.defaultPrefixLocation = val
@@ -2026,16 +2142,6 @@ Page {
                                                         if (!uiController) return
                                                         let p = uiController.selectFolder("Select Default Prefix Location", appSettings.defaultPrefixLocation)
                                                         if (p && p.length > 0) appSettings.defaultPrefixLocation = p
-                                                    }
-                                                    Keys.onLeftPressed: (event) => { event.accepted = true; prefixDirRow.forceActiveFocus() }
-                                                    Keys.onUpPressed: (event) => { event.accepted = true; settingsPage.focusPrevSettingRow() }
-                                                    Keys.onDownPressed: (event) => { event.accepted = true; settingsPage.focusNextSettingRow() }
-                                                    Keys.onEscapePressed: (event) => { event.accepted = true; settingsPage.backRequested() }
-                                                    Keys.onPressed: (event) => {
-                                                        if (event.key === Qt.Key_Backspace) {
-                                                            event.accepted = true
-                                                            settingsPage.backRequested()
-                                                        }
                                                     }
                                                 }
                                             }
@@ -2052,6 +2158,7 @@ Page {
                                             controlItem: RowLayout {
                                                 spacing: 8
                                                 M3TextField {
+                                                    twoStageFocus: true
                                                     Layout.fillWidth: true
                                                     text: appSettings.defaultRunnerLocation
                                                     onCommit: (val) => appSettings.defaultRunnerLocation = val
@@ -2065,16 +2172,6 @@ Page {
                                                         if (!uiController) return
                                                         let p = uiController.selectFolder("Select Runner Download Location", appSettings.defaultRunnerLocation)
                                                         if (p && p.length > 0) appSettings.defaultRunnerLocation = p
-                                                    }
-                                                    Keys.onLeftPressed: (event) => { event.accepted = true; runnerDirRow.forceActiveFocus() }
-                                                    Keys.onUpPressed: (event) => { event.accepted = true; settingsPage.focusPrevSettingRow() }
-                                                    Keys.onDownPressed: (event) => { event.accepted = true; settingsPage.focusNextSettingRow() }
-                                                    Keys.onEscapePressed: (event) => { event.accepted = true; settingsPage.backRequested() }
-                                                    Keys.onPressed: (event) => {
-                                                        if (event.key === Qt.Key_Backspace) {
-                                                            event.accepted = true
-                                                            settingsPage.backRequested()
-                                                        }
                                                     }
                                                 }
                                             }
@@ -2091,6 +2188,7 @@ Page {
                                             controlItem: RowLayout {
                                                 spacing: 8
                                                 M3TextField {
+                                                    twoStageFocus: true
                                                     Layout.fillWidth: true
                                                     text: appSettings.defaultEpicInstallLocation
                                                     onCommit: (val) => appSettings.defaultEpicInstallLocation = val
@@ -2104,16 +2202,6 @@ Page {
                                                         if (!uiController) return
                                                         let p = uiController.selectFolder("Select Default Epic Games Folder", appSettings.defaultEpicInstallLocation)
                                                         if (p && p.length > 0) appSettings.defaultEpicInstallLocation = p
-                                                    }
-                                                    Keys.onLeftPressed: (event) => { event.accepted = true; epicDirRow.forceActiveFocus() }
-                                                    Keys.onUpPressed: (event) => { event.accepted = true; settingsPage.focusPrevSettingRow() }
-                                                    Keys.onDownPressed: (event) => { event.accepted = true; settingsPage.focusNextSettingRow() }
-                                                    Keys.onEscapePressed: (event) => { event.accepted = true; settingsPage.backRequested() }
-                                                    Keys.onPressed: (event) => {
-                                                        if (event.key === Qt.Key_Backspace) {
-                                                            event.accepted = true
-                                                            settingsPage.backRequested()
-                                                        }
                                                     }
                                                 }
                                             }

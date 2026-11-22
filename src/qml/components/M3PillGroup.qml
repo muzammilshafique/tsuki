@@ -8,7 +8,17 @@ Item {
     property bool wrap: false
     property real pillHeight: 36
     property int fontSize: 13
-    readonly property bool kbFocused: root.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+    property int focusedIndex: 0
+    readonly property bool isParentTileFocused: {
+        let p = root.parent
+        while (p) {
+            if (p.isTvFocused !== undefined) return Boolean(p.isTvFocused)
+            p = p.parent
+        }
+        return false
+    }
+    readonly property bool hasLogicalFocus: root.activeFocus || isParentTileFocused
+    readonly property bool kbFocused: Boolean(uiController && uiController.isKeyboardNavActive) && hasLogicalFocus
 
     signal selectionChanged(var val, int index)
 
@@ -47,29 +57,64 @@ Item {
         return -1
     }
 
+    function syncFocusedToSelected() {
+        if (!model || model.length === 0) {
+            focusedIndex = 0
+            return
+        }
+        focusedIndex = selectedIndex >= 0 ? selectedIndex : 0
+    }
+
+    onSelectedIndexChanged: syncFocusedToSelected()
+    onHasLogicalFocusChanged: {
+        if (hasLogicalFocus) syncFocusedToSelected()
+    }
+    Component.onCompleted: syncFocusedToSelected()
+
     function selectAt(idx) {
         if (!model || idx < 0 || idx >= model.length) return
+        focusedIndex = idx
         const val = itemValue(model[idx], idx)
         root.selectedValue = val
         root.selectionChanged(val, idx)
     }
 
+    function moveFocusLeft() {
+        if (!model || model.length === 0) return false
+        const cur = Math.max(0, Math.min(model.length - 1, focusedIndex))
+        if (cur > 0) {
+            focusedIndex = cur - 1
+            return true
+        }
+        return false
+    }
+
+    function moveFocusRight() {
+        if (!model || model.length === 0) return false
+        const cur = Math.max(0, Math.min(model.length - 1, focusedIndex))
+        if (cur < model.length - 1) {
+            focusedIndex = cur + 1
+            return true
+        }
+        return false
+    }
+
     function adjustLeft() {
-        if (!model || model.length === 0) return
-        const cur = selectedIndex < 0 ? 0 : selectedIndex
-        if (cur > 0) selectAt(cur - 1)
+        return moveFocusLeft()
     }
 
     function adjustRight() {
+        return moveFocusRight()
+    }
+
+    function commitFocused() {
         if (!model || model.length === 0) return
-        const cur = selectedIndex < 0 ? -1 : selectedIndex
-        if (cur < model.length - 1) selectAt(cur + 1)
+        const idx = Math.max(0, Math.min(model.length - 1, focusedIndex))
+        selectAt(idx)
     }
 
     function activate() {
-        if (!model || model.length === 0) return
-        const cur = selectedIndex < 0 ? -1 : selectedIndex
-        selectAt((cur + 1) % model.length)
+        commitFocused()
     }
 
     implicitWidth: wrap ? (parent ? parent.width : 320) : (layoutLoader.item ? layoutLoader.item.implicitWidth : 0)
@@ -78,20 +123,10 @@ Item {
     activeFocusOnTab: false
 
     Keys.onLeftPressed: (event) => {
-        if (!model || model.length === 0) return
-        const cur = selectedIndex < 0 ? 0 : selectedIndex
-        if (cur > 0) {
-            event.accepted = true
-            adjustLeft()
-        }
+        event.accepted = moveFocusLeft()
     }
     Keys.onRightPressed: (event) => {
-        if (!model || model.length === 0) return
-        const cur = selectedIndex < 0 ? -1 : selectedIndex
-        if (cur < model.length - 1) {
-            event.accepted = true
-            adjustRight()
-        }
+        event.accepted = moveFocusRight()
     }
     Keys.onSpacePressed: (event) => { event.accepted = true; activate() }
     Keys.onReturnPressed: (event) => { event.accepted = true; activate() }
@@ -107,6 +142,7 @@ Item {
 
             readonly property int count: root.model ? root.model.length : 0
             readonly property bool isSelected: root.selectedIndex === index
+            readonly property bool isPillFocused: root.kbFocused && root.focusedIndex === index
             readonly property bool isObj: typeof modelData === "object" && modelData !== null
             readonly property bool hasDot: isObj && modelData.dotColor !== undefined
             readonly property string dotHex: hasDot ? String(modelData.dotColor) : ""
@@ -146,10 +182,12 @@ Item {
                 bottomRightRadius: pill.animRightR
                 color: pill.isSelected
                     ? appSettings.onPrimary
-                    : (appSettings.isEffectiveDark ? "#ffffff" : "#000000")
+                    : (pill.isPillFocused ? appSettings.accentColor : (appSettings.isEffectiveDark ? "#ffffff" : "#000000"))
                 opacity: pillTap.pressed
                     ? 0.14
-                    : (pillHover.hovered ? (pill.isSelected ? 0.10 : 0.08) : 0.0)
+                    : (pill.isPillFocused && !pill.isSelected
+                        ? 0.16
+                        : (pillHover.hovered ? (pill.isSelected ? 0.10 : 0.08) : 0.0))
                 Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
             }
 
@@ -161,9 +199,9 @@ Item {
                 topRightRadius: pill.animRightR
                 bottomRightRadius: pill.animRightR
                 color: "transparent"
-                border.color: appSettings.onPrimary
+                border.color: pill.isSelected ? appSettings.onPrimary : appSettings.accentColor
                 border.width: 2
-                opacity: (root.kbFocused && pill.isSelected) ? 1.0 : 0.0
+                opacity: pill.isPillFocused ? 1.0 : 0.0
                 Behavior on opacity { NumberAnimation { duration: 110 } }
             }
 

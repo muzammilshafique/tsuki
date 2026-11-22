@@ -251,6 +251,14 @@ Popup {
                     Toggle {
                         id: deletePrefixToggle
                         checked: false
+                        Keys.onUpPressed: (event) => {
+                            if (root.isEpicGame) {
+                                event.accepted = true
+                                deleteEpicFilesToggle.forceActiveFocus()
+                            } else {
+                                event.accepted = false
+                            }
+                        }
                         Keys.onDownPressed: (event) => { event.accepted = true; cancelBtn.forceActiveFocus() }
                     }
                 }
@@ -284,7 +292,11 @@ Popup {
                     buttonType: "tonal"
                     onClicked: root.close()
                     Keys.onRightPressed: (event) => { event.accepted = true; removeBtn.forceActiveFocus() }
-                    Keys.onUpPressed: (event) => { if (root.hasDedicatedPrefix) { event.accepted = true; deletePrefixToggle.forceActiveFocus() } }
+                    Keys.onUpPressed: (event) => {
+                        if (root.hasDedicatedPrefix) { event.accepted = true; deletePrefixToggle.forceActiveFocus() }
+                        else if (root.isEpicGame) { event.accepted = true; deleteEpicFilesToggle.forceActiveFocus() }
+                        else { event.accepted = false }
+                    }
                 }
 
                 M3Button {
@@ -302,7 +314,11 @@ Popup {
                         root.gameRemoved(gId)
                     }
                     Keys.onLeftPressed: (event) => { event.accepted = true; cancelBtn.forceActiveFocus() }
-                    Keys.onUpPressed: (event) => { if (root.hasDedicatedPrefix) { event.accepted = true; deletePrefixToggle.forceActiveFocus() } }
+                    Keys.onUpPressed: (event) => {
+                        if (root.hasDedicatedPrefix) { event.accepted = true; deletePrefixToggle.forceActiveFocus() }
+                        else if (root.isEpicGame) { event.accepted = true; deleteEpicFilesToggle.forceActiveFocus() }
+                        else { event.accepted = false }
+                    }
                 }
             }
         }

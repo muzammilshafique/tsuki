@@ -5,7 +5,17 @@ import QtQuick.Layouts
 Item {
     id: root
     property int selectedMode: 0 // 0: Dark, 1: Light, 2: System, 3: AMOLED
-    readonly property bool kbFocused: root.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+    property int focusedIndex: 0
+    readonly property bool isParentTileFocused: {
+        let p = root.parent
+        while (p) {
+            if (p.isTvFocused !== undefined) return Boolean(p.isTvFocused)
+            p = p.parent
+        }
+        return false
+    }
+    readonly property bool hasLogicalFocus: root.activeFocus || isParentTileFocused
+    readonly property bool kbFocused: Boolean(uiController && uiController.isKeyboardNavActive) && hasLogicalFocus
 
     signal modeSelected(int mode)
 
@@ -16,28 +26,51 @@ Item {
         { val: 3, label: "AMOLED", kind: "amoled" }
     ]
 
-    function adjustLeft() {
+    function syncFocusedToSelected() {
         const order = [0, 1, 2, 3]
         const idx = order.indexOf(selectedMode)
-        if (idx > 0) {
-            selectedMode = order[idx - 1]
-            modeSelected(selectedMode)
+        focusedIndex = idx >= 0 ? idx : 0
+    }
+
+    onSelectedModeChanged: syncFocusedToSelected()
+    onHasLogicalFocusChanged: {
+        if (hasLogicalFocus) syncFocusedToSelected()
+    }
+    Component.onCompleted: syncFocusedToSelected()
+
+    function moveFocusLeft() {
+        if (focusedIndex > 0) {
+            focusedIndex--
+            return true
         }
+        return false
+    }
+
+    function moveFocusRight() {
+        if (focusedIndex < modesModel.length - 1) {
+            focusedIndex++
+            return true
+        }
+        return false
+    }
+
+    function adjustLeft() {
+        return moveFocusLeft()
     }
 
     function adjustRight() {
-        const order = [0, 1, 2, 3]
-        const idx = order.indexOf(selectedMode)
-        if (idx >= 0 && idx < order.length - 1) {
-            selectedMode = order[idx + 1]
-            modeSelected(selectedMode)
-        }
+        return moveFocusRight()
+    }
+
+    function commitFocused() {
+        const idx = Math.max(0, Math.min(modesModel.length - 1, focusedIndex))
+        const chosen = modesModel[idx].val
+        selectedMode = chosen
+        modeSelected(chosen)
     }
 
     function activate() {
-        const next = (selectedMode + 1) % 4
-        selectedMode = next
-        modeSelected(next)
+        commitFocused()
     }
 
     implicitWidth: grid.implicitWidth
@@ -46,16 +79,10 @@ Item {
     activeFocusOnTab: false
 
     Keys.onLeftPressed: (event) => {
-        if (selectedMode > 0) {
-            event.accepted = true
-            adjustLeft()
-        }
+        event.accepted = moveFocusLeft()
     }
     Keys.onRightPressed: (event) => {
-        if (selectedMode < 3) {
-            event.accepted = true
-            adjustRight()
-        }
+        event.accepted = moveFocusRight()
     }
     Keys.onReturnPressed: (event) => { event.accepted = true; activate() }
     Keys.onEnterPressed: (event) => { event.accepted = true; activate() }
@@ -77,6 +104,7 @@ Item {
                 required property int index
 
                 readonly property bool isSelected: root.selectedMode === modelData.val
+                readonly property bool isCardFocused: root.kbFocused && root.focusedIndex === index
                 readonly property bool isHovered: cardHover.hovered
                 readonly property color previewBg: {
                     if (modelData.kind === "light") return "#f8fafc"
@@ -99,14 +127,14 @@ Item {
                 radius: 16
                 color: isSelected
                     ? appSettings.secondaryContainer
-                    : (isHovered ? appSettings.surfaceContainerHigh : appSettings.surfaceContainer)
-                border.color: isSelected
+                    : ((isHovered || isCardFocused) ? appSettings.surfaceContainerHigh : appSettings.surfaceContainer)
+                border.color: (isCardFocused || isSelected)
                     ? appSettings.accentColor
                     : (isHovered
                         ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.14))
                         : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.08)))
-                border.width: isSelected ? (root.kbFocused ? 3 : 2.2) : 1
-                scale: cardTap.pressed ? 0.96 : 1.0
+                border.width: isCardFocused ? 3 : (isSelected ? 2.2 : 1)
+                scale: cardTap.pressed ? 0.96 : (isCardFocused ? 1.02 : 1.0)
 
                 Behavior on color { ColorAnimation { duration: 160 } }
                 Behavior on border.color { ColorAnimation { duration: 160 } }
@@ -364,6 +392,8 @@ Item {
                 TapHandler {
                     id: cardTap
                     onTapped: {
+                        if (uiController) uiController.setKeyboardNavActive(false)
+                        root.focusedIndex = card.index
                         root.selectedMode = card.modelData.val
                         root.modeSelected(card.modelData.val)
                     }

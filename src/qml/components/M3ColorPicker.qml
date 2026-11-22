@@ -57,50 +57,65 @@ Item {
         return false
     }
 
+    readonly property bool hasLogicalFocus: root.activeFocus || isParentRowFocused
     readonly property bool isNavActive: Boolean(uiController && uiController.isKeyboardNavActive)
-                                        && (root.activeFocus || isParentRowFocused)
+                                        && hasLogicalFocus
+
+    onHasLogicalFocusChanged: {
+        if (hasLogicalFocus) {
+            focusedIndex = activeIndex
+        }
+    }
+
+    function moveFocusLeft() {
+        if (totalCount <= 0) return false
+        if (focusedIndex < 0 || focusedIndex >= totalCount) focusedIndex = activeIndex
+        if (focusedIndex > 0) {
+            focusedIndex--
+            return true
+        }
+        return false
+    }
+
+    function moveFocusRight() {
+        if (totalCount <= 0) return false
+        if (focusedIndex < 0 || focusedIndex >= totalCount) focusedIndex = activeIndex
+        if (focusedIndex < totalCount - 1) {
+            focusedIndex++
+            return true
+        }
+        return false
+    }
 
     function adjustLeft() {
-        if (totalCount <= 0) return
-        if (focusedIndex < 0 || focusedIndex >= totalCount) focusedIndex = activeIndex
-        focusedIndex = (focusedIndex - 1 + totalCount) % totalCount
-        commitFocused()
+        return moveFocusLeft()
     }
 
     function adjustRight() {
-        if (totalCount <= 0) return
-        if (focusedIndex < 0 || focusedIndex >= totalCount) focusedIndex = activeIndex
-        focusedIndex = (focusedIndex + 1) % totalCount
-        commitFocused()
+        return moveFocusRight()
     }
 
     function commitFocused() {
-        if (focusedIndex < presets.length) {
+        if (focusedIndex >= 0 && focusedIndex < presets.length) {
             showCustomInput = false
             let chosen = presets[focusedIndex].color
             root.colorSelected(chosen)
-        } else {
+        } else if (allowCustom) {
             showCustomInput = true
+            hexField.forceActiveFocus()
+            hexField.selectAll()
         }
     }
 
     function activate() {
-        if (focusedIndex === presets.length || isCustomSelected || showCustomInput) {
-            showCustomInput = true
-            hexField.forceActiveFocus()
-            hexField.selectAll()
-        } else {
-            adjustRight()
-        }
+        commitFocused()
     }
 
     Keys.onLeftPressed: (event) => {
-        event.accepted = true
-        adjustLeft()
+        event.accepted = moveFocusLeft()
     }
     Keys.onRightPressed: (event) => {
-        event.accepted = true
-        adjustRight()
+        event.accepted = moveFocusRight()
     }
     Keys.onReturnPressed: (event) => {
         event.accepted = true

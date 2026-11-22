@@ -6,8 +6,20 @@ Item {
     id: root
     property var model: []
     property int selectedValue: 0
-    readonly property bool kbFocused: root.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+    property int focusedIndex: 0
+    readonly property bool isParentTileFocused: {
+        let p = root.parent
+        while (p) {
+            if (p.isTvFocused !== undefined) return Boolean(p.isTvFocused)
+            p = p.parent
+        }
+        return false
+    }
+    readonly property bool hasLogicalFocus: root.activeFocus || isParentTileFocused
+    readonly property bool kbFocused: Boolean(uiController && uiController.isKeyboardNavActive) && hasLogicalFocus
     signal selectionChanged(var val, int index)
+    signal edgeLeft()
+    signal edgeRight()
 
     implicitWidth: Math.max(270, (model && model.length) ? model.length * 90 : 270)
     implicitHeight: 40
@@ -25,6 +37,14 @@ Item {
         return 0
     }
 
+    onSelectedIndexChanged: focusedIndex = selectedIndex
+    onHasLogicalFocusChanged: {
+        if (hasLogicalFocus) {
+            focusedIndex = selectedIndex
+        }
+    }
+    Component.onCompleted: focusedIndex = selectedIndex
+
     function getItemVal(item, idx) {
         if (typeof item === "object" && item !== null) {
             return item.val !== undefined ? item.val : (item.value !== undefined ? item.value : idx)
@@ -32,44 +52,59 @@ Item {
         return item
     }
 
-    function adjustLeft() {
-        if (selectedIndex > 0) {
-            let next = model[selectedIndex - 1]
-            let val = getItemVal(next, selectedIndex - 1)
-            root.selectedValue = val
-            root.selectionChanged(val, selectedIndex - 1)
+    function moveFocusLeft() {
+        if (!model || model.length === 0) return false
+        if (focusedIndex > 0) {
+            focusedIndex--
+            return true
         }
+        return false
+    }
+
+    function moveFocusRight() {
+        if (!model || model.length === 0) return false
+        if (focusedIndex < model.length - 1) {
+            focusedIndex++
+            return true
+        }
+        return false
+    }
+
+    function adjustLeft() {
+        return moveFocusLeft()
     }
 
     function adjustRight() {
-        if (model && selectedIndex < model.length - 1) {
-            let next = model[selectedIndex + 1]
-            let val = getItemVal(next, selectedIndex + 1)
-            root.selectedValue = val
-            root.selectionChanged(val, selectedIndex + 1)
-        }
+        return moveFocusRight()
+    }
+
+    function commitFocused() {
+        if (!model || model.length === 0) return
+        const idx = Math.max(0, Math.min(model.length - 1, focusedIndex))
+        const next = model[idx]
+        const val = getItemVal(next, idx)
+        root.selectedValue = val
+        root.selectionChanged(val, idx)
     }
 
     function activate() {
-        if (model && model.length > 0) {
-            let nextIdx = (selectedIndex + 1) % model.length
-            let next = model[nextIdx]
-            let val = getItemVal(next, nextIdx)
-            root.selectedValue = val
-            root.selectionChanged(val, nextIdx)
-        }
+        commitFocused()
     }
 
     Keys.onLeftPressed: (event) => {
-        if (selectedIndex > 0) {
+        if (moveFocusLeft()) {
             event.accepted = true
-            adjustLeft()
+        } else {
+            event.accepted = false
+            root.edgeLeft()
         }
     }
     Keys.onRightPressed: (event) => {
-        if (model && selectedIndex < model.length - 1) {
+        if (moveFocusRight()) {
             event.accepted = true
-            adjustRight()
+        } else {
+            event.accepted = false
+            root.edgeRight()
         }
     }
     Keys.onSpacePressed: (event) => {
@@ -135,6 +170,7 @@ Item {
                     required property var modelData
                     required property int index
                     readonly property bool isSelected: root.selectedIndex === index
+                    readonly property bool isSegmentFocused: root.kbFocused && root.focusedIndex === index
 
                     width: container.segmentWidth
                     height: parent.height
@@ -144,8 +180,22 @@ Item {
                     Rectangle {
                         anchors.fill: parent
                         radius: 16
-                        color: appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
-                        opacity: (!isSelected && segHover.hovered) ? 1.0 : 0.0
+                        color: isSegmentFocused && !isSelected
+                            ? Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.18)
+                            : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                        opacity: (!isSelected && (segHover.hovered || isSegmentFocused)) ? 1.0 : 0.0
+                        Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                    }
+
+                    // Per-segment keyboard/gamepad focus outline before pressing Enter
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: isSelected ? 1 : 0
+                        radius: isSelected ? 15 : 16
+                        color: "transparent"
+                        border.color: isSelected ? appSettings.onPrimary : appSettings.accentColor
+                        border.width: 2
+                        opacity: isSegmentFocused ? 1.0 : 0.0
                         Behavior on opacity { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
                     }
 
@@ -159,7 +209,7 @@ Item {
                             visible: (typeof modelData === "object" && modelData && Boolean(modelData.iconSource))
                             color: isSelected
                                 ? appSettings.onPrimary
-                                : (segHover.hovered ? appSettings.textColor : appSettings.textSecColor)
+                                : ((segHover.hovered || isSegmentFocused) ? appSettings.textColor : appSettings.textSecColor)
                             anchors.verticalCenter: parent.verticalCenter
                             Behavior on color { ColorAnimation { duration: 150 } }
                         }
@@ -169,10 +219,10 @@ Item {
                                 ? (modelData.label !== undefined ? modelData.label : (modelData.name !== undefined ? modelData.name : (modelData.text !== undefined ? modelData.text : "")))
                                 : String(modelData)
                             font.pixelSize: 13
-                            font.weight: isSelected ? Font.DemiBold : Font.Normal
+                            font.weight: (isSelected || isSegmentFocused) ? Font.DemiBold : Font.Normal
                             color: isSelected
                                 ? appSettings.onPrimary
-                                : (segHover.hovered ? appSettings.textColor : appSettings.textSecColor)
+                                : ((segHover.hovered || isSegmentFocused) ? appSettings.textColor : appSettings.textSecColor)
                             anchors.verticalCenter: parent.verticalCenter
                             renderType: Text.QtRendering
                             Behavior on color { ColorAnimation { duration: 150 } }
@@ -186,6 +236,8 @@ Item {
 
                     TapHandler {
                         onTapped: {
+                            if (uiController) uiController.setKeyboardNavActive(false)
+                            root.focusedIndex = index
                             let val = root.getItemVal(modelData, index)
                             root.selectedValue = val
                             root.selectionChanged(val, index)

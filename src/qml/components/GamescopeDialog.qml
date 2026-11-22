@@ -411,7 +411,18 @@ Popup {
     }
 
     function handleDialogKeyPress(event) {
+        event.accepted = false
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
+            if (sharpnessSlider.isAdjusting) {
+                sharpnessSlider.exitAdjustMode()
+                event.accepted = true
+                return
+            }
+            if (mouseSensSlider.isAdjusting) {
+                mouseSensSlider.exitAdjustMode()
+                event.accepted = true
+                return
+            }
             if (root.closeOpenComboPopup()) {
                 event.accepted = true
                 return

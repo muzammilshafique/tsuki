@@ -2495,12 +2495,17 @@ private slots:
 
     QTRY_COMPARE(win.activeFocusItem(), presetBtn);
 
-    // Navigate Down onto M3SegmentedButton (Window Mode) & switch to Borderless
-    // via Right arrow
+    // Navigate Down onto M3SegmentedButton (Window Mode): Right moves focus
+    // highlight without changing mode until Enter is pressed
     QTest::keyClick(&win, Qt::Key_Down);
     QCoreApplication::processEvents();
     QCOMPARE(win.activeFocusItem(), windowSeg);
     QTest::keyClick(&win, Qt::Key_Right);
+    QCoreApplication::processEvents();
+    QCOMPARE(windowSeg->property("focusedIndex").toInt(), 1);
+    QCOMPARE(gsDialog->property("windowMode").toString(),
+             QStringLiteral("fullscreen"));
+    QTest::keyClick(&win, Qt::Key_Return);
     QCoreApplication::processEvents();
     QCOMPARE(gsDialog->property("windowMode").toString(),
              QStringLiteral("borderless"));
@@ -2554,11 +2559,19 @@ private slots:
         Q_ARG(QVariant, QVariant(QStringLiteral("fsr720")))));
     QCoreApplication::processEvents();
     verifyRightAlignedInCol(sharpSlider, "gamescopeSharpnessSlider");
-    QObject *innerSlider = sharpSlider->property("slider").value<QObject *>();
-    QVERIFY(innerSlider != nullptr);
-    qobject_cast<QQuickItem *>(innerSlider)->forceActiveFocus();
+    sharpSlider->forceActiveFocus();
     QCoreApplication::processEvents();
     QCOMPARE(gsDialog->property("fsrSharpness").toInt(), 3);
+    // Browse mode: Right must NOT change slider value until Enter activates
+    // adjust mode
+    QTest::keyClick(&win, Qt::Key_Right);
+    QCoreApplication::processEvents();
+    QCOMPARE(sharpSlider->property("isAdjusting").toBool(), false);
+    QCOMPARE(gsDialog->property("fsrSharpness").toInt(), 3);
+    // Press Return to enter adjust mode, then Right/Left adjust value
+    QTest::keyClick(&win, Qt::Key_Return);
+    QCoreApplication::processEvents();
+    QCOMPARE(sharpSlider->property("isAdjusting").toBool(), true);
     QTest::keyClick(&win, Qt::Key_Right);
     QCoreApplication::processEvents();
     QCOMPARE(gsDialog->property("fsrSharpness").toInt(), 4);
@@ -2567,7 +2580,8 @@ private slots:
     QCOMPARE(gsDialog->property("fsrSharpness").toInt(), 3);
     QTest::keyClick(&win, Qt::Key_Down);
     QCoreApplication::processEvents();
-    QVERIFY(win.activeFocusItem() != innerSlider);
+    QCOMPARE(sharpSlider->property("isAdjusting").toBool(), false);
+    QVERIFY(win.activeFocusItem() != sharpSlider);
 
     saveBtn->forceActiveFocus();
     QCoreApplication::processEvents();
@@ -3007,13 +3021,21 @@ private slots:
       }
       QVERIFY(rectCount >= 3);
     };
+    // Left/Right move focusedIndex without changing selection; activate()
+    // (Enter) commits
     QVERIFY(QMetaObject::invokeMethod(pillObj.get(), "adjustRight"));
+    QCOMPARE(pillObj->property("focusedIndex").toInt(), 1);
+    QCOMPARE(pillObj->property("selectedIndex").toInt(), 0);
+    QVERIFY(QMetaObject::invokeMethod(pillObj.get(), "activate"));
     QTest::qWait(
         40); // Mid-transition: top and bottom corners must animate in lockstep
     verifyPillCornerSymmetry(pillItem);
     QCOMPARE(pillObj->property("selectedIndex").toInt(), 1);
     QCOMPARE(pillObj->property("selectedValue").toInt(), 1);
     QVERIFY(QMetaObject::invokeMethod(pillObj.get(), "adjustLeft"));
+    QCOMPARE(pillObj->property("focusedIndex").toInt(), 0);
+    QCOMPARE(pillObj->property("selectedIndex").toInt(), 1);
+    QVERIFY(QMetaObject::invokeMethod(pillObj.get(), "activate"));
     QTest::qWait(40);
     verifyPillCornerSymmetry(pillItem);
     QTest::qWait(200);
@@ -3033,13 +3055,14 @@ private slots:
     wrapPillItem->setParentItem(win.contentItem());
     QCoreApplication::processEvents();
     QVERIFY(QMetaObject::invokeMethod(wrapPillObj.get(), "adjustRight"));
+    QVERIFY(QMetaObject::invokeMethod(wrapPillObj.get(), "activate"));
     QTest::qWait(40);
     verifyPillCornerSymmetry(wrapPillItem);
     QTest::qWait(200);
     verifyPillCornerSymmetry(wrapPillItem);
     wrapPillObj.reset();
 
-    // 2. ThemePreviewCards component behavior
+    // 2. ThemePreviewCards component behavior (Enter-to-select)
     QQmlComponent cardsComp(&engine,
                             resolveQmlUrl(QStringLiteral(
                                 "src/qml/components/ThemePreviewCards.qml")));
@@ -3053,8 +3076,16 @@ private slots:
     QCoreApplication::processEvents();
     QVERIFY(QMetaObject::invokeMethod(cardsObj.get(), "adjustRight"));
     QCoreApplication::processEvents();
+    QCOMPARE(cardsObj->property("focusedIndex").toInt(), 1);
+    QCOMPARE(cardsObj->property("selectedMode").toInt(), 0);
+    QVERIFY(QMetaObject::invokeMethod(cardsObj.get(), "activate"));
+    QCoreApplication::processEvents();
     QCOMPARE(cardsObj->property("selectedMode").toInt(), 1);
     QVERIFY(QMetaObject::invokeMethod(cardsObj.get(), "adjustLeft"));
+    QCoreApplication::processEvents();
+    QCOMPARE(cardsObj->property("focusedIndex").toInt(), 0);
+    QCOMPARE(cardsObj->property("selectedMode").toInt(), 1);
+    QVERIFY(QMetaObject::invokeMethod(cardsObj.get(), "activate"));
     QCoreApplication::processEvents();
     QCOMPARE(cardsObj->property("selectedMode").toInt(), 0);
     cardsObj.reset();
@@ -6693,21 +6724,29 @@ private slots:
     const QString fakeHome = tmpDir.filePath(QStringLiteral("home"));
     QVERIFY(QDir().mkpath(fakeHome));
     qputenv("HOME", fakeHome.toUtf8());
-    qputenv("XDG_DATA_HOME", (fakeHome + QStringLiteral("/.local/share")).toUtf8());
+    qputenv("XDG_DATA_HOME",
+            (fakeHome + QStringLiteral("/.local/share")).toUtf8());
     qputenv("XDG_CACHE_HOME", (fakeHome + QStringLiteral("/.cache")).toUtf8());
-    qputenv("XDG_CONFIG_HOME", (fakeHome + QStringLiteral("/.config")).toUtf8());
+    qputenv("XDG_CONFIG_HOME",
+            (fakeHome + QStringLiteral("/.config")).toUtf8());
     QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
                        fakeHome + QStringLiteral("/.config"));
     auto restoreEnv = qScopeGuard([&]() {
       QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
                          origGenericConfig);
       qputenv("HOME", oldHome);
-      if (hadXdgData) qputenv("XDG_DATA_HOME", oldXdgData);
-      else qunsetenv("XDG_DATA_HOME");
-      if (hadXdgCache) qputenv("XDG_CACHE_HOME", oldXdgCache);
-      else qunsetenv("XDG_CACHE_HOME");
-      if (hadXdgConfig) qputenv("XDG_CONFIG_HOME", oldXdgConfig);
-      else qunsetenv("XDG_CONFIG_HOME");
+      if (hadXdgData)
+        qputenv("XDG_DATA_HOME", oldXdgData);
+      else
+        qunsetenv("XDG_DATA_HOME");
+      if (hadXdgCache)
+        qputenv("XDG_CACHE_HOME", oldXdgCache);
+      else
+        qunsetenv("XDG_CACHE_HOME");
+      if (hadXdgConfig)
+        qputenv("XDG_CONFIG_HOME", oldXdgConfig);
+      else
+        qunsetenv("XDG_CONFIG_HOME");
     });
 
     AppSettings settings;
@@ -6730,7 +6769,8 @@ private slots:
     ControllerManager ctrlMgr(&db, &settings);
     DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
     WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dl);
-    LaunchPipeline lp(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr, &diagMgr);
+    LaunchPipeline lp(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                      &diagMgr);
     GameManager gm(&db, &settings, &runnerMgr, &prefixMgr, &sgdb, &lp);
     EpicService epicSvc(&db, &settings, &runnerMgr, &prefixMgr, &sgdb);
     epicSvc.setDownloadManager(&dl);
@@ -6745,12 +6785,15 @@ private slots:
     QVERIFY(QDir().mkpath(installDir + QStringLiteral("/shared")));
     auto writeFile = [](const QString &p, const QByteArray &data) {
       QFile f(p);
-      if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+      if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
       return f.write(data) == data.size();
     };
     QVERIFY(writeFile(installDir + QStringLiteral("/Control.exe"), "MZ"));
-    QVERIFY(writeFile(installDir + QStringLiteral("/shared/common.pak"), "BASE"));
-    QVERIFY(writeFile(installDir + QStringLiteral("/dlc_pack/expansion.pak"), "DLC1"));
+    QVERIFY(
+        writeFile(installDir + QStringLiteral("/shared/common.pak"), "BASE"));
+    QVERIFY(writeFile(installDir + QStringLiteral("/dlc_pack/expansion.pak"),
+                      "DLC1"));
 
     GameRecord g;
     g.id = QStringLiteral("g-control");
@@ -6781,15 +6824,20 @@ private slots:
     QVERIFY(db.saveEpicDlcs({dlc1}));
 
     // Verify EpicDlcItem map exposes both appName and dlcAppName
-    const QVariantList dlcMaps = epicSvc.getDlcsForGame(QStringLiteral("ControlApp"));
+    const QVariantList dlcMaps =
+        epicSvc.getDlcsForGame(QStringLiteral("ControlApp"));
     QCOMPARE(dlcMaps.size(), 1);
-    QCOMPARE(dlcMaps.first().toMap().value(QStringLiteral("appName")).toString(),
-             QStringLiteral("ControlDlc1"));
-    QCOMPARE(dlcMaps.first().toMap().value(QStringLiteral("dlcAppName")).toString(),
-             QStringLiteral("ControlDlc1"));
+    QCOMPARE(
+        dlcMaps.first().toMap().value(QStringLiteral("appName")).toString(),
+        QStringLiteral("ControlDlc1"));
+    QCOMPARE(
+        dlcMaps.first().toMap().value(QStringLiteral("dlcAppName")).toString(),
+        QStringLiteral("ControlDlc1"));
 
-    // Write cached base & DLC manifests so uninstallDlc deletes only unique DLC files
-    const QString mfDir = AppSettings::dataDir() + QStringLiteral("/epic_manifests");
+    // Write cached base & DLC manifests so uninstallDlc deletes only unique DLC
+    // files
+    const QString mfDir =
+        AppSettings::dataDir() + QStringLiteral("/epic_manifests");
     QVERIFY(QDir().mkpath(mfDir));
     EpicFileManifest baseExe;
     baseExe.filename = QStringLiteral("Control.exe");
@@ -6798,9 +6846,11 @@ private slots:
     EpicFileManifest dlcUniqueFile;
     dlcUniqueFile.filename = QStringLiteral("dlc_pack/expansion.pak");
     const QByteArray baseMf = EpicManifestParser::buildJsonManifest(
-        QStringLiteral("ControlApp"), QStringLiteral("1.0.0"), {baseExe, sharedFile}, {});
+        QStringLiteral("ControlApp"), QStringLiteral("1.0.0"),
+        {baseExe, sharedFile}, {});
     const QByteArray dlcMf = EpicManifestParser::buildJsonManifest(
-        QStringLiteral("ControlDlc1"), QStringLiteral("1.0.0"), {sharedFile, dlcUniqueFile}, {});
+        QStringLiteral("ControlDlc1"), QStringLiteral("1.0.0"),
+        {sharedFile, dlcUniqueFile}, {});
     QVERIFY(writeFile(mfDir + QStringLiteral("/ControlApp.manifest"), baseMf));
     QVERIFY(writeFile(mfDir + QStringLiteral("/ControlDlc1.manifest"), dlcMf));
 
@@ -6808,15 +6858,21 @@ private slots:
     QVERIFY(epicSvc.uninstallDlc(g.id, QStringLiteral("ControlDlc1")));
     QCOMPARE(dlcSpy.count(), 1);
     QCOMPARE(dlcSpy.takeFirst().at(0).toString(), QStringLiteral("ControlApp"));
-    QVERIFY(!QFileInfo::exists(installDir + QStringLiteral("/dlc_pack/expansion.pak")));
+    QVERIFY(!QFileInfo::exists(installDir +
+                               QStringLiteral("/dlc_pack/expansion.pak")));
     QVERIFY(!QDir(installDir + QStringLiteral("/dlc_pack")).exists());
     // Base game & shared files must be untouched
     QVERIFY(QFileInfo::exists(installDir + QStringLiteral("/Control.exe")));
-    QVERIFY(QFileInfo::exists(installDir + QStringLiteral("/shared/common.pak")));
+    QVERIFY(
+        QFileInfo::exists(installDir + QStringLiteral("/shared/common.pak")));
     QCOMPARE(epicSvc.getDlcsForGame(QStringLiteral("ControlApp"))
-                 .first().toMap().value(QStringLiteral("isInstalled")).toBool(),
+                 .first()
+                 .toMap()
+                 .value(QStringLiteral("isInstalled"))
+                 .toBool(),
              false);
-    QVERIFY(!db.getGame(g.id)->epicSelectedDlcs.contains(QStringLiteral("ControlDlc1")));
+    QVERIFY(!db.getGame(g.id)->epicSelectedDlcs.contains(
+        QStringLiteral("ControlDlc1")));
 
     // 2. Automatic update detection + autoUpdateEpicGames toggle behavior
     auto hasQueuedEpicUpdate = [&]() {
@@ -6830,31 +6886,40 @@ private slots:
     };
     QSignalSpy updSpy(&epicSvc, &EpicService::updatesChanged);
     settings.setAutoUpdateEpicGames(false);
-    epicSvc.processUpdateCheckResult(g.id, g.epicAppName, QStringLiteral("1.0.0"),
+    epicSvc.processUpdateCheckResult(g.id, g.epicAppName,
+                                     QStringLiteral("1.0.0"),
                                      QStringLiteral("1.1.0"), true);
     QCOMPARE(updSpy.count(), 1);
     QVERIFY(epicSvc.hasUpdate(g.epicAppName));
-    QVERIFY(!hasQueuedEpicUpdate()); // auto-update OFF -> badge only, not auto-queued
-    QVERIFY(!epicSvc.getDownloadState(g.epicAppName).value(QStringLiteral("isDownloading")).toBool());
+    QVERIFY(!hasQueuedEpicUpdate()); // auto-update OFF -> badge only, not
+                                     // auto-queued
+    QVERIFY(!epicSvc.getDownloadState(g.epicAppName)
+                 .value(QStringLiteral("isDownloading"))
+                 .toBool());
 
-    // Occupy the single game-download slot so an auto-queued update stays queued offline
-    // without initiating any live network request to Epic servers.
+    // Occupy the single game-download slot so an auto-queued update stays
+    // queued offline without initiating any live network request to Epic
+    // servers.
     settings.setMaxConcurrentGameDownloads(1);
-    dl.registerExternalTask(QStringLiteral("test-slot-blocker"),
-                            QStringLiteral("Slot Blocker"),
-                            QStringLiteral("epic_install"),
-                            QStringLiteral("blocker"),
-                            QString(), true, DownloadManager::ExternalAdapter{}, true);
+    dl.registerExternalTask(
+        QStringLiteral("test-slot-blocker"), QStringLiteral("Slot Blocker"),
+        QStringLiteral("epic_install"), QStringLiteral("blocker"), QString(),
+        true, DownloadManager::ExternalAdapter{}, true);
 
     settings.setAutoUpdateEpicGames(true);
-    epicSvc.processUpdateCheckResult(g.id, g.epicAppName, QStringLiteral("1.0.0"),
+    epicSvc.processUpdateCheckResult(g.id, g.epicAppName,
+                                     QStringLiteral("1.0.0"),
                                      QStringLiteral("1.1.0"), true);
     QVERIFY(hasQueuedEpicUpdate());
-    QVERIFY(epicSvc.getDownloadState(g.epicAppName).value(QStringLiteral("isDownloading")).toBool());
+    QVERIFY(epicSvc.getDownloadState(g.epicAppName)
+                .value(QStringLiteral("isDownloading"))
+                .toBool());
     epicSvc.cancelDownload(g.epicAppName, false);
-    dl.finishExternalTask(QStringLiteral("test-slot-blocker"), true, QStringLiteral("Done"));
+    dl.finishExternalTask(QStringLiteral("test-slot-blocker"), true,
+                          QStringLiteral("Done"));
 
-    // 3. Cloud Save status localFileCount & CloudSaveConflictDialog dual-key + manual mode
+    // 3. Cloud Save status localFileCount & CloudSaveConflictDialog dual-key +
+    // manual mode
     const QVariantMap csStatus = cloudSvc.getCloudSaveStatus(g.id);
     QCOMPARE(csStatus.value(QStringLiteral("configured")).toBool(), true);
     QCOMPARE(csStatus.value(QStringLiteral("localFileCount")).toInt(), 2);
@@ -6862,17 +6927,21 @@ private slots:
     UiController ui(&db, &settings, &dl, &runnerMgr, &prefixMgr, &wtMgr,
                     &ctrlMgr, &sgdb, &lp, &diagMgr, &gm, &epicSvc, &cloudSvc);
     QQmlEngine engine;
-    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), &settings);
-    engine.rootContext()->setContextProperty(QStringLiteral("uiController"), &ui);
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
+                                             &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
+                                             &ui);
 
     QQuickWindow win;
     win.resize(1280, 820);
     win.show();
     QVERIFY(QTest::qWaitForWindowExposed(&win));
 
-    // Verify CloudSaveConflictDialog handles both localTimestamp/cloudTimestamp and manual mode
+    // Verify CloudSaveConflictDialog handles both localTimestamp/cloudTimestamp
+    // and manual mode
     QQmlComponent conflictComp(
-        &engine, resolveQmlUrl(QStringLiteral("src/qml/components/CloudSaveConflictDialog.qml")));
+        &engine, resolveQmlUrl(QStringLiteral(
+                     "src/qml/components/CloudSaveConflictDialog.qml")));
     QVERIFY2(conflictComp.isReady(), qPrintable(conflictComp.errorString()));
     std::unique_ptr<QObject> conflictObj(conflictComp.create());
     QVERIFY(conflictObj != nullptr);
@@ -6884,30 +6953,34 @@ private slots:
     conflictDetails[QStringLiteral("cloudTimestamp")] = 1700000200;
     conflictDetails[QStringLiteral("triggeredByLaunch")] = false;
     QVERIFY(QMetaObject::invokeMethod(
-        conflictObj.get(), "openConflict",
-        Q_ARG(QVariant, QVariant(g.id)),
+        conflictObj.get(), "openConflict", Q_ARG(QVariant, QVariant(g.id)),
         Q_ARG(QVariant, QVariant(conflictDetails))));
     QCoreApplication::processEvents();
     QCOMPARE(conflictObj->property("launchOnResolve").toBool(), false);
-    auto *dlBtn = conflictObj->findChild<QQuickItem *>(QStringLiteral("conflictDownloadCloudBtn"));
-    auto *skipBtn = conflictObj->findChild<QQuickItem *>(QStringLiteral("conflictSkipSyncBtn"));
+    auto *dlBtn = conflictObj->findChild<QQuickItem *>(
+        QStringLiteral("conflictDownloadCloudBtn"));
+    auto *skipBtn = conflictObj->findChild<QQuickItem *>(
+        QStringLiteral("conflictSkipSyncBtn"));
     QVERIFY(dlBtn != nullptr);
     QVERIFY(skipBtn != nullptr);
-    QCOMPARE(dlBtn->property("text").toString(), QStringLiteral("Download Cloud Saves"));
+    QCOMPARE(dlBtn->property("text").toString(),
+             QStringLiteral("Download Cloud Saves"));
     QCOMPARE(skipBtn->property("text").toString(), QStringLiteral("Skip Sync"));
     // Ensure timestamp labels formatted (not "No timestamp")
     bool sawNoTimestamp = false;
     for (QObject *child : conflictObj->findChildren<QObject *>()) {
-      if (child->property("text").toString() == QStringLiteral("No timestamp")) {
+      if (child->property("text").toString() ==
+          QStringLiteral("No timestamp")) {
         sawNoTimestamp = true;
       }
     }
     QVERIFY(!sawNoTimestamp);
     QVERIFY(QMetaObject::invokeMethod(conflictObj.get(), "close"));
 
-    // Verify SettingsPage has autoUpdateEpicGamesToggle bound to appSettings.autoUpdateEpicGames
-    QQmlComponent settingsComp(
-        &engine, resolveQmlUrl(QStringLiteral("src/qml/pages/SettingsPage.qml")));
+    // Verify SettingsPage has autoUpdateEpicGamesToggle bound to
+    // appSettings.autoUpdateEpicGames
+    QQmlComponent settingsComp(&engine, resolveQmlUrl(QStringLiteral(
+                                            "src/qml/pages/SettingsPage.qml")));
     QVERIFY2(settingsComp.isReady(), qPrintable(settingsComp.errorString()));
     std::unique_ptr<QQuickItem> settingsItem(
         qobject_cast<QQuickItem *>(settingsComp.create()));
@@ -6915,10 +6988,690 @@ private slots:
     settingsItem->setParentItem(win.contentItem());
     settingsItem->setSize(QSizeF(1280, 820));
     QCoreApplication::processEvents();
-    auto *autoUpdToggle =
-        settingsItem->findChild<QQuickItem *>(QStringLiteral("autoUpdateEpicGamesToggle"));
+    auto *autoUpdToggle = settingsItem->findChild<QQuickItem *>(
+        QStringLiteral("autoUpdateEpicGamesToggle"));
     QVERIFY(autoUpdToggle != nullptr);
     QCOMPARE(autoUpdToggle->property("checked").toBool(), true);
+  }
+
+  void testKeyboardAndGamepadNavigationOverhaul() {
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    const QByteArray oldHome = qgetenv("HOME");
+    const QByteArray oldXdgData = qgetenv("XDG_DATA_HOME");
+    const QByteArray oldXdgCache = qgetenv("XDG_CACHE_HOME");
+    const QByteArray oldXdgConfig = qgetenv("XDG_CONFIG_HOME");
+    const bool hadXdgData = qEnvironmentVariableIsSet("XDG_DATA_HOME");
+    const bool hadXdgCache = qEnvironmentVariableIsSet("XDG_CACHE_HOME");
+    const bool hadXdgConfig = qEnvironmentVariableIsSet("XDG_CONFIG_HOME");
+    const QString origGenericConfig =
+        QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+
+    const QString fakeHome = tmpDir.filePath(QStringLiteral("home"));
+    QVERIFY(QDir().mkpath(fakeHome));
+    qputenv("HOME", fakeHome.toUtf8());
+    qputenv("XDG_DATA_HOME",
+            (fakeHome + QStringLiteral("/.local/share")).toUtf8());
+    qputenv("XDG_CACHE_HOME", (fakeHome + QStringLiteral("/.cache")).toUtf8());
+    qputenv("XDG_CONFIG_HOME",
+            (fakeHome + QStringLiteral("/.config")).toUtf8());
+    QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                       fakeHome + QStringLiteral("/.config"));
+    auto restoreEnv = qScopeGuard([&]() {
+      QSettings::setPath(QSettings::NativeFormat, QSettings::UserScope,
+                         origGenericConfig);
+      qputenv("HOME", oldHome);
+      if (hadXdgData)
+        qputenv("XDG_DATA_HOME", oldXdgData);
+      else
+        qunsetenv("XDG_DATA_HOME");
+      if (hadXdgCache)
+        qputenv("XDG_CACHE_HOME", oldXdgCache);
+      else
+        qunsetenv("XDG_CACHE_HOME");
+      if (hadXdgConfig)
+        qputenv("XDG_CONFIG_HOME", oldXdgConfig);
+      else
+        qunsetenv("XDG_CONFIG_HOME");
+    });
+
+    AppSettings settings;
+    DatabaseManager db(tmpDir.filePath(QStringLiteral("nav_test.db")));
+    QVERIFY(db.initialize());
+    DownloadManager dlMgr;
+    dlMgr.setAppSettings(&settings);
+    dlMgr.setDatabaseManager(&db);
+    RunnerManager runnerMgr(&db, &settings, &dlMgr);
+    PrefixManager prefixMgr(&db, &settings, &runnerMgr);
+    SteamGridDbService sgdb(&settings, &dlMgr);
+    ControllerManager ctrlMgr(&db, &settings);
+    DiagnosticsManager diagMgr(&db, &settings, &runnerMgr, &prefixMgr);
+    WinetricksManager wtMgr(&db, &settings, &runnerMgr, &dlMgr);
+    LaunchPipeline launchPipe(&db, &settings, &runnerMgr, &prefixMgr, &ctrlMgr,
+                              &diagMgr);
+    GameManager gameMgr(&db, &settings, &runnerMgr, &prefixMgr, &sgdb,
+                        &launchPipe);
+    EpicService epicSvc(&db, &settings, &runnerMgr, &prefixMgr, &sgdb);
+    epicSvc.setDownloadManager(&dlMgr);
+    epicSvc.setGameManager(&gameMgr);
+    EpicCloudSaveService cloudSvc(&db, &settings, &prefixMgr, &epicSvc);
+    launchPipe.setEpicService(&epicSvc);
+    launchPipe.setCloudSaveService(&cloudSvc);
+    UiController uiCtrl(&db, &settings, &dlMgr, &runnerMgr, &prefixMgr, &wtMgr,
+                        &ctrlMgr, &sgdb, &launchPipe, &diagMgr, &gameMgr,
+                        &epicSvc, &cloudSvc);
+    uiCtrl.setKeyboardNavActive(true);
+
+    QQmlEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("appSettings"),
+                                             &settings);
+    engine.rootContext()->setContextProperty(QStringLiteral("uiController"),
+                                             &uiCtrl);
+
+    QQuickWindow win;
+    win.resize(1280, 820);
+    win.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+    // 1. M3SegmentedButton: Left/Right move focusedIndex only; Enter commits;
+    // edges emit edgeLeft/edgeRight
+    {
+      QQmlComponent segComp(&engine,
+                            resolveQmlUrl(QStringLiteral(
+                                "src/qml/components/M3SegmentedButton.qml")));
+      QVERIFY2(segComp.isReady(), qPrintable(segComp.errorString()));
+      QVariantList segModel;
+      segModel << QVariantMap{{QStringLiteral("label"), QStringLiteral("One")},
+                              {QStringLiteral("val"), 0}}
+               << QVariantMap{{QStringLiteral("label"), QStringLiteral("Two")},
+                              {QStringLiteral("val"), 1}}
+               << QVariantMap{
+                      {QStringLiteral("label"), QStringLiteral("Three")},
+                      {QStringLiteral("val"), 2}};
+      std::unique_ptr<QObject> segObj(segComp.createWithInitialProperties(
+          {{QStringLiteral("model"), segModel},
+           {QStringLiteral("selectedValue"), 0}}));
+      QVERIFY(segObj != nullptr);
+      auto *segItem = qobject_cast<QQuickItem *>(segObj.get());
+      segItem->setParentItem(win.contentItem());
+      segItem->forceActiveFocus();
+      QCoreApplication::processEvents();
+
+      QSignalSpy edgeLeftSpy(segObj.get(), SIGNAL(edgeLeft()));
+      QSignalSpy edgeRightSpy(segObj.get(), SIGNAL(edgeRight()));
+      QTest::keyClick(&win, Qt::Key_Left);
+      QCOMPARE(edgeLeftSpy.count(), 1);
+      QTest::keyClick(&win, Qt::Key_Right);
+      QCOMPARE(segObj->property("focusedIndex").toInt(), 1);
+      QCOMPARE(segObj->property("selectedValue").toInt(),
+               0); // Not yet committed
+      QTest::keyClick(&win, Qt::Key_Return);
+      QCOMPARE(segObj->property("selectedValue").toInt(),
+               1); // Committed on Enter
+      QTest::keyClick(&win, Qt::Key_Right);
+      QTest::keyClick(&win, Qt::Key_Right);
+      QCOMPARE(edgeRightSpy.count(), 1);
+    }
+
+    // 2. StyledCombo: closed Up/Down must not mutate selectedIndex; open popup
+    // Enter selects & closes
+    {
+      QQmlComponent comboComp(
+          &engine,
+          resolveQmlUrl(QStringLiteral("src/qml/components/StyledCombo.qml")));
+      QVERIFY2(comboComp.isReady(), qPrintable(comboComp.errorString()));
+      QVariantList items{QStringLiteral("Alpha"), QStringLiteral("Beta"),
+                         QStringLiteral("Gamma")};
+      std::unique_ptr<QObject> comboObj(comboComp.createWithInitialProperties(
+          {{QStringLiteral("comboModel"), items},
+           {QStringLiteral("selectedIndex"), 0}}));
+      QVERIFY(comboObj != nullptr);
+      auto *comboItem = qobject_cast<QQuickItem *>(comboObj.get());
+      comboItem->setParentItem(win.contentItem());
+      comboItem->forceActiveFocus();
+      QCoreApplication::processEvents();
+
+      QTest::keyClick(&win, Qt::Key_Down);
+      QCOMPARE(comboObj->property("selectedIndex").toInt(),
+               0);                           // Closed Down does not mutate
+      QTest::keyClick(&win, Qt::Key_Return); // Opens popup
+      QCoreApplication::processEvents();
+      auto *popupObj = comboObj->property("popup").value<QObject *>();
+      QVERIFY(popupObj != nullptr);
+      QTRY_COMPARE(popupObj->property("visible").toBool(), true);
+      QTest::keyClick(&win, Qt::Key_Down); // Highlight "Beta"
+      QCOMPARE(comboObj->property("focusedPopupIndex").toInt(), 1);
+      QVERIFY(QMetaObject::invokeMethod(comboObj.get(),
+                                        "activate")); // Select & close
+      QCoreApplication::processEvents();
+      QCOMPARE(comboObj->property("selectedIndex").toInt(), 1);
+      QTRY_COMPARE(popupObj->property("visible").toBool(), false);
+    }
+
+    // 3. M3ColorPicker: Left/Right move focusedIndex only; Enter commits; no
+    // wrap past 0
+    {
+      QQmlComponent cpComp(
+          &engine, resolveQmlUrl(
+                       QStringLiteral("src/qml/components/M3ColorPicker.qml")));
+      QVERIFY2(cpComp.isReady(), qPrintable(cpComp.errorString()));
+      QVariantList presets;
+      presets
+          << QVariantMap{{QStringLiteral("name"), QStringLiteral("Sky")},
+                         {QStringLiteral("color"), QStringLiteral("#38bdf8")}}
+          << QVariantMap{{QStringLiteral("name"), QStringLiteral("Pink")},
+                         {QStringLiteral("color"), QStringLiteral("#ec4899")}};
+      std::unique_ptr<QObject> cpObj(cpComp.createWithInitialProperties(
+          {{QStringLiteral("presets"), presets},
+           {QStringLiteral("currentColor"), QStringLiteral("#38bdf8")}}));
+      QVERIFY(cpObj != nullptr);
+      auto *cpItem = qobject_cast<QQuickItem *>(cpObj.get());
+      cpItem->setParentItem(win.contentItem());
+      cpItem->forceActiveFocus();
+      QCoreApplication::processEvents();
+
+      QSignalSpy colorSpy(cpObj.get(), SIGNAL(colorSelected(QString)));
+      QTest::keyClick(&win, Qt::Key_Right);
+      QCOMPARE(cpObj->property("focusedIndex").toInt(), 1);
+      QCOMPARE(colorSpy.count(), 0); // Not committed until Enter
+      QTest::keyClick(&win, Qt::Key_Return);
+      QCOMPARE(colorSpy.count(), 1);
+      QCOMPARE(colorSpy.at(0).at(0).toString(), QStringLiteral("#ec4899"));
+    }
+
+    // 4. HomePage + Sidebar: cycleTab / shoulder buttons keep
+    // sidebar.currentSection in sync
+    //    even after clicking/activating a sidebar item imperatively
+    {
+      QQmlComponent homeComp(
+          &engine, resolveQmlUrl(QStringLiteral("src/qml/home/HomePage.qml")));
+      QVERIFY2(homeComp.isReady(), qPrintable(homeComp.errorString()));
+      std::unique_ptr<QQuickItem> homeItem(
+          qobject_cast<QQuickItem *>(homeComp.create()));
+      QVERIFY(homeItem != nullptr);
+      homeItem->setParentItem(win.contentItem());
+      homeItem->setSize(QSizeF(1280, 820));
+      QCoreApplication::processEvents();
+
+      QObject *sidebarObj = nullptr;
+      for (QObject *ch : homeItem->findChildren<QObject *>()) {
+        if (ch->property("navModel").isValid() &&
+            ch->property("currentSection").isValid()) {
+          sidebarObj = ch;
+          break;
+        }
+      }
+      QVERIFY(sidebarObj != nullptr);
+      // Imperatively activate sidebar item 2 ("Epic Games") via
+      // activateFocusedItem
+      sidebarObj->setProperty("focusedNavIndex", 2);
+      QVERIFY(QMetaObject::invokeMethod(sidebarObj, "activateFocusedItem",
+                                        Q_ARG(QVariant, QVariant())));
+      QCoreApplication::processEvents();
+      QCOMPARE(homeItem->property("activeSection").toString(),
+               QStringLiteral("epic"));
+      QCOMPARE(sidebarObj->property("currentSection").toString(),
+               QStringLiteral("epic"));
+
+      // Now cycleTab(1) (same path as RB / ]): sidebar.currentSection MUST
+      // still track activeSection!
+      QVERIFY(QMetaObject::invokeMethod(homeItem.get(), "cycleTab",
+                                        Q_ARG(QVariant, 1)));
+      QCoreApplication::processEvents();
+      QCOMPARE(homeItem->property("activeSection").toString(),
+               QStringLiteral("downloads"));
+      QCOMPARE(sidebarObj->property("currentSection").toString(),
+               QStringLiteral("downloads"));
+    }
+
+    // 5. GameDetailPage: Esc / Back closes uninstalled Epic game AND installed
+    // game;
+    //    actionsDropdownBtn Down navigates down; Tab 0 Collections & Tab 5
+    //    Epic/Cloud/DLC in focus grid
+    {
+      // Seed an installed Epic game with collections, DLC, and cloud save
+      // status
+      GameRecord g;
+      g.id = QStringLiteral("epic-nav-game-1");
+      g.title = QStringLiteral("Nav Epic Game");
+      g.source = QStringLiteral("epic");
+      g.epicAppName = QStringLiteral("NavApp");
+      g.executablePath = tmpDir.filePath("game.exe");
+      g.epicInstallDir = tmpDir.path();
+      g.workingDirectory = tmpDir.path();
+      g.epicCloudSavesEnabled = true;
+      g.epicAutoSyncCloudSaves = true;
+      g.categories = {QStringLiteral("RPG")};
+      QVERIFY(db.saveGame(g));
+      gameMgr.reload();
+
+      // 5a. Uninstalled Epic game detail page closes on Escape AND Back
+      QQmlComponent detailComp(
+          &engine,
+          resolveQmlUrl(QStringLiteral("src/qml/pages/GameDetailPage.qml")));
+      QVERIFY2(detailComp.isReady(), qPrintable(detailComp.errorString()));
+      {
+        std::unique_ptr<QQuickItem> uninstDetail(
+            qobject_cast<QQuickItem *>(detailComp.createWithInitialProperties(
+                {{QStringLiteral("gameId"), QStringLiteral("")},
+                 {QStringLiteral("epicAppName"),
+                  QStringLiteral("UninstEpicApp")}})));
+        QVERIFY(uninstDetail != nullptr);
+        uninstDetail->setParentItem(win.contentItem());
+        uninstDetail->setSize(QSizeF(1280, 820));
+        QCoreApplication::processEvents();
+        QTest::qWait(30);
+        QSignalSpy backSpy(uninstDetail.get(), SIGNAL(backRequested()));
+        QTest::keyClick(&win, Qt::Key_Escape);
+        QCoreApplication::processEvents();
+        QCOMPARE(backSpy.count(), 1);
+      }
+
+      // 5b. Installed Epic game detail page
+      {
+        std::unique_ptr<QQuickItem> instDetail(
+            qobject_cast<QQuickItem *>(detailComp.createWithInitialProperties(
+                {{QStringLiteral("gameId"), g.id},
+                 {QStringLiteral("epicAppName"), g.epicAppName}})));
+        QVERIFY(instDetail != nullptr);
+        instDetail->setParentItem(win.contentItem());
+        instDetail->setSize(QSizeF(1280, 820));
+        QCoreApplication::processEvents();
+        QTest::qWait(30);
+
+        // Focus actionsDropdownBtn, press Down -> must move focus off
+        // actionsDropdownBtn
+        auto *dropBtn = instDetail->findChild<QQuickItem *>(
+            QStringLiteral("actionsDropdownBtn"));
+        // Also find via focus grid row 1 col 1
+        QVariant gridVar;
+        QVERIFY(QMetaObject::invokeMethod(instDetail.get(), "getFocusGrid",
+                                          Q_RETURN_ARG(QVariant, gridVar)));
+        QVariantList rows = gridVar.toList();
+        QVERIFY(rows.size() >= 4);
+        QVariantList heroRow = rows[1].toList();
+        QCOMPARE(heroRow.size(), 2);
+        auto *actionsDropItem =
+            qobject_cast<QQuickItem *>(heroRow[1].value<QObject *>());
+        QVERIFY(actionsDropItem != nullptr);
+        Q_UNUSED(dropBtn);
+        actionsDropItem->forceActiveFocus();
+        QCoreApplication::processEvents();
+        QCOMPARE(win.activeFocusItem(), actionsDropItem);
+        QTest::keyClick(&win, Qt::Key_Down);
+        QCoreApplication::processEvents();
+        QVERIFY2(win.activeFocusItem() != actionsDropItem,
+                 "Down from Play actions dropdown must move focus down");
+
+        // Tab 0 focus grid must contain detailNewColField & detailAddColBtn
+        auto *newColField = instDetail->findChild<QQuickItem *>(
+            QStringLiteral("detailNewColField"));
+        auto *addColBtn = instDetail->findChild<QQuickItem *>(
+            QStringLiteral("detailAddColBtn"));
+        QVERIFY(newColField != nullptr);
+        QVERIFY(addColBtn != nullptr);
+        auto gridContains = [](const QVariantList &gRows, QObject *target) {
+          for (const QVariant &rv : gRows) {
+            for (const QVariant &cv : rv.toList()) {
+              if (cv.value<QObject *>() == target)
+                return true;
+            }
+          }
+          return false;
+        };
+        QVERIFY(gridContains(rows, newColField));
+        QVERIFY(gridContains(rows, addColBtn));
+
+        // Tab 5 (Epic & Online): must include install buttons, cloud save
+        // buttons, and DLC buttons
+        QVariantList mockDlcs;
+        mockDlcs << QVariantMap{
+            {QStringLiteral("appName"), QStringLiteral("NavAppDlc1")},
+            {QStringLiteral("title"), QStringLiteral("Expansion 1")},
+            {QStringLiteral("isInstalled"), false}};
+        instDetail->setProperty("gameDlcs", mockDlcs);
+        instDetail->setProperty("activeTab", 5);
+        QCoreApplication::processEvents();
+        QTest::qWait(20);
+
+        QVariant tab5GridVar;
+        QVERIFY(QMetaObject::invokeMethod(instDetail.get(), "getFocusGrid",
+                                          Q_RETURN_ARG(QVariant, tab5GridVar)));
+        QVariantList tab5Rows = tab5GridVar.toList();
+        auto *eosBtn = instDetail->findChild<QQuickItem *>(
+            QStringLiteral("eosInstallBtn"));
+        auto *syncBtn = instDetail->findChild<QQuickItem *>(
+            QStringLiteral("cloudSyncNowBtn"));
+        auto *forceDlBtn = instDetail->findChild<QQuickItem *>(
+            QStringLiteral("cloudForceDownloadBtn"));
+        auto *forceUpBtn = instDetail->findChild<QQuickItem *>(
+            QStringLiteral("cloudForceUploadBtn"));
+        auto *browseSaveBtn = instDetail->findChild<QQuickItem *>(
+            QStringLiteral("cloudFolderBrowseBtn"));
+        QVERIFY(eosBtn != nullptr);
+        QVERIFY(syncBtn != nullptr);
+        QVERIFY(forceDlBtn != nullptr);
+        QVERIFY(forceUpBtn != nullptr);
+        QVERIFY(browseSaveBtn != nullptr);
+        if (eosBtn->isVisible() && eosBtn->isEnabled()) {
+          QVERIFY(gridContains(tab5Rows, eosBtn));
+        }
+        QVERIFY(gridContains(tab5Rows, syncBtn));
+        QVERIFY(gridContains(tab5Rows, forceDlBtn));
+        QVERIFY(gridContains(tab5Rows, forceUpBtn));
+        QVERIFY(gridContains(tab5Rows, browseSaveBtn));
+
+        // Pressing Esc while focused on a Tab 5 button closes GameDetailPage
+        // cleanly
+        syncBtn->forceActiveFocus();
+        QCoreApplication::processEvents();
+        QSignalSpy backSpy(instDetail.get(), SIGNAL(backRequested()));
+        QTest::keyClick(&win, Qt::Key_Escape);
+        QCoreApplication::processEvents();
+        QCOMPARE(backSpy.count(), 1);
+      }
+    }
+
+    // 6. DownloadsView: forceFocus lands on enabled speedLimitCombo when queue
+    // empty;
+    //    Right moves to gameplayPauseToggle; Left does NOT toggle it
+    {
+      QQmlComponent dlComp(&engine, resolveQmlUrl(QStringLiteral(
+                                        "src/qml/pages/DownloadsView.qml")));
+      QVERIFY2(dlComp.isReady(), qPrintable(dlComp.errorString()));
+      std::unique_ptr<QQuickItem> dlItem(
+          qobject_cast<QQuickItem *>(dlComp.create()));
+      QVERIFY(dlItem != nullptr);
+      dlItem->setParentItem(win.contentItem());
+      dlItem->setSize(QSizeF(1280, 820));
+      QCoreApplication::processEvents();
+
+      QVERIFY(QMetaObject::invokeMethod(dlItem.get(), "forceFocus"));
+      QCoreApplication::processEvents();
+      auto *speedCombo = dlItem->findChild<QQuickItem *>(
+          QStringLiteral("downloadsSpeedLimitCombo"));
+      auto *gpToggle = dlItem->findChild<QQuickItem *>(
+          QStringLiteral("downloadsGameplayPauseToggle"));
+      QVERIFY(speedCombo != nullptr);
+      QVERIFY(gpToggle != nullptr);
+      QCOMPARE(win.activeFocusItem(), speedCombo);
+
+      QTest::keyClick(&win, Qt::Key_Right);
+      QCoreApplication::processEvents();
+      QCOMPARE(win.activeFocusItem(), gpToggle);
+      const bool initialPause = gpToggle->property("checked").toBool();
+      // Left must navigate back to speedCombo WITHOUT toggling
+      // gameplayPauseToggle
+      QTest::keyClick(&win, Qt::Key_Left);
+      QCoreApplication::processEvents();
+      QCOMPARE(gpToggle->property("checked").toBool(), initialPause);
+      QCOMPARE(win.activeFocusItem(), speedCombo);
+      // Enter toggles gameplayPauseToggle when focused on it
+      QTest::keyClick(&win, Qt::Key_Right);
+      QCoreApplication::processEvents();
+      QTest::keyClick(&win, Qt::Key_Return);
+      QCoreApplication::processEvents();
+      QCOMPARE(gpToggle->property("checked").toBool(), !initialPause);
+    }
+
+    // 7. PrefixesView: archSegBtn moves focus on Right without mutating arch
+    // until Enter,
+    //    and crosses edges cleanly to adjacent fields
+    {
+      QQmlComponent pfxComp(&engine, resolveQmlUrl(QStringLiteral(
+                                         "src/qml/pages/PrefixesView.qml")));
+      QVERIFY2(pfxComp.isReady(), qPrintable(pfxComp.errorString()));
+      std::unique_ptr<QQuickItem> pfxItem(
+          qobject_cast<QQuickItem *>(pfxComp.create()));
+      QVERIFY(pfxItem != nullptr);
+      pfxItem->setParentItem(win.contentItem());
+      pfxItem->setSize(QSizeF(1280, 820));
+      QCoreApplication::processEvents();
+
+      auto *archSeg = pfxItem->findChild<QQuickItem *>(
+          QStringLiteral("prefixesArchSegBtn"));
+      auto *nameField =
+          pfxItem->findChild<QQuickItem *>(QStringLiteral("prefixesNameField"));
+      auto *pathField =
+          pfxItem->findChild<QQuickItem *>(QStringLiteral("prefixesPathField"));
+      QVERIFY(archSeg != nullptr);
+      QVERIFY(nameField != nullptr);
+      QVERIFY(pathField != nullptr);
+
+      archSeg->forceActiveFocus();
+      QCoreApplication::processEvents();
+      QCOMPARE(archSeg->property("selectedValue").toInt(), 0);
+      QTest::keyClick(&win, Qt::Key_Right);
+      QCoreApplication::processEvents();
+      QCOMPARE(archSeg->property("focusedIndex").toInt(), 1);
+      QCOMPARE(archSeg->property("selectedValue").toInt(), 0);
+      QTest::keyClick(&win, Qt::Key_Return);
+      QCoreApplication::processEvents();
+      QCOMPARE(archSeg->property("selectedValue").toInt(), 1);
+      // Right again at edge crosses to pathField
+      QTest::keyClick(&win, Qt::Key_Right);
+      QCoreApplication::processEvents();
+      QCOMPARE(win.activeFocusItem(), pathField);
+    }
+
+    // 8. RunnersView: releaseCatSeg Enter-to-select & CachyOS v3 toggle
+    // reachable via Down
+    {
+      QQmlComponent runComp(&engine, resolveQmlUrl(QStringLiteral(
+                                         "src/qml/pages/RunnersView.qml")));
+      QVERIFY2(runComp.isReady(), qPrintable(runComp.errorString()));
+      std::unique_ptr<QQuickItem> runItem(
+          qobject_cast<QQuickItem *>(runComp.create()));
+      QVERIFY(runItem != nullptr);
+      runItem->setParentItem(win.contentItem());
+      runItem->setSize(QSizeF(1280, 820));
+      QCoreApplication::processEvents();
+
+      auto *catSeg = runItem->findChild<QQuickItem *>(
+          QStringLiteral("runnersReleaseCatSeg"));
+      auto *v3Toggle = runItem->findChild<QQuickItem *>(
+          QStringLiteral("runnersCachyV3Toggle"));
+      QVERIFY(catSeg != nullptr);
+      QVERIFY(v3Toggle != nullptr);
+
+      catSeg->forceActiveFocus();
+      QCoreApplication::processEvents();
+      QTest::keyClick(&win, Qt::Key_Right);
+      QCoreApplication::processEvents();
+      QCOMPARE(runItem->property("selectedReleaseCat").toString(),
+               QStringLiteral("proton-ge")); // Not switched until Enter
+      QTest::keyClick(&win, Qt::Key_Return);
+      QCoreApplication::processEvents();
+      QCOMPARE(runItem->property("selectedReleaseCat").toString(),
+               QStringLiteral("proton-cachyos"));
+      // Pressing Down from releaseCatSeg when CachyOS is active focuses
+      // cachyV3Toggle!
+      QTest::keyClick(&win, Qt::Key_Down);
+      QCoreApplication::processEvents();
+      QCOMPARE(win.activeFocusItem(), v3Toggle);
+    }
+
+    // 9. SettingsPage: 2D Left/Right grid nav in Library -> Behavior &
+    // Performance,
+    //    toggles ignore Left/Right, sliders need Enter to adjust, and gamepad
+    //    LB/RB switch tabs
+    {
+      QQmlComponent setComp(&engine, resolveQmlUrl(QStringLiteral(
+                                         "src/qml/pages/SettingsPage.qml")));
+      QVERIFY2(setComp.isReady(), qPrintable(setComp.errorString()));
+      std::unique_ptr<QQuickItem> setItem(
+          qobject_cast<QQuickItem *>(setComp.create()));
+      QVERIFY(setItem != nullptr);
+      setItem->setParentItem(win.contentItem());
+      setItem->setSize(QSizeF(1280, 820));
+      QCoreApplication::processEvents();
+      QTest::qWait(30);
+
+      // 9a. Tab 1 (Library): 2-column Behavior GridLayout navigates
+      // horizontally without toggling
+      setItem->setProperty("activeTab", 1);
+      QCoreApplication::processEvents();
+      QVariant libGridVar;
+      QVERIFY(QMetaObject::invokeMethod(setItem.get(), "getVisibleRowGrid",
+                                        Q_RETURN_ARG(QVariant, libGridVar)));
+      QVariantList libGrid = libGridVar.toList();
+      // Find first 2-column toggle row (Behavior section)
+      QQuickItem *leftBehaviorTile = nullptr;
+      QQuickItem *rightBehaviorTile = nullptr;
+      for (const QVariant &rv : libGrid) {
+        QVariantList row = rv.toList();
+        if (row.size() == 2) {
+          auto *t0 = qobject_cast<QQuickItem *>(row[0].value<QObject *>());
+          auto *t1 = qobject_cast<QQuickItem *>(row[1].value<QObject *>());
+          if (t0 && t1) {
+            auto *c0 = t0->property("controlItem").value<QObject *>();
+            if (c0 && c0->property("checked").isValid()) {
+              leftBehaviorTile = t0;
+              rightBehaviorTile = t1;
+              break;
+            }
+          }
+        }
+      }
+      QVERIFY(leftBehaviorTile != nullptr && rightBehaviorTile != nullptr);
+      auto *leftToggleCtrl =
+          leftBehaviorTile->property("controlItem").value<QObject *>();
+      QVERIFY(leftToggleCtrl != nullptr);
+      const bool beforeToggle = leftToggleCtrl->property("checked").toBool();
+
+      leftBehaviorTile->forceActiveFocus();
+      QCoreApplication::processEvents();
+      QTest::keyClick(&win, Qt::Key_Right);
+      QCoreApplication::processEvents();
+      QCOMPARE(leftToggleCtrl->property("checked").toBool(),
+               beforeToggle); // Right did NOT flip toggle
+      QCOMPARE(win.activeFocusItem(),
+               rightBehaviorTile); // Moved to right column tile!
+      QTest::keyClick(&win, Qt::Key_Left);
+      QCoreApplication::processEvents();
+      QCOMPARE(win.activeFocusItem(),
+               leftBehaviorTile); // Left moved back to column 0 tile!
+      QTest::keyClick(&win, Qt::Key_Return);
+      QCoreApplication::processEvents();
+      QCOMPARE(leftToggleCtrl->property("checked").toBool(),
+               !beforeToggle); // Enter flips toggle!
+
+      // 9b. Slider inside SettingsPage requires Enter to adjust
+      QQuickItem *sliderTile = nullptr;
+      for (const QVariant &rv : libGrid) {
+        for (const QVariant &cv : rv.toList()) {
+          auto *t = qobject_cast<QQuickItem *>(cv.value<QObject *>());
+          if (t && t->property("controlItem").value<QObject *>() &&
+              t->property("controlItem")
+                  .value<QObject *>()
+                  ->property("isAdjusting")
+                  .isValid()) {
+            sliderTile = t;
+            break;
+          }
+        }
+        if (sliderTile)
+          break;
+      }
+      QVERIFY(sliderTile != nullptr);
+      QObject *sliderCtrl =
+          sliderTile->property("controlItem").value<QObject *>();
+      const double initialSliderVal = sliderCtrl->property("value").toDouble();
+      sliderTile->forceActiveFocus();
+      QCoreApplication::processEvents();
+      // Right before Enter must NOT adjust slider value (moves to adjacent
+      // slider tile instead)
+      QTest::keyClick(&win, Qt::Key_Right);
+      QCoreApplication::processEvents();
+      QCOMPARE(sliderCtrl->property("value").toDouble(), initialSliderVal);
+      // Refocus sliderTile, press Return -> enters adjust mode -> Right changes
+      // value -> Escape exits adjust mode WITHOUT closing Settings
+      sliderTile->forceActiveFocus();
+      QCoreApplication::processEvents();
+      QSignalSpy setBackSpy(setItem.get(), SIGNAL(backRequested()));
+      QTest::keyClick(&win, Qt::Key_Return);
+      QCoreApplication::processEvents();
+      QCOMPARE(sliderCtrl->property("isAdjusting").toBool(), true);
+      QTest::keyClick(&win, Qt::Key_Right);
+      QCoreApplication::processEvents();
+      QVERIFY(sliderCtrl->property("value").toDouble() != initialSliderVal);
+      QTest::keyClick(&win, Qt::Key_Escape);
+      QCoreApplication::processEvents();
+      QCOMPARE(sliderCtrl->property("isAdjusting").toBool(), false);
+      QCOMPARE(setBackSpy.count(),
+               0); // Escape exited slider adjust mode, did NOT leave Settings!
+
+      // 9c. Tab 2 (Performance): 2-column grid Left/Right navigation
+      setItem->setProperty("activeTab", 2);
+      QCoreApplication::processEvents();
+      QVariant perfGridVar;
+      QVERIFY(QMetaObject::invokeMethod(setItem.get(), "getVisibleRowGrid",
+                                        Q_RETURN_ARG(QVariant, perfGridVar)));
+      bool foundPerf2Col = false;
+      for (const QVariant &rv : perfGridVar.toList()) {
+        if (rv.toList().size() == 2) {
+          foundPerf2Col = true;
+          break;
+        }
+      }
+      QVERIFY2(foundPerf2Col,
+               "Performance tab should expose 2-column spatial rows");
+    }
+
+    // 10. EpicDownloadDialog (Card 3 tags & DLCs in focus grid) &
+    // RemoveGameDialog (Epic Up nav)
+    {
+      QQmlComponent dlDlgComp(
+          &engine, resolveQmlUrl(QStringLiteral(
+                       "src/qml/components/EpicDownloadDialog.qml")));
+      QVERIFY2(dlDlgComp.isReady(), qPrintable(dlDlgComp.errorString()));
+      std::unique_ptr<QObject> dlDlgObj(dlDlgComp.create());
+      QVERIFY(dlDlgObj != nullptr);
+      dlDlgObj->setProperty("parent", QVariant::fromValue(win.contentItem()));
+      QVariantList tags;
+      tags << QVariantMap{
+          {QStringLiteral("tag"), QStringLiteral("hd-textures")},
+          {QStringLiteral("installSizeFormatted"), QStringLiteral("4.0 GB")}};
+      QVariantList dlcs;
+      dlcs << QVariantMap{
+          {QStringLiteral("appName"), QStringLiteral("Dlc1")},
+          {QStringLiteral("title"), QStringLiteral("Bonus Pack")}};
+      dlDlgObj->setProperty("availableInstallTags", tags);
+      dlDlgObj->setProperty("availableDlcs", dlcs);
+      QVERIFY(QMetaObject::invokeMethod(dlDlgObj.get(), "open"));
+      QCoreApplication::processEvents();
+      QVariant dlgGridVar;
+      QVERIFY(QMetaObject::invokeMethod(dlDlgObj.get(), "getFocusGrid",
+                                        Q_RETURN_ARG(QVariant, dlgGridVar)));
+      // Base rows (installDir, runner, pfxMode, prefix, footer) = 5; with 1 tag
+      // + 1 dlc >= 7 rows
+      QVERIFY(dlgGridVar.toList().size() >= 7);
+      QVERIFY(QMetaObject::invokeMethod(dlDlgObj.get(), "close"));
+
+      QQmlComponent remComp(&engine,
+                            resolveQmlUrl(QStringLiteral(
+                                "src/qml/components/RemoveGameDialog.qml")));
+      QVERIFY2(remComp.isReady(), qPrintable(remComp.errorString()));
+      std::unique_ptr<QObject> remObj(remComp.create());
+      QVERIFY(remObj != nullptr);
+      remObj->setProperty("parent", QVariant::fromValue(win.contentItem()));
+      remObj->setProperty("isEpicGame", true);
+      remObj->setProperty("hasDedicatedPrefix", false);
+      QVERIFY(QMetaObject::invokeMethod(remObj.get(), "open"));
+      QCoreApplication::processEvents();
+      auto *remConfirmBtn =
+          remObj->findChild<QQuickItem *>(QStringLiteral("removeConfirmBtn"));
+      auto *epicFilesToggle = remObj->findChild<QQuickItem *>(
+          QStringLiteral("deleteEpicFilesToggle"));
+      QVERIFY(remConfirmBtn != nullptr);
+      QVERIFY(epicFilesToggle != nullptr);
+      remConfirmBtn->forceActiveFocus();
+      QCoreApplication::processEvents();
+      QTest::keyClick(&win, Qt::Key_Up);
+      QCoreApplication::processEvents();
+      QCOMPARE(win.activeFocusItem(), epicFilesToggle);
+      QVERIFY(QMetaObject::invokeMethod(remObj.get(), "close"));
+    }
   }
 };
 

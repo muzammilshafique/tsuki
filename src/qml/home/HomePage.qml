@@ -71,6 +71,7 @@ Page {
     }
 
     function cycleTab(delta) {
+        if (uiController) uiController.setKeyboardNavActive(true)
         const tabs = [
             { navIdx: 0, section: "library",     filter: -1 },
             { navIdx: 1, section: "library",     filter: 3 },
@@ -105,6 +106,15 @@ Page {
         Qt.callLater(focusActiveSectionContent)
     }
 
+    function activateCurrentSearch() {
+        if (page.activeSection === "epic" && epicLoader.item && epicLoader.item.isSignedIn && typeof epicLoader.item.activateSearch === "function") {
+            epicLoader.item.activateSearch()
+            return
+        }
+        page.activeSection = "library"
+        topBar.activateSearch()
+    }
+
     background: Rectangle {
         color: appSettings.bgColor
         Behavior on color { ColorAnimation { duration: 150 } }
@@ -125,9 +135,8 @@ Page {
         target: uiController ? uiController.controllerManager : null
         function onSearchActionRequested() {
             if (page.StackView.status !== StackView.Active || page.isAnyModalOpen()) return
-            page.activeSection = "library"
             uiController.setKeyboardNavActive(true)
-            topBar.activateSearch()
+            page.activateCurrentSearch()
         }
         function onTabLeftRequested() {
             if (page.StackView.status !== StackView.Active || page.isAnyModalOpen()) return
@@ -140,6 +149,7 @@ Page {
     }
 
     Keys.onPressed: (event) => {
+        event.accepted = false
         if (page.isAnyModalOpen() || page.isTextInputActive()) return
         if (event.key === Qt.Key_PageUp || event.key === Qt.Key_BracketLeft) {
             event.accepted = true
@@ -153,10 +163,7 @@ Page {
     Shortcut {
         sequences: ["/", "Ctrl+F"]
         enabled: page.visible && page.StackView.status === StackView.Active && !page.isAnyModalOpen() && !page.isTextInputActive()
-        onActivated: {
-            page.activeSection = "library"
-            topBar.activateSearch()
-        }
+        onActivated: page.activateCurrentSearch()
     }
 
     Timer {

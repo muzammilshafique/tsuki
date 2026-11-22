@@ -138,6 +138,25 @@ Page {
         }
     }
 
+    function closeOpenComboPopup() {
+        const combos = [
+            (typeof detailRunnerCombo !== "undefined") ? detailRunnerCombo : null,
+            (typeof detailPrefixCombo !== "undefined") ? detailPrefixCombo : null,
+            (typeof hudCombo !== "undefined") ? hudCombo : null,
+            (typeof gpuCombo !== "undefined") ? gpuCombo : null,
+            (typeof fsrStrengthCombo !== "undefined") ? fsrStrengthCombo : null,
+            (typeof cloudSnapshotsCombo !== "undefined") ? cloudSnapshotsCombo : null
+        ]
+        for (let i = 0; i < combos.length; ++i) {
+            if (combos[i] && combos[i].popup && combos[i].popup.visible) {
+                combos[i].popup.close()
+                combos[i].forceActiveFocus()
+                return true
+            }
+        }
+        return false
+    }
+
     function getFocusGrid() {
         if (root.isUninstalledEpic) {
             let uRows = [[backBtn]]
@@ -146,13 +165,25 @@ Page {
             } else {
                 uRows.push([primaryActionBtn])
             }
+            if (epicProgressCard.visible) {
+                let pRow = []
+                if (epicProgressPauseBtn.visible && epicProgressPauseBtn.enabled) pRow.push(epicProgressPauseBtn)
+                if (epicProgressCancelBtn.visible && epicProgressCancelBtn.enabled) pRow.push(epicProgressCancelBtn)
+                if (pRow.length > 0) uRows.push(pRow)
+            }
             return uRows
         }
         let rows = [
             [backBtn],
-            [primaryActionBtn, actionsDropdownBtn],
-            [tabsBar]
+            [primaryActionBtn, actionsDropdownBtn]
         ]
+        if (epicProgressCard.visible) {
+            let pRow = []
+            if (epicProgressPauseBtn.visible && epicProgressPauseBtn.enabled) pRow.push(epicProgressPauseBtn)
+            if (epicProgressCancelBtn.visible && epicProgressCancelBtn.enabled) pRow.push(epicProgressCancelBtn)
+            if (pRow.length > 0) rows.push(pRow)
+        }
+        rows.push([tabsBar])
         if (root.activeTab === 0) {
             rows.push([titleField, argsField])
             rows.push([exePathField, exeBrowseBtn])
@@ -163,7 +194,29 @@ Page {
                 if (umuToggle.checked) {
                     rows.push([umuGameIdField, disableProtonfixesToggle])
                 }
-            } else {
+            }
+            if (typeof detailColRepeater !== "undefined" && detailColRepeater && detailColRepeater.count > 0) {
+                let chipItems = []
+                for (let ci = 0; ci < detailColRepeater.count; ++ci) {
+                    const chip = detailColRepeater.itemAt(ci)
+                    if (chip && chip.visible && chip.enabled) chipItems.push(chip)
+                }
+                if (chipItems.length > 0) {
+                    chipItems.sort((a, b) => (Math.abs(a.y - b.y) > 12) ? (a.y - b.y) : (a.x - b.x))
+                    let chipRow = [chipItems[0]]
+                    for (let k = 1; k < chipItems.length; ++k) {
+                        if (Math.abs(chipItems[k].y - chipRow[0].y) <= 12) {
+                            chipRow.push(chipItems[k])
+                        } else {
+                            rows.push(chipRow)
+                            chipRow = [chipItems[k]]
+                        }
+                    }
+                    rows.push(chipRow)
+                }
+            }
+            rows.push([detailNewColField, detailAddColBtn])
+            if (root.isNative) {
                 rows.push([nativeEnvWrap])
             }
         } else if (root.activeTab === 1 && !root.isNative) {
@@ -204,16 +257,33 @@ Page {
                 rows.push([epicOnlineAuthToggle])
             }
             if (root.isEpicEntry && !root.isUninstalledEpic && !root.isNative) {
-                rows.push([eosOverlayToggle])
-                rows.push([eacRuntimeToggle])
-                rows.push([battleyeRuntimeToggle])
+                rows.push((eosInstallBtn.visible && eosInstallBtn.enabled) ? [eosInstallBtn, eosOverlayToggle] : [eosOverlayToggle])
+                rows.push((eacInstallBtn.visible && eacInstallBtn.enabled) ? [eacInstallBtn, eacRuntimeToggle] : [eacRuntimeToggle])
+                rows.push((battleyeInstallBtn.visible && battleyeInstallBtn.enabled) ? [battleyeInstallBtn, battleyeRuntimeToggle] : [battleyeRuntimeToggle])
             }
             if (root.isEpicEntry && !root.isUninstalledEpic) {
-                rows.push([cloudEnabledToggle])
+                if (cloudUpdateBtn.visible && cloudUpdateBtn.enabled) {
+                    rows.push([cloudUpdateBtn])
+                }
+                rows.push((cloudOpenFolderBtn.visible && cloudOpenFolderBtn.enabled) ? [cloudOpenFolderBtn, cloudEnabledToggle] : [cloudEnabledToggle])
                 if (cloudEnabledToggle.checked) {
                     rows.push([cloudAutoSyncToggle])
                 }
-                rows.push([cloudFolderOverrideField])
+                rows.push([cloudFolderOverrideField, cloudFolderBrowseBtn])
+                if (cloudEnabledToggle.checked) {
+                    rows.push([cloudSyncNowBtn, cloudForceDownloadBtn, cloudForceUploadBtn])
+                }
+                if (root.cloudSnapshots && root.cloudSnapshots.length > 0) {
+                    rows.push([cloudSnapshotsCombo, cloudRestoreSnapshotBtn])
+                }
+                if (root.gameDlcs && root.gameDlcs.length > 0 && typeof detailDlcRepeater !== "undefined" && detailDlcRepeater) {
+                    for (let di = 0; di < detailDlcRepeater.count; ++di) {
+                        const dlcRow = detailDlcRepeater.itemAt(di)
+                        if (dlcRow && dlcRow.primaryDlcBtn && dlcRow.primaryDlcBtn.visible && dlcRow.primaryDlcBtn.enabled) {
+                            rows.push([dlcRow.primaryDlcBtn])
+                        }
+                    }
+                }
             }
         }
         return rows
@@ -313,18 +383,39 @@ Page {
         }
     }
 
-    Keys.onEscapePressed: (event) => {
+    function handleDetailCancel(event) {
         if (actionsPopup.visible) {
             event.accepted = true
             actionsPopup.close()
-            return
+            return true
+        }
+        if (root.closeOpenComboPopup()) {
+            event.accepted = true
+            return true
+        }
+        if (root.isAnyPopupOpen()) {
+            event.accepted = false
+            return false
+        }
+        if (root.isTextInputActive()) {
+            event.accepted = false
+            return false
         }
         event.accepted = true
         root.saveAllChanges()
         root.backRequested()
+        return true
     }
 
+    Keys.onEscapePressed: (event) => root.handleDetailCancel(event)
+    Keys.onBackPressed: (event) => root.handleDetailCancel(event)
+
     function handleDetailKeyPress(event) {
+        event.accepted = false
+        if (event.key === Qt.Key_Escape || event.key === Qt.Key_Back) {
+            root.handleDetailCancel(event)
+            return
+        }
         if (root.isAnyPopupOpen()) {
             if (actionsPopup.visible && event.key === Qt.Key_Backspace) {
                 event.accepted = true
@@ -433,9 +524,16 @@ Page {
         repeat: false
         onTriggered: {
             let grid = root.getFocusGrid()
-            if (grid.length > 3 && grid[3].length > 0 && grid[3][0]) {
-                grid[3][0].forceActiveFocus()
-                root.scrollToControl(grid[3][0])
+            let contentRowIdx = 3
+            for (let i = 0; i < grid.length; ++i) {
+                if (grid[i].length > 0 && grid[i][0] === tabsBar) {
+                    contentRowIdx = i + 1
+                    break
+                }
+            }
+            if (grid.length > contentRowIdx && grid[contentRowIdx].length > 0 && grid[contentRowIdx][0]) {
+                grid[contentRowIdx][0].forceActiveFocus()
+                root.scrollToControl(grid[contentRowIdx][0])
             }
         }
     }
@@ -1314,15 +1412,19 @@ Page {
                                         }
                                     }
                                     Keys.onDownPressed: (event) => {
+                                        event.accepted = true
                                         if (actionsPopup.visible) {
-                                            event.accepted = true
                                             actionsPopup.handleDown()
+                                        } else {
+                                            root.navigateStep(1, 0)
                                         }
                                     }
                                     Keys.onUpPressed: (event) => {
+                                        event.accepted = true
                                         if (actionsPopup.visible) {
-                                            event.accepted = true
                                             actionsPopup.handleUp()
+                                        } else {
+                                            root.navigateStep(-1, 0)
                                         }
                                     }
                                     Keys.onReturnPressed: (event) => {
@@ -1356,6 +1458,16 @@ Page {
                                         if (actionsPopup.visible) {
                                             event.accepted = true
                                             actionsPopup.close()
+                                        } else {
+                                            event.accepted = false
+                                        }
+                                    }
+                                    Keys.onBackPressed: (event) => {
+                                        if (actionsPopup.visible) {
+                                            event.accepted = true
+                                            actionsPopup.close()
+                                        } else {
+                                            event.accepted = false
                                         }
                                     }
 
@@ -1673,6 +1785,8 @@ Page {
                         }
 
                         M3Button {
+                            id: epicProgressPauseBtn
+                            objectName: "epicProgressPauseBtn"
                             visible: !root.isEpicVerifying && !Boolean(root.epicData.isImporting)
                             text: root.isEpicPaused ? "Resume" : "Pause"
                             iconSymbol: root.isEpicPaused ? "play_arrow" : "stop"
@@ -1685,6 +1799,8 @@ Page {
                         }
 
                         M3Button {
+                            id: epicProgressCancelBtn
+                            objectName: "epicProgressCancelBtn"
                             text: "Cancel"
                             iconSymbol: "close"
                             buttonType: "destructive"
@@ -1795,6 +1911,9 @@ Page {
                 focus: true
                 activeFocusOnTab: false
                 readonly property bool isBarFocused: tabsBar.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+                Keys.onReturnPressed: (event) => { event.accepted = true; root.navigateStep(1, 0) }
+                Keys.onEnterPressed: (event) => { event.accepted = true; root.navigateStep(1, 0) }
+                Keys.onSpacePressed: (event) => { event.accepted = true; root.navigateStep(1, 0) }
                 property real activePillX: 0
                 property real activePillW: 0
                 property bool pillInitialized: false
@@ -2456,16 +2575,43 @@ Page {
                                     spacing: 8
 
                                     Repeater {
+                                        id: detailColRepeater
                                         model: (uiController && uiController.gameManager) ? uiController.gameManager.categories : []
                                         delegate: Rectangle {
+                                            id: colChip
                                             required property string modelData
                                             readonly property bool isAssigned: Boolean(root.gameData.categories && root.gameData.categories.indexOf(modelData) !== -1)
+                                            readonly property bool kbFocused: colChip.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
+                                            focus: true
+                                            activeFocusOnTab: false
                                             height: 32
                                             width: colChipRow.implicitWidth + 20
                                             radius: 16
                                             color: isAssigned ? appSettings.secondaryContainer : appSettings.surfaceContainerHigh
-                                            border.color: isAssigned ? appSettings.accentColor : appSettings.borderColor
-                                            border.width: 1
+                                            border.color: (kbFocused || isAssigned) ? appSettings.accentColor : appSettings.borderColor
+                                            border.width: kbFocused ? 2 : 1
+                                            scale: kbFocused ? 1.04 : 1.0
+                                            Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+
+                                            function toggleCollection() {
+                                                if (!uiController || !uiController.gameManager) return
+                                                if (isAssigned) uiController.gameManager.removeGameFromCollection(root.gameId, modelData)
+                                                else uiController.gameManager.addGameToCollection(root.gameId, modelData)
+                                            }
+
+                                            Keys.onReturnPressed: (event) => { event.accepted = true; colChip.toggleCollection() }
+                                            Keys.onEnterPressed: (event) => { event.accepted = true; colChip.toggleCollection() }
+                                            Keys.onSpacePressed: (event) => { event.accepted = true; colChip.toggleCollection() }
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                anchors.margins: -3
+                                                radius: 19
+                                                color: "transparent"
+                                                border.width: 2
+                                                border.color: appSettings.accentColor
+                                                visible: colChip.kbFocused
+                                            }
 
                                             Row {
                                                 id: colChipRow
@@ -2490,9 +2636,8 @@ Page {
                                                 anchors.fill: parent
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: {
-                                                    if (!uiController || !uiController.gameManager) return
-                                                    if (isAssigned) uiController.gameManager.removeGameFromCollection(root.gameId, modelData)
-                                                    else uiController.gameManager.addGameToCollection(root.gameId, modelData)
+                                                    if (uiController) uiController.setKeyboardNavActive(false)
+                                                    colChip.toggleCollection()
                                                 }
                                             }
                                         }
@@ -2504,9 +2649,13 @@ Page {
                                     spacing: 8
                                     M3TextField {
                                         id: detailNewColField
+                                        objectName: "detailNewColField"
+                                        twoStageFocus: true
                                         Layout.fillWidth: true
                                         Layout.maximumWidth: 320
                                         placeholderText: "Create & assign collection…"
+                                        onMoveUp: root.navigateStep(-1, 0)
+                                        onMoveDown: root.navigateStep(1, 0)
                                         onCommit: (val) => {
                                             const nm = val.trim()
                                             if (nm.length > 0 && uiController && uiController.gameManager) {
@@ -2516,6 +2665,8 @@ Page {
                                         }
                                     }
                                     M3Button {
+                                        id: detailAddColBtn
+                                        objectName: "detailAddColBtn"
                                         text: "Add"
                                         buttonType: "tonal"
                                         onClicked: {
@@ -3888,6 +4039,8 @@ Page {
                                     }
 
                                     M3Button {
+                                        id: eosInstallBtn
+                                        objectName: "eosInstallBtn"
                                         visible: Boolean(uiController && uiController.epicService && !uiController.epicService.eosOverlayInstalled)
                                         enabled: Boolean(uiController && uiController.epicService && !uiController.epicService.isInstallingEosOverlay)
                                         text: (uiController && uiController.epicService && uiController.epicService.isInstallingEosOverlay) ? "Installing…" : "Install"
@@ -3932,6 +4085,8 @@ Page {
                                     }
 
                                     M3Button {
+                                        id: eacInstallBtn
+                                        objectName: "eacInstallBtn"
                                         visible: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.eacRuntimeAvailable)
                                         enabled: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.isInstallingEac)
                                         text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingEac) ? "Installing…" : "Install"
@@ -3977,6 +4132,8 @@ Page {
                                     }
 
                                     M3Button {
+                                        id: battleyeInstallBtn
+                                        objectName: "battleyeInstallBtn"
                                         visible: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.battleyeRuntimeAvailable)
                                         enabled: Boolean(uiController && uiController.runnerManager && !uiController.runnerManager.isInstallingBattleye)
                                         text: (uiController && uiController.runnerManager && uiController.runnerManager.isInstallingBattleye) ? "Installing…" : "Install"
@@ -4020,6 +4177,8 @@ Page {
                                         Layout.fillWidth: true
                                     }
                                     M3Button {
+                                        id: cloudUpdateBtn
+                                        objectName: "cloudUpdateBtn"
                                         visible: Boolean(root.gameData.hasUpdate)
                                         text: "Update Available"
                                         iconSymbol: "download"
@@ -4046,6 +4205,8 @@ Page {
                                         }
                                     }
                                     M3Button {
+                                        id: cloudOpenFolderBtn
+                                        objectName: "cloudOpenFolderBtn"
                                         visible: Boolean(root.cloudStatus.localSaveDir && String(root.cloudStatus.localSaveDir).length > 0)
                                         text: "Open Folder"
                                         iconSymbol: "folder_open"
@@ -4099,12 +4260,18 @@ Page {
                                         spacing: 8
                                         M3TextField {
                                             id: cloudFolderOverrideField
+                                            objectName: "cloudFolderOverrideField"
+                                            twoStageFocus: true
                                             Layout.fillWidth: true
                                             text: root.gameData.epicCloudSaveFolder || ""
                                             placeholderText: "{AppData}/GameName/Saved"
+                                            onMoveUp: root.navigateStep(-1, 0)
+                                            onMoveDown: root.navigateStep(1, 0)
                                             onCommit: root.saveAllChanges()
                                         }
                                         M3Button {
+                                            id: cloudFolderBrowseBtn
+                                            objectName: "cloudFolderBrowseBtn"
                                             text: "Browse…"
                                             iconSymbol: "folder_open"
                                             buttonType: "tonal"
@@ -4124,6 +4291,8 @@ Page {
                                     Layout.fillWidth: true
                                     spacing: 8
                                     M3Button {
+                                        id: cloudSyncNowBtn
+                                        objectName: "cloudSyncNowBtn"
                                         text: "Sync Now"
                                         iconSymbol: "refresh"
                                         buttonType: "filled"
@@ -4133,6 +4302,8 @@ Page {
                                         }
                                     }
                                     M3Button {
+                                        id: cloudForceDownloadBtn
+                                        objectName: "cloudForceDownloadBtn"
                                         text: "Force Download"
                                         iconSymbol: "download"
                                         buttonType: "tonal"
@@ -4142,6 +4313,8 @@ Page {
                                         }
                                     }
                                     M3Button {
+                                        id: cloudForceUploadBtn
+                                        objectName: "cloudForceUploadBtn"
                                         text: "Force Upload"
                                         buttonType: "tonal"
                                         onClicked: {
@@ -4165,6 +4338,8 @@ Page {
                                     }
                                     StyledCombo {
                                         id: cloudSnapshotsCombo
+                                        objectName: "cloudSnapshotsCombo"
+                                        upDownNavigatesFocus: true
                                         Layout.fillWidth: true
                                         comboModel: {
                                             let out = []
@@ -4176,6 +4351,8 @@ Page {
                                         selectedIndex: 0
                                     }
                                     M3Button {
+                                        id: cloudRestoreSnapshotBtn
+                                        objectName: "cloudRestoreSnapshotBtn"
                                         text: "Restore"
                                         buttonType: "tonal"
                                         onClicked: {
@@ -4211,13 +4388,16 @@ Page {
                                 }
 
                                 Repeater {
+                                    id: detailDlcRepeater
                                     model: root.gameDlcs || []
                                     delegate: RowLayout {
+                                        id: dlcRowDelegate
                                         required property var modelData
                                         readonly property string dlcId: String(modelData.appName || modelData.dlcAppName || "")
                                         readonly property var dlcDlState: (uiController && uiController.epicService && dlcId.length > 0)
                                             ? uiController.epicService.getDownloadState(dlcId) : ({})
                                         readonly property bool dlcDownloading: Boolean(dlcDlState && dlcDlState.isDownloading)
+                                        readonly property Item primaryDlcBtn: !modelData.isInstalled ? dlcInstallBtn : dlcRemoveBtn
                                         Layout.fillWidth: true
                                         spacing: 10
                                         Label {
@@ -4228,6 +4408,7 @@ Page {
                                             elide: Text.ElideRight
                                         }
                                         M3Button {
+                                            id: dlcInstallBtn
                                             visible: !modelData.isInstalled
                                             text: dlcDownloading ? "Downloading…" : "Install DLC"
                                             buttonType: dlcDownloading ? "tonal" : "filled"
@@ -4243,6 +4424,7 @@ Page {
                                             implicitHeight: 30
                                         }
                                         M3Button {
+                                            id: dlcRemoveBtn
                                             visible: Boolean(modelData.isInstalled)
                                             text: "Remove"
                                             buttonType: "destructive"

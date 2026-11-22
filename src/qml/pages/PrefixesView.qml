@@ -5,6 +5,7 @@ import "../components"
 
 Item {
     id: root
+    objectName: "prefixesView"
     signal winetricksRequested(string prefixId, string prefixName)
     signal focusSidebarRequested()
 
@@ -22,6 +23,7 @@ Item {
     Keys.onEscapePressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
     Keys.onBackPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
     Keys.onPressed: (event) => {
+        event.accepted = false
         if (event.key === Qt.Key_Backspace) {
             event.accepted = true
             root.focusSidebarRequested()
@@ -132,18 +134,22 @@ Item {
 
                 M3TextField {
                     id: newPfxNameField
+                    objectName: "prefixesNameField"
                     twoStageFocus: true
                     Layout.preferredWidth: 200
                     placeholderText: "Prefix Name (e.g. gta-v)"
                     Layout.alignment: Qt.AlignVCenter
-                    Keys.onLeftPressed: (event) => { if (!isEditing) { event.accepted = true; root.focusSidebarRequested() } }
-                    Keys.onRightPressed: (event) => { if (!isEditing) { event.accepted = true; archSegBtn.forceActiveFocus() } }
-                    Keys.onUpPressed: (event) => { if (!isEditing) { event.accepted = true; importPfxBtn.forceActiveFocus() } }
-                    Keys.onDownPressed: (event) => { if (!isEditing && prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                    onMoveUp: importPfxBtn.forceActiveFocus()
+                    onMoveDown: if (prefixesList.count > 0) prefixesList.forceActiveFocus()
+                    Keys.onLeftPressed: (event) => { if (!isEditing) { event.accepted = true; root.focusSidebarRequested() } else { event.accepted = false } }
+                    Keys.onRightPressed: (event) => { if (!isEditing) { event.accepted = true; archSegBtn.forceActiveFocus() } else { event.accepted = false } }
+                    Keys.onUpPressed: (event) => { if (!isEditing) { event.accepted = true; importPfxBtn.forceActiveFocus() } else { event.accepted = false } }
+                    Keys.onDownPressed: (event) => { if (!isEditing && prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } else { event.accepted = false } }
                 }
 
                 M3SegmentedButton {
                     id: archSegBtn
+                    objectName: "prefixesArchSegBtn"
                     Layout.preferredWidth: 150
                     model: [
                         { label: "win64", val: 0 },
@@ -151,32 +157,32 @@ Item {
                     ]
                     selectedValue: 0
                     Layout.alignment: Qt.AlignVCenter
+                    onEdgeLeft: newPfxNameField.forceActiveFocus()
+                    onEdgeRight: newPfxPathField.forceActiveFocus()
                     Keys.onUpPressed: (event) => { event.accepted = true; importPfxBtn.forceActiveFocus() }
-                    Keys.onDownPressed: (event) => { if (prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } }
-                    Keys.onRightPressed: (event) => {
-                        if (selectedValue === 1) {
+                    Keys.onDownPressed: (event) => {
+                        if (prefixesList.count > 0) {
                             event.accepted = true
-                            newPfxPathField.forceActiveFocus()
-                        }
-                    }
-                    Keys.onLeftPressed: (event) => {
-                        if (selectedValue === 0) {
-                            event.accepted = true
-                            newPfxNameField.forceActiveFocus()
+                            prefixesList.forceActiveFocus()
+                        } else {
+                            event.accepted = false
                         }
                     }
                 }
 
                 M3TextField {
                     id: newPfxPathField
+                    objectName: "prefixesPathField"
                     twoStageFocus: true
                     Layout.fillWidth: true
                     text: appSettings.defaultPrefixLocation
                     Layout.alignment: Qt.AlignVCenter
-                    Keys.onLeftPressed: (event) => { if (!isEditing) { event.accepted = true; archSegBtn.forceActiveFocus() } }
-                    Keys.onRightPressed: (event) => { if (!isEditing) { event.accepted = true; folderCreateBtn.forceActiveFocus() } }
-                    Keys.onUpPressed: (event) => { if (!isEditing) { event.accepted = true; importPfxBtn.forceActiveFocus() } }
-                    Keys.onDownPressed: (event) => { if (!isEditing && prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                    onMoveUp: importPfxBtn.forceActiveFocus()
+                    onMoveDown: if (prefixesList.count > 0) prefixesList.forceActiveFocus()
+                    Keys.onLeftPressed: (event) => { if (!isEditing) { event.accepted = true; archSegBtn.forceActiveFocus() } else { event.accepted = false } }
+                    Keys.onRightPressed: (event) => { if (!isEditing) { event.accepted = true; folderCreateBtn.forceActiveFocus() } else { event.accepted = false } }
+                    Keys.onUpPressed: (event) => { if (!isEditing) { event.accepted = true; importPfxBtn.forceActiveFocus() } else { event.accepted = false } }
+                    Keys.onDownPressed: (event) => { if (!isEditing && prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } else { event.accepted = false } }
                 }
 
                 M3Button {
@@ -193,7 +199,7 @@ Item {
                     Keys.onLeftPressed: (event) => { event.accepted = true; newPfxPathField.forceActiveFocus() }
                     Keys.onRightPressed: (event) => { event.accepted = true; createPfxBtn.forceActiveFocus() }
                     Keys.onUpPressed: (event) => { event.accepted = true; restoreBackupBtn.forceActiveFocus() }
-                    Keys.onDownPressed: (event) => { if (prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                    Keys.onDownPressed: (event) => { event.accepted = true; if (prefixesList.count > 0) prefixesList.forceActiveFocus() }
                 }
 
                 M3Button {
@@ -216,7 +222,7 @@ Item {
                     }
                     Keys.onLeftPressed: (event) => { event.accepted = true; folderCreateBtn.forceActiveFocus() }
                     Keys.onUpPressed: (event) => { event.accepted = true; restoreBackupBtn.forceActiveFocus() }
-                    Keys.onDownPressed: (event) => { if (prefixesList.count > 0) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                    Keys.onDownPressed: (event) => { event.accepted = true; if (prefixesList.count > 0) prefixesList.forceActiveFocus() }
                 }
             }
         }
@@ -281,7 +287,20 @@ Item {
                 property alias runExeBtn: runExeBtnItem
                 property string diskUsageText: (uiController && uiController.prefixManager && modelData && modelData.id)
                     ? uiController.prefixManager.cachedPrefixSizeFormatted(modelData.id) : ""
-                readonly property bool isCurrentRow: prefixesList.activeFocus && prefixesList.currentIndex === index
+                readonly property bool isCurrentRow: Boolean(uiController && uiController.isKeyboardNavActive) && prefixesList.activeFocus && prefixesList.currentIndex === index
+
+                function stepRowFromButton(delta) {
+                    const next = pfxCard.index + delta
+                    if (next < 0) {
+                        newPfxNameField.forceActiveFocus()
+                    } else if (next < prefixesList.count) {
+                        prefixesList.currentIndex = next
+                        prefixesList.positionViewAtIndex(next, ListView.Contain)
+                        prefixesList.forceActiveFocus()
+                    } else {
+                        prefixesList.forceActiveFocus()
+                    }
+                }
                 width: ListView.view.width
                 implicitHeight: cardInner.implicitHeight + 28
                 radius: 16
@@ -406,11 +425,11 @@ Item {
                             }
                             Keys.onLeftPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
                             Keys.onRightPressed: (event) => { event.accepted = true; winetricksBtnItem.forceActiveFocus() }
-                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
-                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onUpPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(-1) }
+                            Keys.onDownPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(1) }
                             Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
                             Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
-                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                            Keys.onPressed: (event) => { event.accepted = false; if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
                         }
 
                         M3Button {
@@ -422,11 +441,11 @@ Item {
                             onClicked: root.winetricksRequested(pfxCard.modelData.id, pfxCard.modelData.name)
                             Keys.onLeftPressed: (event) => { event.accepted = true; runExeBtnItem.forceActiveFocus() }
                             Keys.onRightPressed: (event) => { event.accepted = true; folderBtnItem.forceActiveFocus() }
-                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
-                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onUpPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(-1) }
+                            Keys.onDownPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(1) }
                             Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
                             Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
-                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                            Keys.onPressed: (event) => { event.accepted = false; if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
                         }
 
                         M3Button {
@@ -438,11 +457,11 @@ Item {
                             onClicked: uiController.prefixManager.openPrefixInFileManager(pfxCard.modelData.id)
                             Keys.onLeftPressed: (event) => { event.accepted = true; winetricksBtnItem.forceActiveFocus() }
                             Keys.onRightPressed: (event) => { event.accepted = true; cleanCacheBtnItem.forceActiveFocus() }
-                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
-                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onUpPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(-1) }
+                            Keys.onDownPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(1) }
                             Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
                             Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
-                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                            Keys.onPressed: (event) => { event.accepted = false; if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
                         }
 
                         M3Button {
@@ -456,11 +475,11 @@ Item {
                             }
                             Keys.onLeftPressed: (event) => { event.accepted = true; folderBtnItem.forceActiveFocus() }
                             Keys.onRightPressed: (event) => { event.accepted = true; backupBtnItem.forceActiveFocus() }
-                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
-                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onUpPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(-1) }
+                            Keys.onDownPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(1) }
                             Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
                             Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
-                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                            Keys.onPressed: (event) => { event.accepted = false; if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
                         }
 
                         M3Button {
@@ -470,12 +489,12 @@ Item {
                             Layout.alignment: Qt.AlignVCenter
                             onClicked: uiController.prefixManager.backupPrefix(pfxCard.modelData.id, "")
                             Keys.onLeftPressed: (event) => { event.accepted = true; cleanCacheBtnItem.forceActiveFocus() }
-                            Keys.onRightPressed: (event) => { if (deleteBtnItem.visible) { event.accepted = true; deleteBtnItem.forceActiveFocus() } }
-                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
-                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onRightPressed: (event) => { if (deleteBtnItem.visible) { event.accepted = true; deleteBtnItem.forceActiveFocus() } else { event.accepted = false } }
+                            Keys.onUpPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(-1) }
+                            Keys.onDownPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(1) }
                             Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
                             Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
-                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                            Keys.onPressed: (event) => { event.accepted = false; if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
                         }
 
                         M3Button {
@@ -486,11 +505,11 @@ Item {
                             Layout.alignment: Qt.AlignVCenter
                             onClicked: uiController.prefixManager.deletePrefix(pfxCard.modelData.id, true)
                             Keys.onLeftPressed: (event) => { event.accepted = true; backupBtnItem.forceActiveFocus() }
-                            Keys.onUpPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex > 0) { prefixesList.currentIndex--; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
-                            Keys.onDownPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus(); if (prefixesList.currentIndex < prefixesList.count - 1) { prefixesList.currentIndex++; prefixesList.positionViewAtIndex(prefixesList.currentIndex, ListView.Contain) } }
+                            Keys.onUpPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(-1) }
+                            Keys.onDownPressed: (event) => { event.accepted = true; pfxCard.stepRowFromButton(1) }
                             Keys.onEscapePressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
                             Keys.onBackPressed: (event) => { event.accepted = true; prefixesList.forceActiveFocus() }
-                            Keys.onPressed: (event) => { if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
+                            Keys.onPressed: (event) => { event.accepted = false; if (event.key === Qt.Key_Backspace) { event.accepted = true; prefixesList.forceActiveFocus() } }
                         }
                     }
                 }

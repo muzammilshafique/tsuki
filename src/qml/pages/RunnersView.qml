@@ -5,14 +5,57 @@ import "../components"
 
 Item {
     id: root
+    objectName: "runnersView"
     signal focusSidebarRequested()
     property string selectedReleaseCat: "proton-ge"
+
+    function focusUmuButton() {
+        if (umuActionBtn.visible && umuActionBtn.enabled) {
+            umuActionBtn.forceActiveFocus()
+            return true
+        }
+        if (umuRemoveBtn.visible && umuRemoveBtn.enabled) {
+            umuRemoveBtn.forceActiveFocus()
+            return true
+        }
+        return false
+    }
+
+    function focusLeftColumnTop() {
+        if (focusUmuButton()) return
+        if (installedList.count > 0) {
+            if (installedList.currentIndex < 0) installedList.currentIndex = 0
+            installedList.forceActiveFocus()
+            return
+        }
+        if (dlSection.visible && dlRepeater.count > 0) {
+            dlSection.focusedDlIndex = 0
+            dlSection.forceActiveFocus()
+            return
+        }
+        root.focusSidebarRequested()
+    }
+
+    function focusLeftColumnFromRight() {
+        if (installedList.count > 0) {
+            if (installedList.currentIndex < 0) installedList.currentIndex = 0
+            installedList.forceActiveFocus()
+            return
+        }
+        if (focusUmuButton()) return
+        if (dlSection.visible && dlRepeater.count > 0) {
+            dlSection.focusedDlIndex = 0
+            dlSection.forceActiveFocus()
+            return
+        }
+        root.focusSidebarRequested()
+    }
 
     function forceFocus() {
         if (installedList.count > 0) {
             if (installedList.currentIndex < 0) installedList.currentIndex = 0
             installedList.forceActiveFocus()
-        } else {
+        } else if (!focusUmuButton()) {
             releaseCatSeg.forceActiveFocus()
         }
     }
@@ -24,6 +67,7 @@ Item {
     Keys.onEscapePressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
     Keys.onBackPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
     Keys.onPressed: (event) => {
+        event.accepted = false
         if (event.key === Qt.Key_Backspace) {
             event.accepted = true
             root.focusSidebarRequested()
@@ -73,17 +117,19 @@ Item {
             // Top-Right Refresh Button: Icon-only, circular, smooth hover & rotation
             Rectangle {
                 id: scanBtn
+                objectName: "runnersScanBtn"
                 focus: true
+                readonly property bool kbFocused: scanBtn.activeFocus && Boolean(uiController && uiController.isKeyboardNavActive)
                 implicitWidth: 38
                 implicitHeight: 38
                 radius: 19
                 Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-                color: (scanHover.hovered || scanBtn.activeFocus)
+                color: (scanHover.hovered || scanBtn.kbFocused)
                     ? (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08))
                     : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04))
-                border.color: (scanHover.hovered || scanBtn.activeFocus) ? appSettings.accentColor : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                border.width: scanBtn.activeFocus ? 2 : 1
-                scale: scanMA.pressed ? 0.94 : ((scanHover.hovered || scanBtn.activeFocus) ? 1.05 : 1.0)
+                border.color: (scanHover.hovered || scanBtn.kbFocused) ? appSettings.accentColor : (appSettings.isEffectiveDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                border.width: scanBtn.kbFocused ? 2 : 1
+                scale: scanMA.pressed ? 0.94 : ((scanHover.hovered || scanBtn.kbFocused) ? 1.05 : 1.0)
 
                 Behavior on color { ColorAnimation { duration: 150 } }
                 Behavior on border.color { ColorAnimation { duration: 150 } }
@@ -94,24 +140,16 @@ Item {
                 Keys.onSpacePressed: (event) => { event.accepted = true; scanRotateAnim.restart(); uiController.runnerManager.detectInstalledRunners(); uiController.runnerManager.fetchAvailableReleases(root.selectedReleaseCat, true) }
                 Keys.onDownPressed: (event) => {
                     event.accepted = true
-                    if (installedList.count === 0 && dlSection.visible && dlRepeater.count > 0) {
-                        dlSection.focusedDlIndex = 0
-                        dlSection.forceActiveFocus()
-                    } else {
-                        releaseCatSeg.forceActiveFocus()
-                    }
+                    releaseCatSeg.forceActiveFocus()
                 }
                 Keys.onLeftPressed: (event) => {
                     event.accepted = true
-                    if (installedList.count > 0) installedList.forceActiveFocus()
-                    else if (dlSection.visible && dlRepeater.count > 0) {
-                        dlSection.focusedDlIndex = 0
-                        dlSection.forceActiveFocus()
-                    } else root.focusSidebarRequested()
+                    root.focusLeftColumnTop()
                 }
                 Keys.onEscapePressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
                 Keys.onBackPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
                 Keys.onPressed: (event) => {
+                    event.accepted = false
                     if (event.key === Qt.Key_Backspace) {
                         event.accepted = true
                         root.focusSidebarRequested()
@@ -253,6 +291,8 @@ Item {
                             }
 
                             M3Button {
+                                id: umuActionBtn
+                                objectName: "runnersUmuInstallBtn"
                                 visible: Boolean(uiController.runnerManager && !uiController.runnerManager.umuAvailable)
                                 enabled: Boolean(uiController.runnerManager && !uiController.runnerManager.isInstallingUmu)
                                 text: (uiController.runnerManager && uiController.runnerManager.isInstallingUmu) ? "Installing…" : "Install UMU"
@@ -260,14 +300,42 @@ Item {
                                 buttonType: "filled"
                                 implicitHeight: 30
                                 onClicked: uiController.runnerManager.installUmuLauncher()
+                                Keys.onUpPressed: (event) => { event.accepted = true; scanBtn.forceActiveFocus() }
+                                Keys.onDownPressed: (event) => {
+                                    event.accepted = true
+                                    if (installedList.count > 0) {
+                                        if (installedList.currentIndex < 0) installedList.currentIndex = 0
+                                        installedList.forceActiveFocus()
+                                    } else if (dlSection.visible && dlRepeater.count > 0) {
+                                        dlSection.focusedDlIndex = 0
+                                        dlSection.forceActiveFocus()
+                                    }
+                                }
+                                Keys.onLeftPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
+                                Keys.onRightPressed: (event) => { event.accepted = true; releaseCatSeg.forceActiveFocus() }
                             }
 
                             M3Button {
+                                id: umuRemoveBtn
+                                objectName: "runnersUmuRemoveBtn"
                                 visible: Boolean(uiController.runnerManager && uiController.runnerManager.umuAvailable)
                                 text: "Remove"
                                 buttonType: "tonal"
                                 implicitHeight: 30
                                 onClicked: uiController.runnerManager.removeUmuLauncher()
+                                Keys.onUpPressed: (event) => { event.accepted = true; scanBtn.forceActiveFocus() }
+                                Keys.onDownPressed: (event) => {
+                                    event.accepted = true
+                                    if (installedList.count > 0) {
+                                        if (installedList.currentIndex < 0) installedList.currentIndex = 0
+                                        installedList.forceActiveFocus()
+                                    } else if (dlSection.visible && dlRepeater.count > 0) {
+                                        dlSection.focusedDlIndex = 0
+                                        dlSection.forceActiveFocus()
+                                    }
+                                }
+                                Keys.onLeftPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
+                                Keys.onRightPressed: (event) => { event.accepted = true; releaseCatSeg.forceActiveFocus() }
                             }
                         }
                     }
@@ -292,7 +360,7 @@ Item {
                             if (currentIndex > 0) {
                                 currentIndex--
                                 positionViewAtIndex(currentIndex, ListView.Contain)
-                            } else {
+                            } else if (!root.focusUmuButton()) {
                                 scanBtn.forceActiveFocus()
                             }
                         }
@@ -353,7 +421,7 @@ Item {
                             required property int index
                             property alias setDefBtn: setDefBtnItem
                             property alias remBtn: remBtnItem
-                            readonly property bool isCurrentRow: installedList.activeFocus && installedList.currentIndex === index
+                            readonly property bool isCurrentRow: Boolean(uiController && uiController.isKeyboardNavActive) && installedList.activeFocus && installedList.currentIndex === index
                             width: ListView.view.width
                             height: 76
                             radius: 14
@@ -479,10 +547,12 @@ Item {
                                         }
                                         Keys.onUpPressed: (event) => {
                                             event.accepted = true
-                                            installedList.forceActiveFocus()
                                             if (installedList.currentIndex > 0) {
+                                                installedList.forceActiveFocus()
                                                 installedList.currentIndex--
                                                 installedList.positionViewAtIndex(installedList.currentIndex, ListView.Contain)
+                                            } else if (!root.focusUmuButton()) {
+                                                scanBtn.forceActiveFocus()
                                             }
                                         }
                                         Keys.onDownPressed: (event) => {
@@ -519,10 +589,12 @@ Item {
                                         }
                                         Keys.onUpPressed: (event) => {
                                             event.accepted = true
-                                            installedList.forceActiveFocus()
                                             if (installedList.currentIndex > 0) {
+                                                installedList.forceActiveFocus()
                                                 installedList.currentIndex--
                                                 installedList.positionViewAtIndex(installedList.currentIndex, ListView.Contain)
+                                            } else if (!root.focusUmuButton()) {
+                                                scanBtn.forceActiveFocus()
                                             }
                                         }
                                         Keys.onDownPressed: (event) => {
@@ -595,7 +667,7 @@ Item {
                                 installedList.currentIndex = installedList.count - 1
                                 installedList.positionViewAtIndex(installedList.currentIndex, ListView.Contain)
                                 installedList.forceActiveFocus()
-                            } else {
+                            } else if (!root.focusUmuButton()) {
                                 scanBtn.forceActiveFocus()
                             }
                         }
@@ -652,6 +724,7 @@ Item {
                             else root.focusSidebarRequested()
                         }
                         Keys.onPressed: (event) => {
+                            event.accepted = false
                             if (event.key === Qt.Key_Backspace) {
                                 event.accepted = true
                                 if (installedList.count > 0) installedList.forceActiveFocus()
@@ -899,6 +972,7 @@ Item {
                     // Release Category Pills (Proton-GE, CachyOS, Sarek, Proton-EM)
                     M3SegmentedButton {
                         id: releaseCatSeg
+                        objectName: "runnersReleaseCatSeg"
                         Layout.fillWidth: true
                         model: [
                             { label: "Proton-GE", val: 0 },
@@ -917,18 +991,21 @@ Item {
                             root.selectedReleaseCat = cats[val] || "proton-ge"
                             uiController.runnerManager.fetchAvailableReleases(root.selectedReleaseCat)
                         }
+                        onEdgeLeft: root.focusLeftColumnFromRight()
                         Keys.onUpPressed: (event) => {
                             event.accepted = true
                             scanBtn.forceActiveFocus()
                         }
                         Keys.onDownPressed: (event) => {
                             event.accepted = true
-                            if (releasesList.count > 0) releasesList.forceActiveFocus()
+                            if (cachyV3Row.visible) cachyV3Toggle.forceActiveFocus()
+                            else if (releasesList.count > 0) releasesList.forceActiveFocus()
                         }
                     }
 
                     // CachyOS x86-64-v3 CPU Optimization Bar
                     RowLayout {
+                        id: cachyV3Row
                         visible: root.selectedReleaseCat === "proton-cachyos"
                         Layout.fillWidth: true
                         spacing: 8
@@ -944,6 +1021,8 @@ Item {
                         }
 
                         Toggle {
+                            id: cachyV3Toggle
+                            objectName: "runnersCachyV3Toggle"
                             checked: appSettings ? appSettings.preferX86_64V3Runners : false
                             onToggled: (c) => {
                                 if (appSettings) {
@@ -951,6 +1030,12 @@ Item {
                                     uiController.runnerManager.fetchAvailableReleases("proton-cachyos", true)
                                 }
                             }
+                            Keys.onUpPressed: (event) => { event.accepted = true; releaseCatSeg.forceActiveFocus() }
+                            Keys.onDownPressed: (event) => {
+                                event.accepted = true
+                                if (releasesList.count > 0) releasesList.forceActiveFocus()
+                            }
+                            Keys.onLeftPressed: (event) => { event.accepted = true; root.focusLeftColumnFromRight() }
                         }
                     }
 
@@ -975,6 +1060,8 @@ Item {
                             if (currentIndex > 0) {
                                 currentIndex--
                                 positionViewAtIndex(currentIndex, ListView.Contain)
+                            } else if (cachyV3Row.visible) {
+                                cachyV3Toggle.forceActiveFocus()
                             } else {
                                 releaseCatSeg.forceActiveFocus()
                             }
@@ -991,11 +1078,7 @@ Item {
                         }
                         Keys.onLeftPressed: (event) => {
                             event.accepted = true
-                            if (installedList.count > 0) installedList.forceActiveFocus()
-                            else if (dlSection.visible && dlRepeater.count > 0) {
-                                dlSection.focusedDlIndex = 0
-                                dlSection.forceActiveFocus()
-                            } else scanBtn.forceActiveFocus()
+                            root.focusLeftColumnFromRight()
                         }
                         Keys.onReturnPressed: (event) => {
                             event.accepted = true
@@ -1015,7 +1098,7 @@ Item {
                             required property var modelData
                             required property int index
                             property alias dlBtn: dlBtnItem
-                            readonly property bool isCurrentRow: releasesList.activeFocus && releasesList.currentIndex === index
+                            readonly property bool isCurrentRow: Boolean(uiController && uiController.isKeyboardNavActive) && releasesList.activeFocus && releasesList.currentIndex === index
                             readonly property bool isDownloading: (uiController.downloadManager && uiController.downloadManager.isMediaDownloading("runner-dl-" + relRow.modelData.tagName)) || false
                             width: ListView.view.width
                             height: 52

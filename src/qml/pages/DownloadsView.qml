@@ -27,13 +27,46 @@ Item {
         { label: "50 MB/s",   kbps: 51200 }
     ]
 
-    function forceFocus() {
+    function focusFirstEnabledControl() {
         if (dlList.count > 0) {
             if (dlList.currentIndex < 0) dlList.currentIndex = 0
             dlList.forceActiveFocus()
-        } else {
-            pauseAllBtn.forceActiveFocus()
+            return
         }
+        if (pauseAllBtn.enabled) {
+            pauseAllBtn.forceActiveFocus()
+            return
+        }
+        speedLimitCombo.forceActiveFocus()
+    }
+
+    function focusBelowControlsBar() {
+        if (dlList.count > 0) {
+            if (dlList.currentIndex < 0) dlList.currentIndex = 0
+            dlList.forceActiveFocus()
+        } else if (historySection.visible) {
+            clearHistoryBtn.forceActiveFocus()
+        }
+    }
+
+    function focusBelowDlList() {
+        if (historySection.visible) {
+            clearHistoryBtn.forceActiveFocus()
+        }
+    }
+
+    function focusAboveHistory() {
+        if (dlList.count > 0) {
+            dlList.currentIndex = Math.max(0, dlList.count - 1)
+            dlList.positionViewAtIndex(dlList.currentIndex, ListView.Contain)
+            dlList.forceActiveFocus()
+        } else {
+            speedLimitCombo.forceActiveFocus()
+        }
+    }
+
+    function forceFocus() {
+        focusFirstEnabledControl()
     }
 
     function currentSpeedLimitIndex() {
@@ -44,12 +77,23 @@ Item {
         return 0
     }
 
-    Keys.onEscapePressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
-    Keys.onBackPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
-    Keys.onPressed: (event) => {
-        if (event.key === Qt.Key_Backspace) {
+    function handleViewCancel(event) {
+        if (speedLimitCombo.popup.visible) {
             event.accepted = true
-            root.focusSidebarRequested()
+            speedLimitCombo.popup.close()
+            speedLimitCombo.forceActiveFocus()
+            return
+        }
+        event.accepted = true
+        root.focusSidebarRequested()
+    }
+
+    Keys.onEscapePressed: (event) => root.handleViewCancel(event)
+    Keys.onBackPressed: (event) => root.handleViewCancel(event)
+    Keys.onPressed: (event) => {
+        event.accepted = false
+        if (event.key === Qt.Key_Backspace) {
+            root.handleViewCancel(event)
         }
     }
 
@@ -149,8 +193,8 @@ Item {
                     opacity: enabled ? 1.0 : 0.5
                     onClicked: if (root.dlMgr) root.dlMgr.pauseAll()
                     Keys.onLeftPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
-                    Keys.onRightPressed: (event) => { event.accepted = true; resumeAllBtn.forceActiveFocus() }
-                    Keys.onDownPressed: (event) => { event.accepted = true; if (dlList.count > 0) dlList.forceActiveFocus() }
+                    Keys.onRightPressed: (event) => { event.accepted = true; if (resumeAllBtn.enabled) resumeAllBtn.forceActiveFocus() }
+                    Keys.onDownPressed: (event) => { event.accepted = true; speedLimitCombo.forceActiveFocus() }
                 }
 
                 M3Button {
@@ -162,8 +206,8 @@ Item {
                     enabled: root.pendingCount > 0
                     opacity: enabled ? 1.0 : 0.5
                     onClicked: if (root.dlMgr) root.dlMgr.resumeAll()
-                    Keys.onLeftPressed: (event) => { event.accepted = true; pauseAllBtn.forceActiveFocus() }
-                    Keys.onDownPressed: (event) => { event.accepted = true; if (dlList.count > 0) dlList.forceActiveFocus() }
+                    Keys.onLeftPressed: (event) => { event.accepted = true; if (pauseAllBtn.enabled) pauseAllBtn.forceActiveFocus(); else root.focusSidebarRequested() }
+                    Keys.onDownPressed: (event) => { event.accepted = true; gameplayPauseToggle.forceActiveFocus() }
                 }
             }
         }
@@ -196,6 +240,7 @@ Item {
                 StyledCombo {
                     id: speedLimitCombo
                     objectName: "downloadsSpeedLimitCombo"
+                    upDownNavigatesFocus: true
                     Layout.preferredWidth: 150
                     comboModel: {
                         let out = []
@@ -207,6 +252,26 @@ Item {
                         if (appSettings && idx >= 0 && idx < root.speedOptions.length) {
                             appSettings.downloadSpeedLimitKBps = root.speedOptions[idx].kbps
                         }
+                    }
+                    Keys.onLeftPressed: (event) => {
+                        if (popup.visible) { event.accepted = true; return }
+                        event.accepted = true
+                        root.focusSidebarRequested()
+                    }
+                    Keys.onRightPressed: (event) => {
+                        if (popup.visible) { event.accepted = true; return }
+                        event.accepted = true
+                        gameplayPauseToggle.forceActiveFocus()
+                    }
+                    Keys.onUpPressed: (event) => {
+                        if (popup.visible) { event.accepted = true; handleUp(); return }
+                        event.accepted = true
+                        if (pauseAllBtn.enabled) pauseAllBtn.forceActiveFocus()
+                    }
+                    Keys.onDownPressed: (event) => {
+                        if (popup.visible) { event.accepted = true; handleDown(); return }
+                        event.accepted = true
+                        root.focusBelowControlsBar()
                     }
                 }
 
@@ -221,8 +286,12 @@ Item {
 
                 Toggle {
                     id: gameplayPauseToggle
+                    objectName: "downloadsGameplayPauseToggle"
                     checked: appSettings ? appSettings.pauseDownloadsOnGameLaunch : true
                     onToggled: (c) => { if (appSettings) appSettings.pauseDownloadsOnGameLaunch = c }
+                    Keys.onLeftPressed: (event) => { event.accepted = true; speedLimitCombo.forceActiveFocus() }
+                    Keys.onUpPressed: (event) => { event.accepted = true; if (resumeAllBtn.enabled) resumeAllBtn.forceActiveFocus() }
+                    Keys.onDownPressed: (event) => { event.accepted = true; root.focusBelowControlsBar() }
                 }
             }
         }
@@ -278,7 +347,7 @@ Item {
                                 currentIndex--
                                 positionViewAtIndex(currentIndex, ListView.Contain)
                             } else {
-                                pauseAllBtn.forceActiveFocus()
+                                speedLimitCombo.forceActiveFocus()
                             }
                         }
                         Keys.onDownPressed: (event) => {
@@ -286,13 +355,25 @@ Item {
                             if (currentIndex < count - 1) {
                                 currentIndex++
                                 positionViewAtIndex(currentIndex, ListView.Contain)
+                            } else {
+                                root.focusBelowDlList()
                             }
                         }
                         Keys.onLeftPressed: (event) => {
                             event.accepted = true
                             root.focusSidebarRequested()
                         }
+                        Keys.onRightPressed: (event) => {
+                            event.accepted = true
+                            if (currentItem && currentItem.focusFirstActionBtn) {
+                                currentItem.focusFirstActionBtn()
+                            }
+                        }
                         Keys.onReturnPressed: (event) => {
+                            event.accepted = true
+                            if (currentItem && currentItem.togglePauseFn) currentItem.togglePauseFn()
+                        }
+                        Keys.onEnterPressed: (event) => {
                             event.accepted = true
                             if (currentItem && currentItem.togglePauseFn) currentItem.togglePauseFn()
                         }
@@ -305,10 +386,52 @@ Item {
                             id: dlRow
                             required property int index
                             required property var model
-                            readonly property bool isCurrentRow: dlList.activeFocus && dlList.currentIndex === index
+                            readonly property bool isCurrentRow: Boolean(uiController && uiController.isKeyboardNavActive) && dlList.activeFocus && dlList.currentIndex === index
                             readonly property bool isQueuedItem: Boolean(model.isQueued)
                             readonly property bool isPausedItem: Boolean(model.isPaused)
                             readonly property bool isExtractingItem: Boolean(model.isExtracting)
+
+                            function visibleActionButtons() {
+                                const all = [dlStartNowBtn, dlMoveUpBtn, dlMoveDownBtn, dlPauseResumeBtn, dlCancelBtn]
+                                let out = []
+                                for (let i = 0; i < all.length; ++i) {
+                                    if (all[i] && all[i].visible && all[i].enabled) out.push(all[i])
+                                }
+                                return out
+                            }
+
+                            function focusFirstActionBtn() {
+                                const btns = visibleActionButtons()
+                                if (btns.length > 0) btns[0].forceActiveFocus()
+                            }
+
+                            function stepActionButton(fromBtn, delta) {
+                                const btns = visibleActionButtons()
+                                const idx = btns.indexOf(fromBtn)
+                                if (idx < 0) {
+                                    dlList.forceActiveFocus()
+                                    return
+                                }
+                                const next = idx + delta
+                                if (next < 0) {
+                                    dlList.forceActiveFocus()
+                                } else if (next < btns.length) {
+                                    btns[next].forceActiveFocus()
+                                }
+                            }
+
+                            function stepRowFromButton(delta) {
+                                const next = dlRow.index + delta
+                                if (next < 0) {
+                                    speedLimitCombo.forceActiveFocus()
+                                } else if (next >= dlList.count) {
+                                    root.focusBelowDlList()
+                                } else {
+                                    dlList.currentIndex = next
+                                    dlList.positionViewAtIndex(next, ListView.Contain)
+                                    dlList.forceActiveFocus()
+                                }
+                            }
 
                             function togglePauseFn() {
                                 if (!root.dlMgr || isExtractingItem) return
@@ -461,33 +584,55 @@ Item {
                                     Layout.alignment: Qt.AlignVCenter
 
                                     M3Button {
+                                        id: dlStartNowBtn
                                         visible: dlRow.isQueuedItem
                                         text: "Start Now"
                                         iconSource: "qrc:/tsuki_app/icons/actions/play.svg"
                                         buttonType: "filled"
                                         implicitHeight: 32
                                         onClicked: if (root.dlMgr) root.dlMgr.prioritizeDownload(model.id)
+                                        Keys.onLeftPressed: (event) => { event.accepted = true; dlRow.stepActionButton(dlStartNowBtn, -1) }
+                                        Keys.onRightPressed: (event) => { event.accepted = true; dlRow.stepActionButton(dlStartNowBtn, 1) }
+                                        Keys.onUpPressed: (event) => { event.accepted = true; dlRow.stepRowFromButton(-1) }
+                                        Keys.onDownPressed: (event) => { event.accepted = true; dlRow.stepRowFromButton(1) }
+                                        Keys.onEscapePressed: (event) => { event.accepted = true; dlList.forceActiveFocus() }
+                                        Keys.onBackPressed: (event) => { event.accepted = true; dlList.forceActiveFocus() }
                                     }
 
                                     M3Button {
+                                        id: dlMoveUpBtn
                                         visible: dlList.count > 1 && dlRow.index > 0
                                         text: "↑"
                                         buttonType: "tonal"
                                         implicitHeight: 32
                                         implicitWidth: 34
                                         onClicked: if (root.dlMgr) root.dlMgr.moveQueueItemUp(model.id)
+                                        Keys.onLeftPressed: (event) => { event.accepted = true; dlRow.stepActionButton(dlMoveUpBtn, -1) }
+                                        Keys.onRightPressed: (event) => { event.accepted = true; dlRow.stepActionButton(dlMoveUpBtn, 1) }
+                                        Keys.onUpPressed: (event) => { event.accepted = true; dlRow.stepRowFromButton(-1) }
+                                        Keys.onDownPressed: (event) => { event.accepted = true; dlRow.stepRowFromButton(1) }
+                                        Keys.onEscapePressed: (event) => { event.accepted = true; dlList.forceActiveFocus() }
+                                        Keys.onBackPressed: (event) => { event.accepted = true; dlList.forceActiveFocus() }
                                     }
 
                                     M3Button {
+                                        id: dlMoveDownBtn
                                         visible: dlList.count > 1 && dlRow.index < dlList.count - 1
                                         text: "↓"
                                         buttonType: "tonal"
                                         implicitHeight: 32
                                         implicitWidth: 34
                                         onClicked: if (root.dlMgr) root.dlMgr.moveQueueItemDown(model.id)
+                                        Keys.onLeftPressed: (event) => { event.accepted = true; dlRow.stepActionButton(dlMoveDownBtn, -1) }
+                                        Keys.onRightPressed: (event) => { event.accepted = true; dlRow.stepActionButton(dlMoveDownBtn, 1) }
+                                        Keys.onUpPressed: (event) => { event.accepted = true; dlRow.stepRowFromButton(-1) }
+                                        Keys.onDownPressed: (event) => { event.accepted = true; dlRow.stepRowFromButton(1) }
+                                        Keys.onEscapePressed: (event) => { event.accepted = true; dlList.forceActiveFocus() }
+                                        Keys.onBackPressed: (event) => { event.accepted = true; dlList.forceActiveFocus() }
                                     }
 
                                     M3Button {
+                                        id: dlPauseResumeBtn
                                         visible: !dlRow.isExtractingItem && !dlRow.isQueuedItem
                                         text: dlRow.isPausedItem ? "Resume" : "Pause"
                                         iconSource: dlRow.isPausedItem
@@ -496,14 +641,27 @@ Item {
                                         buttonType: "tonal"
                                         implicitHeight: 32
                                         onClicked: if (root.dlMgr) root.dlMgr.togglePauseDownload(model.id)
+                                        Keys.onLeftPressed: (event) => { event.accepted = true; dlRow.stepActionButton(dlPauseResumeBtn, -1) }
+                                        Keys.onRightPressed: (event) => { event.accepted = true; dlRow.stepActionButton(dlPauseResumeBtn, 1) }
+                                        Keys.onUpPressed: (event) => { event.accepted = true; dlRow.stepRowFromButton(-1) }
+                                        Keys.onDownPressed: (event) => { event.accepted = true; dlRow.stepRowFromButton(1) }
+                                        Keys.onEscapePressed: (event) => { event.accepted = true; dlList.forceActiveFocus() }
+                                        Keys.onBackPressed: (event) => { event.accepted = true; dlList.forceActiveFocus() }
                                     }
 
                                     M3Button {
+                                        id: dlCancelBtn
                                         text: "Cancel"
                                         iconSource: "qrc:/tsuki_app/icons/actions/close.svg"
                                         buttonType: "destructive"
                                         implicitHeight: 32
                                         onClicked: if (root.dlMgr) root.dlMgr.cancelDownload(model.id)
+                                        Keys.onLeftPressed: (event) => { event.accepted = true; dlRow.stepActionButton(dlCancelBtn, -1) }
+                                        Keys.onRightPressed: (event) => { event.accepted = true; dlRow.stepActionButton(dlCancelBtn, 1) }
+                                        Keys.onUpPressed: (event) => { event.accepted = true; dlRow.stepRowFromButton(-1) }
+                                        Keys.onDownPressed: (event) => { event.accepted = true; dlRow.stepRowFromButton(1) }
+                                        Keys.onEscapePressed: (event) => { event.accepted = true; dlList.forceActiveFocus() }
+                                        Keys.onBackPressed: (event) => { event.accepted = true; dlList.forceActiveFocus() }
                                     }
                                 }
                             }
@@ -543,6 +701,7 @@ Item {
 
         // ── Completed Downloads History ──────────────────────────────────────
         Rectangle {
+            id: historySection
             visible: root.historyList && root.historyList.length > 0
             Layout.fillWidth: true
             Layout.preferredHeight: Math.min(220, historyCol.implicitHeight + 28)
@@ -568,28 +727,101 @@ Item {
                     }
 
                     M3Button {
+                        id: clearHistoryBtn
+                        objectName: "downloadsClearHistoryBtn"
                         text: "Clear History"
                         buttonType: "tonal"
                         implicitHeight: 28
-                        onClicked: if (root.dlMgr) root.dlMgr.clearCompletedHistory()
+                        onClicked: {
+                            if (root.dlMgr) root.dlMgr.clearCompletedHistory()
+                            root.focusFirstEnabledControl()
+                        }
+                        Keys.onLeftPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
+                        Keys.onUpPressed: (event) => { event.accepted = true; root.focusAboveHistory() }
+                        Keys.onDownPressed: (event) => {
+                            event.accepted = true
+                            if (historyListView.count > 0) {
+                                if (historyListView.currentIndex < 0) historyListView.currentIndex = 0
+                                historyListView.forceActiveFocus()
+                            }
+                        }
                     }
                 }
 
                 ListView {
+                    id: historyListView
+                    objectName: "downloadsHistoryList"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.minimumHeight: 60
+                    focus: true
+                    keyNavigationEnabled: false
                     clip: true
                     spacing: 6
                     model: root.historyList
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+                    onActiveFocusChanged: {
+                        if (activeFocus && currentIndex < 0 && count > 0) currentIndex = 0
+                    }
+
+                    Keys.onUpPressed: (event) => {
+                        event.accepted = true
+                        if (currentIndex > 0) {
+                            currentIndex--
+                            positionViewAtIndex(currentIndex, ListView.Contain)
+                        } else {
+                            clearHistoryBtn.forceActiveFocus()
+                        }
+                    }
+                    Keys.onDownPressed: (event) => {
+                        event.accepted = true
+                        if (currentIndex < count - 1) {
+                            currentIndex++
+                            positionViewAtIndex(currentIndex, ListView.Contain)
+                        }
+                    }
+                    Keys.onLeftPressed: (event) => { event.accepted = true; root.focusSidebarRequested() }
+                    Keys.onRightPressed: (event) => {
+                        event.accepted = true
+                        if (currentItem && currentItem.openBtnItem && currentItem.openBtnItem.visible) {
+                            currentItem.openBtnItem.forceActiveFocus()
+                        }
+                    }
+                    Keys.onReturnPressed: (event) => {
+                        event.accepted = true
+                        if (currentItem && currentItem.activateHistoryRow) currentItem.activateHistoryRow()
+                    }
+                    Keys.onEnterPressed: (event) => {
+                        event.accepted = true
+                        if (currentItem && currentItem.activateHistoryRow) currentItem.activateHistoryRow()
+                    }
+                    Keys.onSpacePressed: (event) => {
+                        event.accepted = true
+                        if (currentItem && currentItem.activateHistoryRow) currentItem.activateHistoryRow()
+                    }
+
                     delegate: Rectangle {
+                        id: histRow
+                        required property int index
                         required property var modelData
+                        readonly property bool isCurrentRow: Boolean(uiController && uiController.isKeyboardNavActive) && historyListView.activeFocus && historyListView.currentIndex === index
+                        readonly property Item openBtnItem: historyOpenBtn
+
+                        function activateHistoryRow() {
+                            if (modelData && modelData.success && modelData.targetGameId && String(modelData.targetGameId).length > 0) {
+                                root.openGameDetailsRequested(String(modelData.targetGameId), String(modelData.appName || ""))
+                            }
+                        }
+
                         width: ListView.view.width
                         height: 44
                         radius: 10
-                        color: appSettings.surfaceContainerLow
+                        color: isCurrentRow
+                            ? Qt.rgba(appSettings.accentColor.r, appSettings.accentColor.g, appSettings.accentColor.b, 0.10)
+                            : appSettings.surfaceContainerLow
+                        border.color: isCurrentRow ? appSettings.accentColor : "transparent"
+                        border.width: isCurrentRow ? 1.5 : 0
 
                         RowLayout {
                             anchors.fill: parent
@@ -623,11 +855,33 @@ Item {
                             }
 
                             M3Button {
+                                id: historyOpenBtn
                                 visible: Boolean(modelData.success && modelData.targetGameId && String(modelData.targetGameId).length > 0)
                                 text: "Open"
                                 buttonType: "tonal"
                                 implicitHeight: 28
-                                onClicked: root.openGameDetailsRequested(String(modelData.targetGameId), String(modelData.appName || ""))
+                                onClicked: histRow.activateHistoryRow()
+                                Keys.onLeftPressed: (event) => { event.accepted = true; historyListView.forceActiveFocus() }
+                                Keys.onUpPressed: (event) => {
+                                    event.accepted = true
+                                    if (histRow.index > 0) {
+                                        historyListView.currentIndex = histRow.index - 1
+                                        historyListView.positionViewAtIndex(historyListView.currentIndex, ListView.Contain)
+                                        historyListView.forceActiveFocus()
+                                    } else {
+                                        clearHistoryBtn.forceActiveFocus()
+                                    }
+                                }
+                                Keys.onDownPressed: (event) => {
+                                    event.accepted = true
+                                    if (histRow.index < historyListView.count - 1) {
+                                        historyListView.currentIndex = histRow.index + 1
+                                        historyListView.positionViewAtIndex(historyListView.currentIndex, ListView.Contain)
+                                        historyListView.forceActiveFocus()
+                                    }
+                                }
+                                Keys.onEscapePressed: (event) => { event.accepted = true; historyListView.forceActiveFocus() }
+                                Keys.onBackPressed: (event) => { event.accepted = true; historyListView.forceActiveFocus() }
                             }
                         }
                     }
