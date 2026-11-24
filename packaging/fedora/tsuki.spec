@@ -1,4 +1,4 @@
-%{!?pkg_version:%define pkg_version 0.2.3}
+%{!?pkg_version:%define pkg_version 0.2.4}
 %{!?app_version:%define app_version %{pkg_version}}
 
 Name:           tsuki

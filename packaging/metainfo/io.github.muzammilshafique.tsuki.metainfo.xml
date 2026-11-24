@@ -36,6 +36,11 @@
   </categories>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="0.2.4" date="2026-11-25">
+      <description>
+        <p>Persistent resumable Epic downloads across restarts, UMU runtime update skip when already installed, multi-select library filters, streamlined card right-click menus, Epic hidden game controls &amp; non-game filtering, and reorganized Game Details &amp; Settings tabs.</p>
+      </description>
+    </release>
     <release version="0.2.3" date="2026-11-22">
       <description>
         <p>Epic cloud saves, UMU launcher support, storage cleaning tools, Epic artwork disk persistence and lazy grid loading, runner deletion controls, smoother dialog &amp; sidebar grid transitions, and UI polish.</p>
